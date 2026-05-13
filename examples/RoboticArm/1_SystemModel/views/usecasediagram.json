@@ -1,0 +1,67 @@
+{
+  "name": "UseCaseDiagram",
+  "elements": [
+    "RoboticArmUseCases::ControlSystem",
+    "RoboticArmUseCases::Environment",
+    "RoboticArmUseCases::ExpandModularArm",
+    "RoboticArmUseCases::InitializeSystem",
+    "RoboticArmUseCases::MonitorStatus",
+    "RoboticArmUseCases::Operator",
+    "RoboticArmUseCases::PerformMaintenance",
+    "RoboticArmUseCases::PowerManagement",
+    "RoboticArmUseCases::TeachNewPosition",
+    "RoboticArmUseCases::Technician"
+  ],
+  "nodes": {
+    "RoboticArmUseCases::InitializeSystem": {
+      "x": -338,
+      "y": 146
+    },
+    "RoboticArmUseCases::Environment": {
+      "x": 223,
+      "y": -272
+    },
+    "RoboticArmUseCases::Technician": {
+      "x": 193,
+      "y": 138
+    },
+    "RoboticArmUseCases::Operator": {
+      "x": -753,
+      "y": -103
+    },
+    "RoboticArmUseCases::ControlSystem": {
+      "x": -748,
+      "y": -331
+    },
+    "RoboticArmUseCases::MonitorStatus": {
+      "x": -340,
+      "y": -229
+    },
+    "RoboticArmUseCases::TeachNewPosition": {
+      "x": -342,
+      "y": -65
+    },
+    "RoboticArmUseCases::PerformMaintenance": {
+      "x": -345,
+      "y": 342
+    },
+    "RoboticArmUseCases::PowerManagement": {
+      "x": -347,
+      "y": -391
+    },
+    "RoboticArmUseCases::ExpandModularArm": {
+      "x": -346,
+      "y": -523
+    }
+  },
+  "hiddenEdges": [],
+  "view": {
+    "tx": 1081.9720864891278,
+    "ty": 460.0450769606646,
+    "s": 0.6363547520156365
+  },
+  "options": {
+    "attrs": true,
+    "parts": true
+  }
+}

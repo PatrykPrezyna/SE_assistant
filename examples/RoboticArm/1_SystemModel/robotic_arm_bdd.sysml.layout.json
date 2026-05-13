@@ -1,0 +1,52 @@
+{
+  "nodes": {
+    "RobotArmLogicalArchitecture::RobotArmSystem::ibd::controller": {
+      "x": 29,
+      "y": -171
+    },
+    "RobotArmLogicalArchitecture::RobotArmSystem::ibd::baseJoint": {
+      "x": -310,
+      "y": 0
+    },
+    "RobotArmLogicalArchitecture::RobotArmSystem::ibd::shoulderJoint": {
+      "x": -140,
+      "y": 0
+    },
+    "RobotArmLogicalArchitecture::RobotArmSystem::ibd::elbowJoint": {
+      "x": 30,
+      "y": 0
+    },
+    "RobotArmLogicalArchitecture::RobotArmSystem::ibd::wristJoint": {
+      "x": 200,
+      "y": 0
+    },
+    "RobotArmLogicalArchitecture::RobotArmSystem::ibd::gripperJoint": {
+      "x": 370,
+      "y": 0
+    }
+  },
+  "view": {
+    "tx": 671.5,
+    "ty": 453.5,
+    "s": 1.5
+  },
+  "options": {
+    "attrs": true,
+    "parts": true
+  },
+  "focus": {
+    "root": null,
+    "expanded": []
+  },
+  "hiddenNodes": [
+    "RobotArmLogicalArchitecture::Controller",
+    "RobotArmLogicalArchitecture::BasicController"
+  ],
+  "hiddenEdges": [],
+  "docs": {
+    "RobotArmLogicalArchitecture::SmallServoDrive": "../9_Documentation/Servo_Adeept_2.pdf",
+    "RobotArmLogicalArchitecture::MediumServoDrive": "../9_Documentation/Servo_Adeept_4.pdf"
+  },
+  "mode": "ibd",
+  "ibdOwner": "RobotArmLogicalArchitecture::RobotArmSystem"
+}

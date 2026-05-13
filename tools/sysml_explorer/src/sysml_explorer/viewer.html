@@ -1,0 +1,1515 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>SysML Explorer</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden;
+    font-family: "Segoe UI", system-ui, sans-serif; }
+  #toolbar { position: fixed; top: 0; left: 0; right: 0; z-index: 10;
+    display: flex; align-items: center; gap: 10px; padding: 6px 12px;
+    background: #f7f7f9; border-bottom: 1px solid #ddd; font-size: 13px; }
+  #toolbar .title { font-weight: 600; margin-right: 8px; }
+  #toolbar button { font-size: 13px; padding: 3px 10px; cursor: pointer; }
+  #toolbar label { user-select: none; cursor: pointer; }
+  #toolbar select { font-size: 13px; max-width: 180px; }
+  #status { color: #2a7; min-width: 90px; }
+  #status.dirty { color: #c60; }
+  #error { position: fixed; top: 40px; left: 0; right: 0; z-index: 10;
+    background: #fdd; color: #900; padding: 6px 12px; display: none; }
+  #canvas { width: 100%; height: 100%; background: #ffffff; display: block;
+    cursor: grab; }
+  #canvas.panning { cursor: grabbing; }
+  .node rect.body { fill: #fdfdfd; stroke: #444; stroke-width: 1.2; }
+  .node.req rect.body { fill: #fffbea; }
+  .node.usage rect.body { fill: #f2f7fd; }
+  .node.actor rect.body { fill: #f6f0ff; }
+  .node.usecase rect.body { fill: #eefaf0; }
+  .node line.sep { stroke: #444; stroke-width: 1; }
+  .node text { fill: #222; font-size: 12px; }
+  .node text.stereo { fill: #666; font-size: 11px; }
+  .node text.name { font-size: 13px; font-weight: 600; }
+  .node text.pkg { fill: #999; font-size: 10px; }
+  .node text.doc { fill: #555; font-style: italic; }
+  .node.dragging rect.body { stroke: #1a6fd4; stroke-width: 2; }
+  .node.sel rect.body { stroke: #d4351a; stroke-width: 2.5; }
+  .node.hl rect.body { stroke: #1a6fd4; stroke-width: 1.8; }
+  .node { cursor: move; }
+  .node text.docicon { font-size: 11px; }
+  .node text.ibdicon { font-size: 11px; }
+  .node text.ucdicon { font-size: 11px; }
+  .edge { cursor: pointer; }
+  .edge line.hit { stroke: transparent; stroke-width: 14; pointer-events: stroke; }
+  .edge line.wire, .edge path { stroke: #555; stroke-width: 1.2; fill: none; }
+  .edge.typing line.wire { stroke-dasharray: 5 4; }
+  .edge.satisfy line.wire { stroke-dasharray: 5 4; stroke: #a08000; }
+  .edge.satisfy text { fill: #7a6a00; }
+  .edge.connector line.wire { stroke: #2a8f4d; stroke-width: 1.4; }
+  .edge.connector text { fill: #1f6b39; }
+  .edge.association line.wire { stroke: #6a3fa0; }
+  .edge.association text { fill: #6a3fa0; }
+  .edge text { font-size: 11px; fill: #444; paint-order: stroke;
+    stroke: #fff; stroke-width: 3px; }
+  .edge.hl line.wire { stroke-width: 2.2; }
+  .edge.sel line.wire { stroke: #d4351a; stroke-width: 2.6; }
+  .edge.sel text { fill: #d4351a; }
+  #legend { position: fixed; bottom: 10px; left: 12px; z-index: 10;
+    background: rgba(255,255,255,.95); border: 1px solid #ddd;
+    border-radius: 4px; padding: 6px 10px; font-size: 12px; color: #333;
+    display: none; }
+  #legend .lrow { display: flex; align-items: center; gap: 8px;
+    padding: 2px 0; }
+  #legend svg { flex: none; }
+  #ctxmenu { position: fixed; z-index: 20; background: #fff;
+    border: 1px solid #ccc; border-radius: 4px; padding: 4px 0;
+    box-shadow: 0 2px 8px rgba(0,0,0,.15); min-width: 190px;
+    display: none; font-size: 13px; user-select: none; }
+  #ctxmenu .item { padding: 5px 14px; cursor: pointer; white-space: nowrap; }
+  #ctxmenu .item:hover { background: #eef4fb; }
+  #ctxmenu .item.disabled { color: #aaa; cursor: default; }
+  #ctxmenu .item.disabled:hover { background: none; }
+  #ctxmenu .sep { border-top: 1px solid #e5e5e5; margin: 4px 0; }
+  #tree { position: fixed; top: 40px; left: 0; bottom: 0; width: 260px;
+    overflow-y: auto; overflow-x: hidden; background: #fafafa;
+    border-right: 1px solid #ddd; font-size: 12px; padding: 6px 0; z-index: 8; }
+  #tree.hidden { display: none; }
+  #tree.disabled { opacity: .55; pointer-events: none; }
+  #tree .pkg { display: flex; align-items: center; gap: 5px; padding: 3px 8px;
+    font-weight: 600; color: #555; cursor: pointer;
+    user-select: none; white-space: nowrap; }
+  #tree .pkg:hover { background: #eef0f2; }
+  #tree .pkg input { flex: none; margin: 0; }
+  #tree .pkg .tri { display: inline-block; width: 12px; }
+  #tree .pkg-body { margin-left: 10px; }
+  #tree .pkg-body.collapsed { display: none; }
+  #tree .elem { display: flex; align-items: center; gap: 5px;
+    padding: 2px 8px 2px 20px; white-space: nowrap; overflow: hidden; }
+  #tree .elem:hover { background: #eef4fb; }
+  #tree .elem input { flex: none; margin: 0; }
+  #tree .elem .lbl { cursor: pointer; overflow: hidden; text-overflow: ellipsis; }
+  #tree .elem.dimmed .lbl { color: #999; font-style: italic; }
+  #tree .elem .dot { width: 8px; height: 8px; border-radius: 50%; flex: none;
+    background: #ccc; }
+  #tree .elem.k-req .dot { background: #e8c93a; }
+  #tree .elem.k-actor .dot { background: #a480e0; }
+  #tree .elem.k-usecase .dot { background: #6fc98a; }
+  #tree .elem.k-usage .dot { background: #7fb0e0; }
+</style>
+</head>
+<body>
+<div id="toolbar">
+  <button id="treeBtn" title="Show/hide the element tree">☰ Tree</button>
+  <span class="title" id="title">SysML Explorer</span>
+  <button id="saveBtn" title="Ctrl+S">Save layout</button>
+  <button id="ibdBackBtn" style="display:none">◀ Back</button>
+  <button id="fitBtn">Fit view</button>
+  <button id="autoBtn" title="Discard positions and re-run auto-layout">Auto-layout</button>
+  <button id="reloadBtn" title="Re-parse the .sysml files, keep positions">Reload model</button>
+  <label>view <select id="viewSel"></select></label>
+  <button id="newViewBtn" title="Create a new view">+ View</button>
+  <button id="renameViewBtn" title="Rename the current view">Rename</button>
+  <button id="deleteViewBtn" title="Delete the current view">Delete</button>
+  <button id="unhideBtn" title="Show connections hidden via right-click">Unhide</button>
+  <label><input type="checkbox" id="attrsCb" checked> attributes</label>
+  <label><input type="checkbox" id="partsCb" checked> parts</label>
+  <span id="status"></span>
+</div>
+<div id="error"></div>
+<div id="ctxmenu"></div>
+<div id="legend"></div>
+<div id="tree"></div>
+<svg id="canvas">
+  <defs>
+    <marker id="mTriangle" markerUnits="userSpaceOnUse" markerWidth="16" markerHeight="14"
+            refX="0" refY="7" orient="auto">
+      <path d="M0,0 L14,7 L0,14 Z" fill="#fff" stroke="#555" stroke-width="1.2"/>
+    </marker>
+    <marker id="mDiamond" markerUnits="userSpaceOnUse" markerWidth="18" markerHeight="10"
+            refX="0" refY="5" orient="auto">
+      <path d="M0,5 L8,0 L16,5 L8,10 Z" fill="#555"/>
+    </marker>
+    <marker id="mOpen" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12"
+            refX="10" refY="6" orient="auto">
+      <path d="M0,1 L10,6 L0,11" fill="none" stroke="#555" stroke-width="1.2"/>
+    </marker>
+    <marker id="mOpenSat" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12"
+            refX="10" refY="6" orient="auto">
+      <path d="M0,1 L10,6 L0,11" fill="none" stroke="#a08000" stroke-width="1.2"/>
+    </marker>
+    <marker id="mBall" markerUnits="userSpaceOnUse" markerWidth="10" markerHeight="10"
+            refX="5" refY="5">
+      <circle cx="5" cy="5" r="4" fill="#2a8f4d"/>
+    </marker>
+  </defs>
+  <g id="world">
+    <g id="edgeLayer"></g>
+    <g id="nodeLayer"></g>
+  </g>
+</svg>
+<script>
+"use strict";
+
+// display parameters -------------------------------------------------
+// SHOW_KEYWORDS: render the element kind keyword («part def»,
+// «requirement», …) as the first line of each node header.
+const SHOW_KEYWORDS = false;
+// SHOW_EDGE_LABELS: render text on connections (composition role names,
+// the satisfy marker text). The legend explains the arrow styles instead.
+const SHOW_EDGE_LABELS = false;
+// SHOW_LEGEND: bottom-left box explaining the arrow styles currently
+// visible in the diagram.
+const SHOW_LEGEND = true;
+
+// layout constants for reserving screen space around the canvas — must
+// match the CSS (#toolbar height, #tree width)
+const TOOLBAR_H = 40;
+const TREE_WIDTH = 260;
+
+const svg = document.getElementById("canvas");
+const world = document.getElementById("world");
+const edgeLayer = document.getElementById("edgeLayer");
+const nodeLayer = document.getElementById("nodeLayer");
+const statusEl = document.getElementById("status");
+const unhideBtn = document.getElementById("unhideBtn");
+const treeEl = document.getElementById("tree");
+
+let model = null;                 // parsed model from the server
+let layout = {};                  // global state: docs, treeOpen, activeView, mode, ibdOwner,
+                                   // ucdOwner, drilldownNodes/drilldownHiddenEdges/drilldownView
+let nodes = {};                   // id -> {data, x, y, w, h, el} (visible only)
+let edges = [];                   // visible edges
+let view = { tx: 0, ty: 0, s: 1 };
+let dirty = false;
+
+// Views (SysML v2's term for a curated presentation of model content): the
+// user creates as many as they like, each with its own membership set,
+// positions, hidden connections, filters, and pan/zoom — persisted as its
+// own file (see /api/views). Membership/positions for the IBD/UCD drilldown
+// modes are NOT part of a View — they're global, since a drilldown is a
+// fixed rendering of the model's own ibd def/useDiagram, not a user-curated
+// diagram.
+let views = [];                   // [{id, name}, ...] from /api/views
+let activeViewId = null;
+let activeView = null;            // {name, elements, nodes, hiddenEdges, view, options}
+let drilldownNodes = {};          // synthetic IBD/UCD role-box positions (global)
+let drilldownHiddenEdges = new Set();
+let drilldownView = null;
+
+let hiddenEdges = new Set();      // *current* working set: activeView.hiddenEdges when
+                                   // mode is "bdd", drilldownHiddenEdges otherwise
+let mode = "bdd";                 // "bdd" | "ibd" | "ucd"
+let ibdOwner = null;               // id of the part def whose IBD is shown
+let ibdStack = [];                 // ownerIds, for nested "back" navigation
+let ucdOwner = null;               // id of the subject whose use case diagram is shown
+let selection = null;              // {type:"node", id} | {type:"edge", key}
+let treeOpen = true;               // element tree panel shown/hidden
+
+// the position store currently in effect: a View's own positions in bdd
+// mode, or the shared drilldown positions in ibd/ucd mode. A function, not
+// a variable, so mutations always land on the real object (activeView.nodes
+// or drilldownNodes), never a stale copy left behind by a mode switch.
+function posMap() { return mode === "bdd" ? activeView.nodes : drilldownNodes; }
+
+const measureCtx = document.createElement("canvas").getContext("2d");
+function textWidth(text, font) {
+  measureCtx.font = font;
+  return measureCtx.measureText(text).width;
+}
+
+function setDirty(d) {
+  dirty = d;
+  statusEl.textContent = d ? "unsaved changes" : statusEl.textContent;
+  statusEl.className = d ? "dirty" : "";
+}
+
+function flash(msg) {
+  statusEl.className = "";
+  statusEl.textContent = msg;
+  setTimeout(() => { if (!dirty) statusEl.textContent = ""; }, 2000);
+}
+
+// ---------------------------------------------------------------- visibility
+
+function edgeKey(d) {
+  return d.kind + "|" + d.from + "|" + d.to + "|" + (d.label || "");
+}
+
+// every package path an element belongs to, plus all of its ancestor
+// package paths (so an empty "wrapper" package with only subpackages is
+// still a header worth showing even though no element sits directly in it)
+// — used by the element tree, not by view membership
+function packagePathsOf(nodeList) {
+  const set = new Set();
+  for (const n of nodeList) {
+    const p = n.packagePath || "";
+    if (!p) continue;
+    let acc = "";
+    for (const part of p.split("::")) {
+      acc = acc ? acc + "::" + part : part;
+      set.add(acc);
+    }
+  }
+  return set;
+}
+
+// a View's visible elements are exactly its curated membership set,
+// intersected with whatever still exists in the (possibly reloaded) model
+function visibleIds() {
+  const ids = new Set(model.nodes.map(n => n.id));
+  return new Set((activeView.elements || []).filter(id => ids.has(id)));
+}
+
+// ---------------------------------------------------------------- nodes
+
+function wrapText(text, maxChars) {
+  const words = text.split(/\s+/), lines = [];
+  let line = "";
+  for (const w of words) {
+    if (line && (line + " " + w).length > maxChars) { lines.push(line); line = w; }
+    else line = line ? line + " " + w : w;
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+function buildNodeContent(d) {
+  const showAttrs = document.getElementById("attrsCb").checked;
+  const showParts = document.getElementById("partsCb").checked;
+  const header = [];
+  if (SHOW_KEYWORDS)
+    header.push({ text: "«" + d.kind + "»", cls: "stereo" });
+  header.push({ text: (d.shortName ? d.shortName + " " : "") + d.name,
+                cls: "name", italic: d.abstract });
+  if (d.package) header.push({ text: d.package, cls: "pkg" });
+  const compartments = [];
+  if (showAttrs && d.attributes.length)
+    compartments.push(d.attributes.map(t => ({ text: t, cls: "" })));
+  if (showParts && d.parts.length) {
+    const lines = [];
+    for (const p of d.parts) {
+      lines.push({ text: p.text, cls: "" });
+      if (showAttrs)
+        for (const a of p.attrs) lines.push({ text: "    ." + a, cls: "" });
+    }
+    compartments.push(lines);
+  }
+  if (d.doc)
+    compartments.push(wrapText(d.doc, 40).map(t => ({ text: t, cls: "doc" })));
+  return { header, compartments };
+}
+
+const LINE_H = 16, PAD = 8;
+
+function fontFor(item) {
+  const family = '"Segoe UI", system-ui, sans-serif';
+  if (item.cls === "name") return "600 13px " + family;
+  if (item.cls === "stereo") return "11px " + family;
+  if (item.cls === "pkg") return "10px " + family;
+  return "12px " + family;
+}
+
+function createNodeEl(n) {
+  const d = n.data;
+  const { header, compartments } = buildNodeContent(d);
+
+  let w = 110;
+  for (const item of header) w = Math.max(w, textWidth(item.text, fontFor(item)) + 2 * PAD);
+  for (const comp of compartments)
+    for (const item of comp) w = Math.max(w, textWidth(item.text, fontFor(item)) + 2 * PAD);
+  w = Math.ceil(w);
+
+  const g = document.createElementNS(svg.namespaceURI, "g");
+  g.classList.add("node");
+  if (d.kind.startsWith("requirement")) g.classList.add("req");
+  if (d.kind === "actor def" || d.kind === "actor") g.classList.add("actor");
+  if (d.kind === "use case def" || d.kind === "use case") g.classList.add("usecase");
+  if (!d.kind.endsWith("def")) g.classList.add("usage");
+  g.dataset.id = d.id;
+
+  const rect = document.createElementNS(svg.namespaceURI, "rect");
+  rect.setAttribute("class", "body");
+  g.appendChild(rect);
+
+  let y = PAD + 12;
+  const addText = (item, centered) => {
+    const t = document.createElementNS(svg.namespaceURI, "text");
+    t.setAttribute("class", item.cls);
+    if (item.italic) t.setAttribute("font-style", "italic");
+    if (centered) { t.setAttribute("x", w / 2); t.setAttribute("text-anchor", "middle"); }
+    else t.setAttribute("x", PAD);
+    t.setAttribute("y", y);
+    t.textContent = item.text;
+    g.appendChild(t);
+    y += LINE_H;
+  };
+
+  for (const item of header) addText(item, true);
+  y -= 4;
+  for (const comp of compartments) {
+    const sepY = y - 12 + 4;
+    const sep = document.createElementNS(svg.namespaceURI, "line");
+    sep.setAttribute("class", "sep");
+    sep.setAttribute("x1", 0); sep.setAttribute("x2", w);
+    sep.setAttribute("y1", sepY); sep.setAttribute("y2", sepY);
+    g.appendChild(sep);
+    y += 6;
+    for (const item of comp) addText(item, false);
+    y -= 4;
+  }
+  const h = y - LINE_H + PAD + 6;
+  rect.setAttribute("width", w);
+  rect.setAttribute("height", h);
+  if (layout.docs && layout.docs[d.id]) {
+    const t = document.createElementNS(svg.namespaceURI, "text");
+    t.setAttribute("class", "docicon");
+    t.setAttribute("x", w - 4);
+    t.setAttribute("y", 13);
+    t.setAttribute("text-anchor", "end");
+    t.textContent = "📄";
+    g.appendChild(t);
+  }
+  let leftIconX = 4;
+  if (ibdTargetFor(d.id)) {
+    const t = document.createElementNS(svg.namespaceURI, "text");
+    t.setAttribute("class", "ibdicon");
+    t.setAttribute("x", leftIconX);
+    t.setAttribute("y", 13);
+    t.setAttribute("text-anchor", "start");
+    t.textContent = "🧩";
+    g.appendChild(t);
+    leftIconX += 14;
+  }
+  if (ucdTargetFor(d.id)) {
+    const t = document.createElementNS(svg.namespaceURI, "text");
+    t.setAttribute("class", "ucdicon");
+    t.setAttribute("x", leftIconX);
+    t.setAttribute("y", 13);
+    t.setAttribute("text-anchor", "start");
+    t.textContent = "🎭";
+    g.appendChild(t);
+  }
+  n.w = w; n.h = h; n.el = g;
+  g.setAttribute("transform", `translate(${n.x},${n.y})`);
+  return g;
+}
+
+// ---------------------------------------------------------------- edges
+
+function rectAnchor(n, tx, ty) {
+  const cx = n.x + n.w / 2, cy = n.y + n.h / 2;
+  const dx = tx - cx, dy = ty - cy;
+  if (!dx && !dy) return { x: cx, y: cy };
+  const t = 1 / Math.max(Math.abs(dx) / (n.w / 2), Math.abs(dy) / (n.h / 2));
+  return { x: cx + dx * t, y: cy + dy * t };
+}
+
+function updateEdge(e) {
+  const a = nodes[e.data.from], b = nodes[e.data.to];
+  if (!a || !b) return;
+  let ax = a.x + a.w / 2, ay = a.y + a.h / 2;
+  let bx = b.x + b.w / 2, by = b.y + b.h / 2;
+  if (e.off) {
+    const dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy) || 1;
+    const px = -dy / len * e.off, py = dx / len * e.off;
+    ax += px; ay += py; bx += px; by += py;
+  }
+  const p1 = rectAnchor(a, bx, by);
+  let p2 = rectAnchor(b, ax, ay);
+  e.hit.setAttribute("x1", p1.x); e.hit.setAttribute("y1", p1.y);
+  e.hit.setAttribute("x2", p2.x); e.hit.setAttribute("y2", p2.y);
+  if (e.data.kind === "specialization") {
+    // pull the line end back so the hollow triangle marker fills the gap
+    const dx = p2.x - p1.x, dy = p2.y - p1.y, len = Math.hypot(dx, dy) || 1;
+    p2 = { x: p2.x - dx / len * 14, y: p2.y - dy / len * 14 };
+  }
+  e.line.setAttribute("x1", p1.x); e.line.setAttribute("y1", p1.y);
+  e.line.setAttribute("x2", p2.x); e.line.setAttribute("y2", p2.y);
+  if (e.label) {
+    e.label.setAttribute("x", (p1.x + p2.x) / 2 + 5);
+    e.label.setAttribute("y", (p1.y + p2.y) / 2 - 5);
+  }
+}
+
+function createEdgeEl(data) {
+  const g = document.createElementNS(svg.namespaceURI, "g");
+  g.setAttribute("class", "edge " + data.kind);
+  g.dataset.key = edgeKey(data);
+  const hit = document.createElementNS(svg.namespaceURI, "line");
+  hit.setAttribute("class", "hit");
+  g.appendChild(hit);
+  const line = document.createElementNS(svg.namespaceURI, "line");
+  line.setAttribute("class", "wire");
+  if (data.kind === "specialization") line.setAttribute("marker-end", "url(#mTriangle)");
+  if (data.kind === "composition") line.setAttribute("marker-start", "url(#mDiamond)");
+  if (data.kind === "typing") line.setAttribute("marker-end", "url(#mOpen)");
+  if (data.kind === "satisfy") line.setAttribute("marker-end", "url(#mOpenSat)");
+  if (data.kind === "connector") {
+    line.setAttribute("marker-start", "url(#mBall)");
+    line.setAttribute("marker-end", "url(#mBall)");
+  }
+  g.appendChild(line);
+  let label = null;
+  if (data.label && SHOW_EDGE_LABELS) {
+    label = document.createElementNS(svg.namespaceURI, "text");
+    label.textContent = data.label;
+    g.appendChild(label);
+  }
+  return { data, el: g, hit, line, label, off: 0 };
+}
+
+function updateAllEdges() { for (const e of edges) updateEdge(e); }
+
+// ---------------------------------------------------------------- legend
+
+const LEGEND_ORDER = ["specialization", "composition", "typing", "satisfy", "connector", "association"];
+const LEGEND_LABELS = {
+  specialization: "specialization (is a)",
+  composition: "composition (has part)",
+  typing: "typed by",
+  satisfy: "satisfies requirement",
+  connector: "connector (IBD)",
+  association: "association (actor ↔ use case)",
+};
+
+function legendRow(kind) {
+  const dashed = kind === "typing" || kind === "satisfy";
+  const color = kind === "satisfy" ? "#a08000"
+    : kind === "connector" ? "#2a8f4d"
+    : kind === "association" ? "#6a3fa0"
+    : "#555";
+  let marker = "";
+  if (kind === "specialization") marker = 'marker-end="url(#mTriangle)"';
+  if (kind === "composition") marker = 'marker-start="url(#mDiamond)"';
+  if (kind === "typing") marker = 'marker-end="url(#mOpen)"';
+  if (kind === "satisfy") marker = 'marker-end="url(#mOpenSat)"';
+  if (kind === "connector") marker = 'marker-start="url(#mBall)" marker-end="url(#mBall)"';
+  return '<div class="lrow"><svg width="66" height="14">' +
+    `<line x1="2" y1="7" x2="48" y2="7" stroke="${color}" stroke-width="1.2" ` +
+    (dashed ? 'stroke-dasharray="5 4" ' : "") + marker + "/></svg>" +
+    `<span>${LEGEND_LABELS[kind]}</span></div>`;
+}
+
+function updateLegend() {
+  const box = document.getElementById("legend");
+  const kinds = new Set(edges.map(e => e.data.kind));
+  const rows = LEGEND_ORDER.filter(k => kinds.has(k));
+  if (!SHOW_LEGEND || !rows.length) {
+    box.style.display = "none";
+    return;
+  }
+  box.innerHTML = rows.map(legendRow).join("");
+  box.style.display = "block";
+}
+
+// ---------------------------------------------------------------- layout
+
+function autoPlace(force) {
+  // longest-path layering: children below parents, part types below owners
+  const rank = {};
+  for (const id in nodes) rank[id] = 0;
+  for (let i = 0; i < model.nodes.length + 2; i++) {
+    let changed = false;
+    for (const e of model.edges) {
+      if (!(e.from in rank) || !(e.to in rank)) continue;
+      const down = e.kind === "composition" || e.kind === "satisfy";
+      const lower = down ? e.to : e.from;
+      const upper = down ? e.from : e.to;
+      if (rank[lower] < rank[upper] + 1) { rank[lower] = rank[upper] + 1; changed = true; }
+    }
+    if (!changed) break;
+  }
+  const rows = {};
+  for (const id in nodes) (rows[rank[id]] = rows[rank[id]] || []).push(id);
+  const GAPX = 60, GAPY = 90;
+  let yCursor = 0;
+  for (const r of Object.keys(rows).sort((a, b) => a - b)) {
+    const ids = rows[r];
+    let rowW = 0, rowH = 0;
+    for (const id of ids) { rowW += nodes[id].w + GAPX; rowH = Math.max(rowH, nodes[id].h); }
+    rowW -= GAPX;
+    let x = -rowW / 2;
+    for (const id of ids) {
+      const n = nodes[id];
+      if (force || !(id in posMap())) { n.x = x; n.y = yCursor; }
+      x += n.w + GAPX;
+    }
+    yCursor += rowH + GAPY;
+  }
+  for (const id in nodes) {
+    const n = nodes[id];
+    n.el.setAttribute("transform", `translate(${n.x},${n.y})`);
+  }
+}
+
+function fitView() {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const id in nodes) {
+    const n = nodes[id];
+    minX = Math.min(minX, n.x); minY = Math.min(minY, n.y);
+    maxX = Math.max(maxX, n.x + n.w); maxY = Math.max(maxY, n.y + n.h);
+  }
+  if (minX === Infinity) return;
+  const treeW = treeOpen ? TREE_WIDTH : 0;
+  const cw = svg.clientWidth - treeW, ch = svg.clientHeight - TOOLBAR_H;
+  const s = Math.min(1.5, 0.9 * Math.min(cw / (maxX - minX + 1), ch / (maxY - minY + 1)));
+  view.s = s;
+  view.tx = treeW + cw / 2 - s * (minX + maxX) / 2;
+  view.ty = TOOLBAR_H + ch / 2 - s * (minY + maxY) / 2;
+  applyView();
+}
+
+function centerOn(id) {
+  const n = nodes[id];
+  if (!n) return;
+  const treeW = treeOpen ? TREE_WIDTH : 0;
+  const cw = svg.clientWidth - treeW, ch = svg.clientHeight - TOOLBAR_H;
+  view.tx = treeW + cw / 2 - view.s * (n.x + n.w / 2);
+  view.ty = TOOLBAR_H + ch / 2 - view.s * (n.y + n.h / 2);
+  applyView();
+}
+
+function applyView() {
+  world.setAttribute("transform",
+    `translate(${view.tx},${view.ty}) scale(${view.s})`);
+}
+
+// restore whichever pan/zoom belongs to the current mode (a View's own, or
+// the shared drilldown one), falling back to fitting the content
+function restoreViewTransform() {
+  const saved = mode === "bdd" ? activeView.view : drilldownView;
+  if (saved) { view = { ...saved }; applyView(); }
+  else fitView();
+}
+
+// ---------------------------------------------------------------- IBD (internal block diagram)
+
+// connections grouped by owning part def id
+function connectionsByOwner() {
+  const map = {};
+  for (const c of (model.connections || []))
+    (map[c.owner] = map[c.owner] || []).push(c);
+  return map;
+}
+
+function ibdRoleId(ownerId, role) { return ownerId + "::ibd::" + role; }
+
+// map a (possibly qualified) type/short name to a node id; mirrors the
+// server-side Model.resolve, needed client-side to find a role box's own
+// type (for nested IBD detection) since /api/model returns plain JSON
+function resolveTypeId(name) {
+  if (!name) return null;
+  const simple = name.split("::").pop();
+  const n = model.nodes.find(x => x.name === simple || x.shortName === simple);
+  return n ? n.id : null;
+}
+
+// the part def (or usage's type) whose internal block diagram can be opened
+// from element `id`, or null if it has none
+function ibdTargetFor(id) {
+  const byOwner = connectionsByOwner();
+  if (byOwner[id]) return id;
+  if (mode === "ibd") {
+    // a part box inside an IBD: open the IBD of its own type, if it has one
+    const n = nodes[id];
+    const typeId = n && resolveTypeId(n.data.package || "");
+    if (typeId && byOwner[typeId]) return typeId;
+  } else {
+    const t = model.edges.find(e => e.kind === "typing" && e.from === id);
+    if (t && byOwner[t.to]) return t.to;
+  }
+  return null;
+}
+
+async function openIbd(ownerId) {
+  await saveIfDirty();
+  if (mode === "ibd") ibdStack.push(ibdOwner);
+  mode = "ibd";
+  ibdOwner = ownerId;
+  hiddenEdges = drilldownHiddenEdges;
+  rebuild();
+  restoreViewTransform();
+  updateTitle();
+  updateIbdToolbar();
+}
+
+async function closeIbd() {
+  await saveIfDirty();
+  if (ibdStack.length) {
+    ibdOwner = ibdStack.pop();
+  } else {
+    mode = "bdd";
+    ibdOwner = null;
+    hiddenEdges = new Set(activeView.hiddenEdges || []);
+  }
+  rebuild();
+  restoreViewTransform();
+  updateTitle();
+  updateIbdToolbar();
+}
+
+function updateIbdToolbar() {
+  const back = document.getElementById("ibdBackBtn");
+  const inDrilldown = mode === "ibd" || mode === "ucd";
+  back.style.display = inDrilldown ? "" : "none";
+  back.textContent = mode === "ibd" && ibdStack.length
+    ? "◀ Back to parent IBD" : "◀ Back to BDD";
+  for (const id of ["viewSel", "newViewBtn", "renameViewBtn", "deleteViewBtn"])
+    document.getElementById(id).disabled = inDrilldown;
+  unhideBtn.disabled = inDrilldown || !hiddenEdges.size;
+}
+
+async function closeDrilldown() {
+  if (mode === "ibd") await closeIbd();
+  else if (mode === "ucd") await closeUcd();
+}
+
+// persist the outgoing mode/View's state before switching away from it —
+// called at the top of every function that changes mode/ibdOwner/ucdOwner/
+// activeView, so unsaved edits survive navigation instead of being discarded
+async function saveIfDirty() {
+  if (dirty) await save();
+}
+
+// role boxes (from the owner's part list) and connectors between them
+function buildIbdNodesEdges() {
+  const owner = model.nodes.find(n => n.id === ibdOwner);
+  if (!owner) return;
+  const roleIndex = {};
+  for (const p of owner.parts) {
+    const m = p.text.match(/^(\w+)(?:\s*:\s*(.+))?$/);
+    if (!m) continue;
+    const [, role, type] = m;
+    const id = ibdRoleId(ibdOwner, role);
+    roleIndex[role] = id;
+    const d = { id, name: role, kind: "part", shortName: null, abstract: false,
+                package: type || "", attributes: [], parts: [], doc: null };
+    const saved = posMap()[id];
+    const n = { data: d, x: saved ? saved.x : 0, y: saved ? saved.y : 0, w: 0, h: 0 };
+    nodes[id] = n;
+    nodeLayer.appendChild(createNodeEl(n));
+  }
+  const conns = connectionsByOwner()[ibdOwner] || [];
+  for (const c of conns) {
+    const [fromRole, ...fromRest] = c.from.split(".");
+    const [toRole, ...toRest] = c.to.split(".");
+    const fromId = roleIndex[fromRole], toId = roleIndex[toRole];
+    if (!fromId || !toId) continue; // endpoint not a direct part of this IBD
+    const label = [c.name, fromRest.join("."), toRest.join(".")]
+      .filter(Boolean).join(" · ");
+    const e = createEdgeEl({ kind: "connector", from: fromId, to: toId, label });
+    edges.push(e);
+    edgeLayer.appendChild(e.el);
+  }
+}
+
+// ------------------------------------------------------- use case diagram
+
+function ucdFor(ownerId) {
+  return (model.ucds || []).find(u => u.owner === ownerId) || null;
+}
+
+// the subject whose use case diagram can be opened from element `id`,
+// or null if it has none
+function ucdTargetFor(id) {
+  return ucdFor(id) ? id : null;
+}
+
+function ucdRoleId(ownerId, role) { return ownerId + "::ucd::" + role; }
+
+async function openUcd(ownerId) {
+  await saveIfDirty();
+  mode = "ucd";
+  ucdOwner = ownerId;
+  hiddenEdges = drilldownHiddenEdges;
+  rebuild();
+  restoreViewTransform();
+  updateTitle();
+  updateIbdToolbar();
+}
+
+async function closeUcd() {
+  await saveIfDirty();
+  mode = "bdd";
+  ucdOwner = null;
+  hiddenEdges = new Set(activeView.hiddenEdges || []);
+  rebuild();
+  restoreViewTransform();
+  updateTitle();
+  updateIbdToolbar();
+}
+
+// role boxes (actors and use cases declared in the useDiagram block) and
+// the associations between them
+function buildUcdNodesEdges() {
+  const ucd = ucdFor(ucdOwner);
+  if (!ucd) return;
+  const roleIndex = {};
+  for (const r of ucd.roles) {
+    const id = ucdRoleId(ucdOwner, r.name);
+    roleIndex[r.name] = id;
+    const d = { id, name: r.name, kind: r.kind, shortName: null, abstract: false,
+                package: r.type || "", attributes: [], parts: [], doc: null };
+    const saved = posMap()[id];
+    const n = { data: d, x: saved ? saved.x : 0, y: saved ? saved.y : 0, w: 0, h: 0 };
+    nodes[id] = n;
+    nodeLayer.appendChild(createNodeEl(n));
+  }
+  for (const c of ucd.connections) {
+    const fromId = roleIndex[c.from], toId = roleIndex[c.to];
+    if (!fromId || !toId) continue; // endpoint not a declared role of this diagram
+    const e = createEdgeEl({ kind: "association", from: fromId, to: toId, label: c.name });
+    edges.push(e);
+    edgeLayer.appendChild(e.el);
+  }
+}
+
+// ---------------------------------------------------------------- build
+
+function buildBddNodesEdges() {
+  const vis = visibleIds();
+  for (const d of model.nodes) {
+    if (!vis.has(d.id)) continue;
+    const saved = posMap()[d.id];
+    const n = { data: d, x: saved ? saved.x : 0, y: saved ? saved.y : 0, w: 0, h: 0 };
+    nodes[d.id] = n;
+    nodeLayer.appendChild(createNodeEl(n));
+  }
+  // offset parallel edges between the same pair of nodes
+  const shown = model.edges.filter(d =>
+    d.from in nodes && d.to in nodes && !hiddenEdges.has(edgeKey(d)));
+  const pairCount = {};
+  for (const d of shown) {
+    const key = [d.from, d.to].sort().join("|");
+    pairCount[key] = (pairCount[key] || 0) + 1;
+  }
+  const pairSeen = {};
+  for (const d of shown) {
+    const e = createEdgeEl(d);
+    const key = [d.from, d.to].sort().join("|");
+    const i = (pairSeen[key] = (pairSeen[key] || 0) + 1);
+    if (pairCount[key] > 1) e.off = (i - 1 - (pairCount[key] - 1) / 2) * 16;
+    edges.push(e);
+    edgeLayer.appendChild(e.el);
+  }
+}
+
+// ---------------------------------------------------------------- element tree
+
+// group model.nodes into a tree keyed by packagePath segments; nodes with
+// no packagePath (declared outside any package) collect at the root
+function packageTree(nodeList) {
+  const root = { children: new Map(), elems: [] };
+  for (const n of nodeList) {
+    let cur = root;
+    for (const part of (n.packagePath || "").split("::").filter(Boolean)) {
+      if (!cur.children.has(part))
+        cur.children.set(part, { children: new Map(), elems: [] });
+      cur = cur.children.get(part);
+    }
+    cur.elems.push(n);
+  }
+  return root;
+}
+
+function treeDotClass(kind) {
+  if (kind.startsWith("requirement")) return "k-req";
+  if (kind === "actor def" || kind === "actor") return "k-actor";
+  if (kind === "use case def" || kind === "use case") return "k-usecase";
+  if (!kind.endsWith("def")) return "k-usage";
+  return "";
+}
+
+function renderTreeElem(n, container) {
+  const row = document.createElement("div");
+  const visible = n.id in nodes;             // a member of the active View, currently rendered
+  const classes = ["elem"];
+  const dotCls = treeDotClass(n.kind);
+  if (dotCls) classes.push(dotCls);
+  if (!visible) classes.push("dimmed");
+  row.className = classes.join(" ");
+  row.title = visible ? "" : "not in this view — check to add it";
+  const cb = document.createElement("input");
+  cb.type = "checkbox";
+  cb.checked = visible;
+  cb.toggleAttribute("checked", visible);
+  cb.disabled = mode !== "bdd";
+  cb.addEventListener("change", () => {
+    if (cb.checked) {
+      if (!activeView.elements.includes(n.id)) activeView.elements.push(n.id);
+    } else {
+      activeView.elements = activeView.elements.filter(id => id !== n.id);
+      delete posMap()[n.id];
+    }
+    rebuild();
+    setDirty(true);
+  });
+  const dot = document.createElement("span");
+  dot.className = "dot";
+  const lbl = document.createElement("span");
+  lbl.className = "lbl";
+  lbl.textContent = n.name;
+  lbl.addEventListener("click", () => {
+    if (mode !== "bdd") return;
+    selectNode(n.id);
+    if (n.id in nodes) centerOn(n.id);
+  });
+  row.appendChild(cb);
+  row.appendChild(dot);
+  row.appendChild(lbl);
+  container.appendChild(row);
+}
+
+// every element under a tree node, including nested subpackages
+function allElemsUnder(node) {
+  let out = node.elems.slice();
+  for (const child of node.children.values()) out = out.concat(allElemsUnder(child));
+  return out;
+}
+
+function renderTreePkg(name, node, container) {
+  const descendants = allElemsUnder(node);
+  const visibleCount = descendants.filter(n => n.id in nodes).length;
+  const allVisible = descendants.length > 0 && visibleCount === descendants.length;
+
+  const hdr = document.createElement("div");
+  hdr.className = "pkg";
+  const cb = document.createElement("input");
+  cb.type = "checkbox";
+  cb.checked = allVisible;
+  cb.toggleAttribute("checked", allVisible);
+  cb.indeterminate = visibleCount > 0 && !allVisible;
+  cb.disabled = mode !== "bdd" || !descendants.length;
+  cb.title = "Add/remove every element in this package";
+  // a click on the checkbox shouldn't also toggle the header's collapse
+  cb.addEventListener("click", evt => evt.stopPropagation());
+  cb.addEventListener("change", () => {
+    const ids = descendants.map(n => n.id);
+    if (cb.checked) {
+      for (const id of ids)
+        if (!activeView.elements.includes(id)) activeView.elements.push(id);
+    } else {
+      const idSet = new Set(ids);
+      activeView.elements = activeView.elements.filter(id => !idSet.has(id));
+      for (const id of ids) delete posMap()[id];
+    }
+    rebuild();
+    setDirty(true);
+  });
+  hdr.appendChild(cb);
+  const tri = document.createElement("span");
+  tri.className = "tri";
+  tri.textContent = "▾";
+  hdr.appendChild(tri);
+  hdr.appendChild(document.createTextNode(name));
+  const body = document.createElement("div");
+  body.className = "pkg-body";
+  hdr.addEventListener("click", () => {
+    const collapsed = body.classList.toggle("collapsed");
+    tri.textContent = collapsed ? "▸" : "▾";
+  });
+  container.appendChild(hdr);
+  container.appendChild(body);
+  renderTreeNode(node, body);
+}
+
+function renderTreeNode(node, container) {
+  for (const [name, child] of [...node.children.entries()].sort((a, b) => a[0].localeCompare(b[0])))
+    renderTreePkg(name, child, container);
+  for (const n of [...node.elems].sort((a, b) => a.name.localeCompare(b.name)))
+    renderTreeElem(n, container);
+}
+
+function renderTree() {
+  treeEl.innerHTML = "";
+  treeEl.classList.toggle("disabled", mode !== "bdd");
+  if (!model) return;
+  renderTreeNode(packageTree(model.nodes), treeEl);
+}
+
+function setTreeOpen(open) {
+  treeOpen = open;
+  treeEl.classList.toggle("hidden", !open);
+  // keep the legend from sitting under the tree panel's bottom-left corner
+  document.getElementById("legend").style.left = (open ? TREE_WIDTH + 12 : 12) + "px";
+}
+
+function rebuild() {
+  nodeLayer.innerHTML = "";
+  edgeLayer.innerHTML = "";
+  nodes = {}; edges = [];
+  if (mode === "ibd") buildIbdNodesEdges();
+  else if (mode === "ucd") buildUcdNodesEdges();
+  else buildBddNodesEdges();
+  unhideBtn.textContent = hiddenEdges.size ? `Unhide (${hiddenEdges.size})` : "Unhide";
+  unhideBtn.disabled = mode !== "bdd" || !hiddenEdges.size;
+  updateLegend();
+  autoPlace(false);
+  updateAllEdges();
+  applySelection();
+  renderTree();
+}
+
+// ---------------------------------------------------------------- selection / highlight
+
+// left-click highlight: a selected element gets "sel", everything it's
+// wired to (edges + their other endpoint) gets "hl". A selected connection
+// gets "sel" itself and its two endpoint elements get "hl". Purely a view
+// aid — not persisted to the layout.
+function clearHighlightClasses() {
+  for (const id in nodes) nodes[id].el.classList.remove("sel", "hl");
+  for (const e of edges) e.el.classList.remove("sel", "hl");
+}
+
+function applySelection() {
+  clearHighlightClasses();
+  if (!selection) return;
+  if (selection.type === "node") {
+    const n = nodes[selection.id];
+    if (!n) { selection = null; return; }
+    n.el.classList.add("sel");
+    for (const e of edges) {
+      if (e.data.from !== selection.id && e.data.to !== selection.id) continue;
+      e.el.classList.add("hl");
+      const other = nodes[e.data.from === selection.id ? e.data.to : e.data.from];
+      if (other) other.el.classList.add("hl");
+    }
+  } else {
+    const e = edges.find(x => edgeKey(x.data) === selection.key);
+    if (!e) { selection = null; return; }
+    e.el.classList.add("sel");
+    const a = nodes[e.data.from], b = nodes[e.data.to];
+    if (a) a.el.classList.add("hl");
+    if (b) b.el.classList.add("hl");
+  }
+}
+
+function selectNode(id) { selection = { type: "node", id }; applySelection(); }
+function selectEdge(key) { selection = { type: "edge", key }; applySelection(); }
+function clearSelection() { selection = null; clearHighlightClasses(); }
+
+// ---------------------------------------------------------------- interaction
+
+let drag = null; // {kind: "node"|"pan", ...}
+
+function toWorld(evt) {
+  const r = svg.getBoundingClientRect();
+  return { x: (evt.clientX - r.left - view.tx) / view.s,
+           y: (evt.clientY - r.top - view.ty) / view.s };
+}
+
+svg.addEventListener("mousedown", evt => {
+  if (evt.button !== 0) return;
+  const nodeEl = evt.target.closest(".node");
+  if (nodeEl) {
+    selectNode(nodeEl.dataset.id);
+    const n = nodes[nodeEl.dataset.id];
+    const p = toWorld(evt);
+    drag = { kind: "node", n, dx: p.x - n.x, dy: p.y - n.y,
+             startX: evt.clientX, startY: evt.clientY, moved: false };
+    nodeEl.classList.add("dragging");
+    nodeLayer.appendChild(nodeEl); // raise to front
+    evt.preventDefault();
+    return;
+  }
+  const edgeEl = evt.target.closest(".edge");
+  if (edgeEl) {
+    selectEdge(edgeEl.dataset.key);
+    evt.preventDefault();
+    return;
+  }
+  clearSelection();
+  drag = { kind: "pan", sx: evt.clientX, sy: evt.clientY,
+           tx: view.tx, ty: view.ty };
+  svg.classList.add("panning");
+  evt.preventDefault();
+});
+
+window.addEventListener("mousemove", evt => {
+  if (!drag) return;
+  if (drag.kind === "node") {
+    if (!drag.moved) {
+      // below this threshold it's a click (expand/collapse), not a drag
+      if (Math.hypot(evt.clientX - drag.startX, evt.clientY - drag.startY) < 4)
+        return;
+      drag.moved = true;
+    }
+    const p = toWorld(evt);
+    drag.n.x = Math.round(p.x - drag.dx);
+    drag.n.y = Math.round(p.y - drag.dy);
+    drag.n.el.setAttribute("transform", `translate(${drag.n.x},${drag.n.y})`);
+    posMap()[drag.n.data.id] = { x: drag.n.x, y: drag.n.y };
+    updateAllEdges();
+    setDirty(true);
+  } else {
+    view.tx = drag.tx + (evt.clientX - drag.sx);
+    view.ty = drag.ty + (evt.clientY - drag.sy);
+    applyView();
+  }
+});
+
+window.addEventListener("mouseup", () => {
+  if (drag && drag.kind === "node") {
+    drag.n.el.classList.remove("dragging");
+  }
+  svg.classList.remove("panning");
+  drag = null;
+});
+
+// ---------------------------------------------------------------- context menu
+
+const ctxmenu = document.getElementById("ctxmenu");
+
+function showMenu(x, y, items) {
+  ctxmenu.innerHTML = "";
+  for (const it of items) {
+    if (it.sep) {
+      const s = document.createElement("div");
+      s.className = "sep";
+      ctxmenu.appendChild(s);
+      continue;
+    }
+    const d = document.createElement("div");
+    d.className = "item" + (it.disabled ? " disabled" : "");
+    d.textContent = it.label;
+    if (!it.disabled)
+      d.addEventListener("click", () => { hideMenu(); it.action(); });
+    ctxmenu.appendChild(d);
+  }
+  ctxmenu.style.display = "block";
+  ctxmenu.style.left = Math.min(x, window.innerWidth - ctxmenu.offsetWidth - 4) + "px";
+  ctxmenu.style.top = Math.min(y, window.innerHeight - ctxmenu.offsetHeight - 4) + "px";
+}
+
+function hideMenu() { ctxmenu.style.display = "none"; }
+
+window.addEventListener("mousedown", evt => {
+  if (!ctxmenu.contains(evt.target)) hideMenu();
+}, true);
+window.addEventListener("keydown", evt => {
+  if (evt.key === "Escape") { hideMenu(); clearSelection(); }
+});
+
+// future element actions (linked specification, internal diagram, ...) go here
+function nodeMenuItems(id) {
+  const items = [];
+  const ibdTarget = ibdTargetFor(id);
+  if (ibdTarget)
+    items.push({
+      label: "Open internal block diagram",
+      action: () => openIbd(ibdTarget),
+    });
+  const ucdTarget = mode === "bdd" && ucdTargetFor(id);
+  if (ucdTarget)
+    items.push({
+      label: "Open use case diagram",
+      action: () => openUcd(ucdTarget),
+    });
+  items.push({ sep: true });
+  const doc = layout.docs[id];
+  if (doc)
+    items.push({
+      label: `Open documentation (${doc.split(/[\\/]/).pop()})`,
+      action: () => {
+        const url = /^https?:\/\//i.test(doc)
+          ? doc
+          : "/api/doc?path=" + encodeURIComponent(doc);
+        window.open(url, "_blank");
+      },
+    });
+  items.push({
+    label: doc ? "Edit documentation link…" : "Add documentation link…",
+    action: () => {
+      const v = prompt(
+        "Path or URL of the documentation (e.g. a PDF).\n" +
+        "Relative paths are resolved from the model file's folder.\n" +
+        "Leave empty to remove the link.",
+        doc || "");
+      if (v === null) return;
+      if (v.trim()) layout.docs[id] = v.trim();
+      else delete layout.docs[id];
+      rebuild();
+      setDirty(true);
+    },
+  });
+  if (mode === "bdd") {
+    items.push({ sep: true });
+    items.push({
+      label: "Remove from view",
+      action: () => {
+        activeView.elements = activeView.elements.filter(x => x !== id);
+        delete posMap()[id];
+        rebuild();
+        setDirty(true);
+      },
+    });
+  }
+  return items;
+}
+
+function edgeMenuItems(key) {
+  return [{
+    label: "Hide connection",
+    action: () => {
+      hiddenEdges.add(key);
+      rebuild();
+      setDirty(true);
+    },
+  }];
+}
+
+function backgroundMenuItems() {
+  const items = [];
+  if (mode === "ibd") {
+    items.push({
+      label: ibdStack.length ? "Close internal block diagram (back to parent IBD)"
+                              : "Close internal block diagram",
+      action: closeIbd,
+    });
+    items.push({ sep: true });
+  } else if (mode === "ucd") {
+    items.push({ label: "Close use case diagram", action: closeUcd });
+    items.push({ sep: true });
+  }
+  items.push(
+    {
+      label: `Unhide connections (${hiddenEdges.size})`,
+      disabled: mode !== "bdd" || !hiddenEdges.size,
+      action: () => {
+        hiddenEdges.clear();
+        rebuild();
+        setDirty(true);
+      },
+    },
+    { sep: true },
+    { label: "Fit view", action: fitView },
+    {
+      label: "Auto-layout",
+      action: () => {
+        for (const id of Object.keys(posMap())) delete posMap()[id];
+        autoPlace(true);
+        updateAllEdges();
+        fitView();
+        setDirty(true);
+      },
+    },
+  );
+  return items;
+}
+
+svg.addEventListener("contextmenu", evt => {
+  evt.preventDefault();
+  const nodeEl = evt.target.closest(".node");
+  if (nodeEl) {
+    showMenu(evt.clientX, evt.clientY, nodeMenuItems(nodeEl.dataset.id));
+    return;
+  }
+  const edgeEl = evt.target.closest(".edge");
+  if (edgeEl) {
+    showMenu(evt.clientX, evt.clientY, edgeMenuItems(edgeEl.dataset.key));
+    return;
+  }
+  showMenu(evt.clientX, evt.clientY, backgroundMenuItems());
+});
+
+svg.addEventListener("wheel", evt => {
+  evt.preventDefault();
+  const k = evt.deltaY < 0 ? 1.1 : 1 / 1.1;
+  const r = svg.getBoundingClientRect();
+  const mx = evt.clientX - r.left, my = evt.clientY - r.top;
+  view.tx = mx - (mx - view.tx) * k;
+  view.ty = my - (my - view.ty) * k;
+  view.s *= k;
+  applyView();
+}, { passive: false });
+
+// ---------------------------------------------------------------- persistence
+
+async function save() {
+  for (const id in nodes) posMap()[id] = { x: nodes[id].x, y: nodes[id].y };
+  if (mode === "bdd") {
+    activeView.hiddenEdges = [...hiddenEdges];
+    activeView.view = { ...view };
+  } else {
+    drilldownView = { ...view };
+  }
+  activeView.options = {
+    attrs: document.getElementById("attrsCb").checked,
+    parts: document.getElementById("partsCb").checked,
+  };
+
+  layout.docs = layout.docs || {};
+  layout.treeOpen = treeOpen;
+  layout.activeView = activeViewId;
+  layout.mode = mode;
+  layout.ibdOwner = ibdOwner;
+  layout.ucdOwner = ucdOwner;
+  layout.drilldownNodes = drilldownNodes;
+  layout.drilldownHiddenEdges = [...drilldownHiddenEdges];
+  layout.drilldownView = drilldownView;
+
+  const requests = [
+    fetch("/api/layout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(layout),
+    }),
+  ];
+  if (activeViewId)
+    requests.push(fetch(`/api/views/${activeViewId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(activeView),
+    }));
+  const results = await Promise.all(requests);
+  if (results.every(r => r.ok)) { setDirty(false); flash("saved ✓"); }
+  else flash("save failed!");
+}
+
+function fillViewSel() {
+  const sel = document.getElementById("viewSel");
+  sel.innerHTML = "";
+  for (const v of views) {
+    const o = document.createElement("option");
+    o.value = v.id;
+    o.textContent = v.name;
+    sel.appendChild(o);
+  }
+  sel.value = activeViewId || "";
+}
+
+async function switchToView(id) {
+  await saveIfDirty();
+  activeViewId = id;
+  activeView = await (await fetch(`/api/views/${id}`)).json();
+  hiddenEdges = new Set(activeView.hiddenEdges || []);
+  if (activeView.options) {
+    if ("attrs" in activeView.options)
+      document.getElementById("attrsCb").checked = activeView.options.attrs;
+    if ("parts" in activeView.options)
+      document.getElementById("partsCb").checked = activeView.options.parts;
+  }
+  mode = "bdd"; ibdOwner = null; ucdOwner = null; ibdStack = [];
+  rebuild();
+  restoreViewTransform();
+  updateTitle();
+  updateIbdToolbar();
+  fillViewSel();
+}
+
+async function createView() {
+  const name = prompt("New view name:", "");
+  if (name === null) return;
+  const trimmed = name.trim();
+  if (!trimmed) return;
+  const res = await fetch("/api/views", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: trimmed }),
+  });
+  const created = await res.json();
+  views.push(created);
+  views.sort((a, b) => a.name.localeCompare(b.name));
+  await switchToView(created.id);
+}
+
+async function renameActiveView() {
+  if (!activeView) return;
+  const name = prompt("Rename view:", activeView.name);
+  if (name === null) return;
+  const trimmed = name.trim();
+  if (!trimmed || trimmed === activeView.name) return;
+  activeView.name = trimmed;
+  const v = views.find(x => x.id === activeViewId);
+  if (v) v.name = trimmed;
+  fillViewSel();
+  updateTitle();
+  await save();
+}
+
+async function deleteActiveView() {
+  if (!activeView) return;
+  if (!confirm(`Delete view "${activeView.name}"? This cannot be undone.`)) return;
+  const deletedId = activeViewId;
+  await fetch(`/api/views/${deletedId}`, { method: "DELETE" });
+  // don't try to resave the view we just deleted
+  dirty = false;
+  setDirty(false);
+  views = views.filter(v => v.id !== deletedId);
+  if (!views.length) {
+    const res = await fetch("/api/views", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Default" }),
+    });
+    views = [await res.json()];
+  }
+  await switchToView(views[0].id);
+}
+
+function updateTitle() {
+  if (mode === "ibd") {
+    const owner = model.nodes.find(n => n.id === ibdOwner);
+    const name = owner ? owner.name : ibdOwner;
+    document.getElementById("title").textContent = "Internal Block Diagram — " + name;
+    document.title = "IBD: " + name;
+  } else if (mode === "ucd") {
+    const owner = model.nodes.find(n => n.id === ucdOwner);
+    const name = owner ? owner.name : ucdOwner;
+    document.getElementById("title").textContent = "Use Case Diagram — " + name;
+    document.title = "UCD: " + name;
+  } else {
+    const name = activeView ? activeView.name : model.package || "SysML";
+    document.getElementById("title").textContent = name + " — " + model.file;
+    document.title = name || "SysML Explorer";
+  }
+}
+
+async function loadModel() {
+  const m = await (await fetch("/api/model")).json();
+  const errEl = document.getElementById("error");
+  if (m.error) {
+    errEl.textContent = "Parse error: " + m.error;
+    errEl.style.display = "block";
+    return;
+  }
+  errEl.style.display = "none";
+  model = m;
+  const ids = new Set(m.nodes.map(n => n.id));
+  if (mode === "ibd" && !ids.has(ibdOwner)) {
+    mode = "bdd"; ibdOwner = null; ibdStack = [];
+    hiddenEdges = new Set(activeView.hiddenEdges || []);
+  }
+  if (mode === "ucd" && !ids.has(ucdOwner)) {
+    mode = "bdd"; ucdOwner = null;
+    hiddenEdges = new Set(activeView.hiddenEdges || []);
+  }
+  updateTitle();
+  updateIbdToolbar();
+  rebuild();
+}
+
+// ensures `views` is non-empty and activeView/activeViewId point at a real
+// view; a brand-new folder (no views yet) gets one auto-created and seeded
+// with every current element, so the first launch isn't a blank canvas
+async function bootstrapViews() {
+  views = await (await fetch("/api/views")).json();
+  if (!views.length) {
+    const res = await fetch("/api/views", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Default" }),
+    });
+    const created = await res.json();
+    const seeded = {
+      name: created.name, elements: model.nodes.map(n => n.id),
+      nodes: {}, hiddenEdges: [], view: null, options: {},
+    };
+    await fetch(`/api/views/${created.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(seeded),
+    });
+    views = [created];
+  }
+  views.sort((a, b) => a.name.localeCompare(b.name));
+
+  const wantId = layout.activeView && views.some(v => v.id === layout.activeView)
+    ? layout.activeView : views[0].id;
+  activeViewId = wantId;
+  activeView = await (await fetch(`/api/views/${wantId}`)).json();
+  hiddenEdges = new Set(activeView.hiddenEdges || []);
+  if (activeView.options) {
+    if ("attrs" in activeView.options)
+      document.getElementById("attrsCb").checked = activeView.options.attrs;
+    if ("parts" in activeView.options)
+      document.getElementById("partsCb").checked = activeView.options.parts;
+  }
+}
+
+async function init() {
+  try {
+    const saved = await (await fetch("/api/layout")).json();
+    if (saved && typeof saved === "object") layout = saved;
+  } catch (e) { /* no layout yet */ }
+  if (!layout.docs) layout.docs = {};  // nodeId -> documentation path/URL
+  setTreeOpen("treeOpen" in layout ? layout.treeOpen : true);
+  drilldownNodes = layout.drilldownNodes || {};
+  drilldownHiddenEdges = new Set(layout.drilldownHiddenEdges || []);
+  drilldownView = layout.drilldownView || null;
+
+  const m = await (await fetch("/api/model")).json();
+  const errEl = document.getElementById("error");
+  if (m.error) {
+    errEl.textContent = "Parse error: " + m.error;
+    errEl.style.display = "block";
+    return;
+  }
+  errEl.style.display = "none";
+  model = m;
+
+  await bootstrapViews();
+
+  const ids = new Set(model.nodes.map(n => n.id));
+  if (layout.mode === "ibd" && layout.ibdOwner && ids.has(layout.ibdOwner)) {
+    mode = "ibd";
+    ibdOwner = layout.ibdOwner;
+    hiddenEdges = drilldownHiddenEdges;
+  } else if (layout.mode === "ucd" && layout.ucdOwner && ids.has(layout.ucdOwner)) {
+    mode = "ucd";
+    ucdOwner = layout.ucdOwner;
+    hiddenEdges = drilldownHiddenEdges;
+  }
+
+  fillViewSel();
+  updateTitle();
+  updateIbdToolbar();
+  rebuild();
+  restoreViewTransform();
+}
+
+document.getElementById("treeBtn").addEventListener("click", () => {
+  setTreeOpen(!treeOpen);
+  setDirty(true);
+});
+document.getElementById("saveBtn").addEventListener("click", save);
+document.getElementById("ibdBackBtn").addEventListener("click", closeDrilldown);
+document.getElementById("fitBtn").addEventListener("click", fitView);
+document.getElementById("autoBtn").addEventListener("click", () => {
+  for (const id of Object.keys(posMap())) delete posMap()[id];
+  autoPlace(true);
+  updateAllEdges();
+  fitView();
+  setDirty(true);
+});
+document.getElementById("reloadBtn").addEventListener("click", loadModel);
+document.getElementById("viewSel").addEventListener("change", evt => {
+  switchToView(evt.target.value);
+});
+document.getElementById("newViewBtn").addEventListener("click", createView);
+document.getElementById("renameViewBtn").addEventListener("click", renameActiveView);
+document.getElementById("deleteViewBtn").addEventListener("click", deleteActiveView);
+unhideBtn.addEventListener("click", () => {
+  hiddenEdges.clear();
+  rebuild();
+  setDirty(true);
+});
+for (const id of ["attrsCb", "partsCb"]) {
+  document.getElementById(id).addEventListener("change", () => {
+    rebuild();
+    setDirty(true);
+  });
+}
+window.addEventListener("keydown", evt => {
+  if ((evt.ctrlKey || evt.metaKey) && evt.key === "s") {
+    evt.preventDefault();
+    save();
+  }
+});
+window.addEventListener("beforeunload", evt => {
+  if (dirty) evt.preventDefault();
+});
+
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,256 @@
+{
+  "nodes": {
+    "RobotArmLogicalArchitecture::RobotArmSystem::ibd::controller": {
+      "x": 19,
+      "y": -187
+    },
+    "RobotArmLogicalArchitecture::RobotArmSystem::ibd::baseJoint": {
+      "x": -310,
+      "y": 0
+    },
+    "RobotArmLogicalArchitecture::RobotArmSystem::ibd::shoulderJoint": {
+      "x": -140,
+      "y": 0
+    },
+    "RobotArmLogicalArchitecture::RobotArmSystem::ibd::elbowJoint": {
+      "x": 30,
+      "y": 0
+    },
+    "RobotArmLogicalArchitecture::RobotArmSystem::ibd::wristJoint": {
+      "x": 200,
+      "y": 0
+    },
+    "RobotArmLogicalArchitecture::RobotArmSystem::ibd::gripperJoint": {
+      "x": 370,
+      "y": 0
+    },
+    "RoboticArmContext::RoboticArmOperationalContext::ibd::robot": {
+      "x": -48,
+      "y": -142
+    },
+    "RoboticArmContext::RoboticArmOperationalContext::ibd::printer": {
+      "x": -225,
+      "y": 0
+    },
+    "RoboticArmContext::RoboticArmOperationalContext::ibd::shelf": {
+      "x": 115,
+      "y": 0
+    },
+    "RoboticArmContext::Printer": {
+      "x": -69,
+      "y": -9
+    },
+    "RoboticArmContext::StorageShelf": {
+      "x": -165,
+      "y": 249
+    },
+    "RobotArmLogicalArchitecture::RobotArmSystem": {
+      "x": -143,
+      "y": -242
+    },
+    "RobotArmLogicalArchitecture::ServoDrive": {
+      "x": -1941,
+      "y": 218
+    },
+    "RobotArmLogicalArchitecture::SmallServoDrive": {
+      "x": -1248.5,
+      "y": 420
+    },
+    "RobotArmLogicalArchitecture::MediumServoDrive": {
+      "x": -1075.5,
+      "y": 420
+    },
+    "RobotArmLogicalArchitecture::LargeServoDrive": {
+      "x": -885.5,
+      "y": 420
+    },
+    "RobotArmLogicalArchitecture::Joint": {
+      "x": -792.5,
+      "y": 0
+    },
+    "RobotArmLogicalArchitecture::BaseJoint": {
+      "x": -1771,
+      "y": 218
+    },
+    "RobotArmLogicalArchitecture::ShoulderJoint": {
+      "x": -1573,
+      "y": 218
+    },
+    "RobotArmLogicalArchitecture::ElbowJoint": {
+      "x": -1375,
+      "y": 218
+    },
+    "RobotArmLogicalArchitecture::WristJoint": {
+      "x": -1177,
+      "y": 218
+    },
+    "RobotArmLogicalArchitecture::GripperJoint": {
+      "x": -969,
+      "y": 218
+    },
+    "RobotArmLogicalArchitecture::PowerSupply": {
+      "x": -761,
+      "y": 218
+    },
+    "RobotArmLogicalArchitecture::CompactPowerSupply": {
+      "x": -712.5,
+      "y": 420
+    },
+    "RobotArmLogicalArchitecture::StandardPowerSupply": {
+      "x": -507.5,
+      "y": 420
+    },
+    "RobotArmLogicalArchitecture::HighPowerSupply": {
+      "x": -301.5,
+      "y": 420
+    },
+    "RobotArmLogicalArchitecture::Display": {
+      "x": -591,
+      "y": 218
+    },
+    "RobotArmLogicalArchitecture::NoDisplay": {
+      "x": -120.5,
+      "y": 420
+    },
+    "RobotArmLogicalArchitecture::BasicLCDDisplay": {
+      "x": 70.5,
+      "y": 420
+    },
+    "RobotArmLogicalArchitecture::AdvancedOLEDDisplay": {
+      "x": 262.5,
+      "y": 420
+    },
+    "RobotArmLogicalArchitecture::Controller": {
+      "x": -554.5,
+      "y": 0
+    },
+    "RobotArmLogicalArchitecture::BasicController": {
+      "x": -413,
+      "y": 218
+    },
+    "RobotArmLogicalArchitecture::StandardController": {
+      "x": -142,
+      "y": 218
+    },
+    "RobotArmLogicalArchitecture::AdvancedController": {
+      "x": 129,
+      "y": 218
+    },
+    "RobotArmLogicalArchitecture::robotArm": {
+      "x": 378,
+      "y": 218
+    },
+    "RoboticArmContext::BuildPlatform": {
+      "x": -94.5,
+      "y": 0
+    },
+    "RoboticArmContext::armContext": {
+      "x": 469.5,
+      "y": 0
+    },
+    "RoboticArmRequirements::RobotArmRequirement": {
+      "x": 639.5,
+      "y": 0
+    },
+    "RoboticArmRequirements::RoboticArmSystemRequirements": {
+      "x": 548,
+      "y": 218
+    },
+    "RoboticArmRequirements::ArchitectureRequirements::ModularArchitecture": {
+      "x": 867,
+      "y": 218
+    },
+    "RoboticArmRequirements::PerformanceRequirements::ObjectWeight": {
+      "x": 471.5,
+      "y": 420
+    },
+    "RoboticArmRequirements::PerformanceRequirements::XAxisTravel": {
+      "x": 1143,
+      "y": 218
+    },
+    "RoboticArmRequirements::PerformanceRequirements::Speed": {
+      "x": 755.5,
+      "y": 420
+    },
+    "RoboticArmRequirements::PerformanceRequirements::Accuracy": {
+      "x": 1442,
+      "y": 218
+    },
+    "RoboticArmRequirements::PerformanceRequirements::ReachRadius": {
+      "x": 1728,
+      "y": 218
+    },
+    "RoboticArmRequirements::InterfaceRequirements::PowerInterface": {
+      "x": 1019.5,
+      "y": 420
+    },
+    "RoboticArmUseCases::Environment": {
+      "x": -1043,
+      "y": -344
+    },
+    "RoboticArmUseCases::Technician": {
+      "x": -1050,
+      "y": -440
+    },
+    "RoboticArmUseCases::ControlSystem": {
+      "x": -1057,
+      "y": -215
+    },
+    "RoboticArmUseCases::Operator": {
+      "x": -1056,
+      "y": -56
+    },
+    "RoboticArmUseCases::InitializeSystem": {
+      "x": -474,
+      "y": 6
+    },
+    "RoboticArmUseCases::PickAndPlace": {
+      "x": -482,
+      "y": -241
+    },
+    "RoboticArmUseCases::MonitorStatus": {
+      "x": -608,
+      "y": -422
+    },
+    "RoboticArmUseCases::TeachNewPosition": {
+      "x": -317,
+      "y": -401
+    },
+    "RoboticArmUseCases::PerformMaintenance": {
+      "x": -449,
+      "y": -538
+    },
+    "RoboticArmUseCases::PowerManagement": {
+      "x": -167,
+      "y": -571
+    },
+    "RoboticArmUseCases::ExpandModularArm": {
+      "x": 1310.5,
+      "y": 0
+    }
+  },
+  "view": {
+    "tx": 983.0345,
+    "ty": 557.8486661907853,
+    "s": 0.6634702465931216
+  },
+  "options": {
+    "attrs": true,
+    "parts": true
+  },
+  "docs": {},
+  "selectedPackage": "RoboticArmUseCases",
+  "hiddenNodes": [
+    "RoboticArmContext::RoboticArmOperationalContext",
+    "RoboticArmContext::Printer"
+  ],
+  "hiddenEdges": [],
+  "mode": "bdd",
+  "ibdOwner": null,
+  "ucdOwner": null,
+  "treeOpen": true,
+  "activeView": "default",
+  "drilldownNodes": {},
+  "drilldownHiddenEdges": [],
+  "drilldownView": null
+}

@@ -1,0 +1,135 @@
+{
+  "name": "Logical Decomposition",
+  "elements": [
+    "RobotArmLogicalArchitecture::ServoDrive",
+    "RobotArmLogicalArchitecture::SmallServoDrive",
+    "RobotArmLogicalArchitecture::MediumServoDrive",
+    "RobotArmLogicalArchitecture::LargeServoDrive",
+    "RobotArmLogicalArchitecture::Joint",
+    "RobotArmLogicalArchitecture::BaseJoint",
+    "RobotArmLogicalArchitecture::ShoulderJoint",
+    "RobotArmLogicalArchitecture::ElbowJoint",
+    "RobotArmLogicalArchitecture::WristJoint",
+    "RobotArmLogicalArchitecture::GripperJoint",
+    "RobotArmLogicalArchitecture::PowerSupply",
+    "RobotArmLogicalArchitecture::CompactPowerSupply",
+    "RobotArmLogicalArchitecture::StandardPowerSupply",
+    "RobotArmLogicalArchitecture::HighPowerSupply",
+    "RobotArmLogicalArchitecture::Display",
+    "RobotArmLogicalArchitecture::NoDisplay",
+    "RobotArmLogicalArchitecture::BasicLCDDisplay",
+    "RobotArmLogicalArchitecture::AdvancedOLEDDisplay",
+    "RobotArmLogicalArchitecture::Controller",
+    "RobotArmLogicalArchitecture::BasicController",
+    "RobotArmLogicalArchitecture::StandardController",
+    "RobotArmLogicalArchitecture::AdvancedController",
+    "RobotArmLogicalArchitecture::RobotArmSystem"
+  ],
+  "nodes": {
+    "RobotArmLogicalArchitecture::RobotArmSystem": {
+      "x": -102,
+      "y": -279
+    },
+    "RobotArmLogicalArchitecture::Joint": {
+      "x": -1173,
+      "y": -94
+    },
+    "RobotArmLogicalArchitecture::Controller": {
+      "x": 833,
+      "y": -57
+    },
+    "RobotArmLogicalArchitecture::AdvancedController": {
+      "x": 805,
+      "y": 189
+    },
+    "RobotArmLogicalArchitecture::StandardController": {
+      "x": 519,
+      "y": 192
+    },
+    "RobotArmLogicalArchitecture::BasicController": {
+      "x": 228,
+      "y": 191
+    },
+    "RobotArmLogicalArchitecture::Display": {
+      "x": 819,
+      "y": 742
+    },
+    "RobotArmLogicalArchitecture::PowerSupply": {
+      "x": -28,
+      "y": 729
+    },
+    "RobotArmLogicalArchitecture::BasicLCDDisplay": {
+      "x": 690,
+      "y": 461
+    },
+    "RobotArmLogicalArchitecture::AdvancedOLEDDisplay": {
+      "x": 952,
+      "y": 456
+    },
+    "RobotArmLogicalArchitecture::NoDisplay": {
+      "x": 468,
+      "y": 459
+    },
+    "RobotArmLogicalArchitecture::HighPowerSupply": {
+      "x": 191,
+      "y": 442
+    },
+    "RobotArmLogicalArchitecture::StandardPowerSupply": {
+      "x": -67,
+      "y": 439
+    },
+    "RobotArmLogicalArchitecture::CompactPowerSupply": {
+      "x": -283,
+      "y": 441
+    },
+    "RobotArmLogicalArchitecture::ServoDrive": {
+      "x": -1129.5,
+      "y": 218
+    },
+    "RobotArmLogicalArchitecture::SmallServoDrive": {
+      "x": -832,
+      "y": 420
+    },
+    "RobotArmLogicalArchitecture::MediumServoDrive": {
+      "x": -659,
+      "y": 420
+    },
+    "RobotArmLogicalArchitecture::LargeServoDrive": {
+      "x": -469,
+      "y": 420
+    },
+    "RobotArmLogicalArchitecture::BaseJoint": {
+      "x": -959.5,
+      "y": 218
+    },
+    "RobotArmLogicalArchitecture::ShoulderJoint": {
+      "x": -761.5,
+      "y": 218
+    },
+    "RobotArmLogicalArchitecture::ElbowJoint": {
+      "x": -563.5,
+      "y": 218
+    },
+    "RobotArmLogicalArchitecture::WristJoint": {
+      "x": -365.5,
+      "y": 218
+    },
+    "RobotArmLogicalArchitecture::GripperJoint": {
+      "x": -157.5,
+      "y": 218
+    }
+  },
+  "hiddenEdges": [
+    "composition|RobotArmLogicalArchitecture::Controller|RobotArmLogicalArchitecture::Display|display",
+    "composition|RobotArmLogicalArchitecture::Controller|RobotArmLogicalArchitecture::PowerSupply|powerSupply"
+  ],
+  "view": {
+    "tx": 1013.8752798185953,
+    "ty": 298.98706896562453,
+    "s": 0.5771694972322042
+  },
+  "options": {
+    "attrs": true,
+    "parts": true
+  }
+}
