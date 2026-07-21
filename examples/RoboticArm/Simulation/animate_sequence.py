@@ -1,9 +1,10 @@
 """Render the pick-and-place movement sequence as a video.
 
 Side-by-side animation: 3D shaded view of the arm (PyVista, offscreen VTK
-rendering of the CadQuery geometry) on the left, the servo torque profile
-from torque_analysis.py with a moving time cursor on the right. Both panels
-are driven by the same WAYPOINTS, so video time equals plot time.
+rendering of the CadQuery geometry) on the left, the inverse-dynamics servo
+torque profile from inverse_dynamics.py with a moving time cursor on the
+right. Both panels share the same minimum-jerk WAYPOINTS trajectory, so
+video time equals plot time.
 
 Kinematics: the shoulder and elbow joints are re-posed per frame with the
 same joint math as robotic_arm.build_arm_assembly. Parts rigidly attached
@@ -28,7 +29,7 @@ import matplotlib.pyplot as plt
 import pyvista as pv
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "CAD"))
+sys.path.insert(0, str(ROOT / "2_CAD"))
 
 import cadquery as cq  # noqa: E402
 from robotic_arm import (  # noqa: E402
@@ -46,18 +47,22 @@ from robotic_arm import (  # noqa: E402
     make_wrist_mount,
     params,
 )
+from inverse_dynamics import (  # noqa: E402
+    NOMINAL_SEGMENT_TIME_S,
+    build_dynamic_model,
+    dynamic_torques,
+    make_trajectory,
+)
 from torque_analysis import (  # noqa: E402
     C_ELBOW,
     C_SHOULDER,
-    PAYLOAD_KG,
     WAYPOINTS,
-    build_mass_model,
     joint_torques,
 )
 
 FPS = 16
 FRAMES_PER_SEGMENT = 40          # 2.5 s per segment at 16 fps = real time
-SEGMENT_TIME_S = 2.5
+SEGMENT_TIME_S = NOMINAL_SEGMENT_TIME_S
 ROBOT_WINDOW = (900, 720)
 
 RGB = {
@@ -230,24 +235,27 @@ class ArmScene:
 
 
 # ---------------------------------------------------------------------------
-# trajectory shared by both panels
+# trajectory shared by both panels (minimum-jerk + inverse dynamics)
 # ---------------------------------------------------------------------------
 
+def waypoint_marks(segment_time_s):
+    """(time, name) labels at each WAYPOINT for the torque chart."""
+    marks = [(i * segment_time_s, name)
+             for i, (name, *_) in enumerate(WAYPOINTS[:-1])]
+    marks.append((len(WAYPOINTS[:-1]) * segment_time_s, WAYPOINTS[-1][0]))
+    return marks
+
+
 def build_trajectory():
-    """Frame-wise (t, th1, th2, payload) plus waypoint marks for the chart."""
-    ts, th1s, th2s, pls, marks = [], [], [], [], []
-    t0 = 0.0
-    for (n0, a0, b0, pl0), (n1, a1, b1, pl1) in zip(WAYPOINTS, WAYPOINTS[1:]):
-        s = np.linspace(0, 1, FRAMES_PER_SEGMENT, endpoint=False)
-        ts.append(t0 + s * SEGMENT_TIME_S)
-        th1s.append(a0 + (a1 - a0) * s)
-        th2s.append(b0 + (b1 - b0) * s)
-        pls.append(np.full_like(s, min(pl0, pl1)))
-        marks.append((t0, n0))
-        t0 += SEGMENT_TIME_S
-    marks.append((t0, WAYPOINTS[-1][0]))
-    return (np.concatenate(ts), np.concatenate(th1s), np.concatenate(th2s),
-            np.concatenate(pls), marks)
+    """Frame-wise min-jerk path, dynamic torques, and waypoint marks."""
+    dm = build_dynamic_model(params)
+    t, th1, om1, al1, th2, om2, al2, payload = make_trajectory(
+        SEGMENT_TIME_S, steps_per_segment=FRAMES_PER_SEGMENT)
+    tau_sh, tau_el = dynamic_torques(dm, th1, om1, al1, th2, om2, al2, payload)
+    tau_sh_s, tau_el_s = joint_torques(
+        dm["mass_model"], params, np.degrees(th1), np.degrees(th2), payload)
+    return (t, np.degrees(th1), np.degrees(th2), payload,
+            tau_sh, tau_el, tau_sh_s, tau_el_s, waypoint_marks(SEGMENT_TIME_S))
 
 
 # ---------------------------------------------------------------------------
@@ -256,9 +264,8 @@ def build_trajectory():
 
 def main():
     p = params
-    mm = build_mass_model(p)
-    t, th1, th2, payload, marks = build_trajectory()
-    tau_sh, tau_el = joint_torques(mm, p, th1, th2, payload)
+    (t, th1, th2, payload, tau_sh, tau_el,
+     tau_sh_s, tau_el_s, marks) = build_trajectory()
 
     scene = ArmScene(p)
 
@@ -272,8 +279,12 @@ def main():
     t_grip = next(tm for tm, n in marks if n == "grip")
     t_rel = next(tm for tm, n in marks if n == "release")
     ax.axvspan(t_grip, t_rel, color="#f2f0e9", zorder=0)
-    ax.plot(t, tau_sh, color=C_SHOULDER, lw=2, label="shoulder")
-    ax.plot(t, tau_el, color=C_ELBOW, lw=2, label="elbow")
+    ax.plot(t, tau_sh_s, color=C_SHOULDER, lw=1.2, ls="--",
+            label="shoulder quasi-static")
+    ax.plot(t, tau_el_s, color=C_ELBOW, lw=1.2, ls="--",
+            label="elbow quasi-static")
+    ax.plot(t, tau_sh, color=C_SHOULDER, lw=2, label="shoulder dynamic")
+    ax.plot(t, tau_el, color=C_ELBOW, lw=2, label="elbow dynamic")
     for tm, name in marks:
         ax.axvline(tm, color="#c3c2b7", lw=0.8, zorder=0)
         ax.text(tm, ax.get_ylim()[0], f" {name}", fontsize=8, color="#6b6a60",
@@ -282,9 +293,9 @@ def main():
     dot_sh, = ax.plot([], [], "o", ms=7, color=C_SHOULDER)
     dot_el, = ax.plot([], [], "o", ms=7, color=C_ELBOW)
     ax.set_xlabel("time (s)")
-    ax.set_ylabel("holding torque (N·m)")
-    ax.set_title("Servo torque (shaded: carrying 500 g payload)", fontsize=11)
-    ax.legend(frameon=False, loc="upper right")
+    ax.set_ylabel("torque (N·m)")
+    ax.set_title("Inverse dynamics (shaded: carrying 500 g payload)", fontsize=11)
+    ax.legend(frameon=False, loc="upper right", fontsize=8, ncols=2)
     ax.grid(axis="y", color="#eceae2", lw=0.8)
     ax.tick_params(length=0)
     for s in ax.spines.values():

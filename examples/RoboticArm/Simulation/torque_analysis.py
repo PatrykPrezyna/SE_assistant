@@ -32,9 +32,9 @@ from pathlib import Path
 if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-# the CAD model lives in ../CAD (examples/RoboticArm/CAD)
+# the CAD model lives in ../2_CAD (examples/RoboticArm/2_CAD)
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "CAD"))
+sys.path.insert(0, str(ROOT / "2_CAD"))
 
 import numpy as np
 import matplotlib

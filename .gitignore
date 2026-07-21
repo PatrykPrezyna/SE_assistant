@@ -49,9 +49,11 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 
-# Translations
+# Translations (gettext compiled catalogs — not Modelica)
 *.mo
 *.pot
+# Modelica sources share the .mo extension; keep those tracked
+!examples/RoboticArm/Simulation/*.mo
 
 # Django stuff:
 *.log

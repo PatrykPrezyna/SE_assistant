@@ -148,12 +148,13 @@ def quintic(u):
     return s, ds, dds
 
 
-def make_trajectory(segment_time_s):
+def make_trajectory(segment_time_s, steps_per_segment=None):
     """Time, joint angles/rates/accelerations (rad) and payload arrays."""
+    n = STEPS_PER_SEGMENT if steps_per_segment is None else steps_per_segment
     ts, th1, om1, al1, th2, om2, al2, pls = ([] for _ in range(8))
     t0 = 0.0
     for (_, a0, b0, pl0), (_, a1, b1, pl1) in zip(WAYPOINTS, WAYPOINTS[1:]):
-        u = np.linspace(0, 1, STEPS_PER_SEGMENT, endpoint=False)
+        u = np.linspace(0, 1, n, endpoint=False)
         s, ds, dds = quintic(u)
         d1, d2 = math.radians(a1 - a0), math.radians(b1 - b0)
         th1.append(math.radians(a0) + d1 * s)
