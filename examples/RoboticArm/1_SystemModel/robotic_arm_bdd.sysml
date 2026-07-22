@@ -62,7 +62,7 @@ package RobotArmLogicalArchitecture {
     }
 
     part def ShoulderJoint :> Joint {
-        attribute :>> length   = 150.0;
+        attribute :>> length   = 220.0;
         attribute :>> material = "Aluminum";
     }
 
