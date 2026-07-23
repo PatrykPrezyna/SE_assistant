@@ -7,6 +7,9 @@ runs, argument combinations sourced from a JSON file).
 
 from __future__ import annotations
 
+import argparse
+import datetime as dt
+import json
 import os
 import shutil
 import subprocess
@@ -27,7 +30,7 @@ LEAF_SPEC: list[tuple[tuple[str, ...], object, str]] = [
     (("shoulder", "servo", "max_speed"), 394, "float"),
     (("shoulder", "servo", "servo_mass"), 0.055, "float"),
     (("shoulder", "link_length"), 0.220, "float"),
-    (("shoulder", "link_mass"), 0.080, "float"),
+    (("shoulder", "link_mass"), 0.040, "float"),
     (("elbow", "position_sequence"), [-45, -30, -30, 5, -25, -25, -45], "float_list"),
     (("elbow", "servo", "tau_stall"), 0.44, "float"),
     (("elbow", "servo", "max_speed"), 394, "float"),
@@ -41,51 +44,21 @@ LEAF_SPEC: list[tuple[tuple[str, ...], object, str]] = [
     (("stop_time",), 15, "float"),
 ]
 
-# Real off-the-shelf servos a joint could be built with: tau_stall [N*m],
-# max_speed [deg/s] and servo_mass [kg] derived from each datasheet's
-# lower-voltage rating (kgf.cm converted via 1 kgf.cm = 0.0980665 N*m), so a
-# sweep can pick a servo by name (run_sweep.py's "servo_options") instead of
-# mixing torque/speed/mass across different real servos. cost_usd is one
-# unit's listed price (SG90 converted from GBP at ~1.27 USD/GBP; MG996R is a
-# 6-pack listing divided by 6) -- for the tradespace plot in
-# plot_tradespace.py.
-SERVO_CATALOG: dict[str, dict[str, object]] = {
-    "SG90": {
-        "link": "https://shop.4tronix.co.uk/products/sg90-9g-micro-servo",
-        "tau_stall": 0.118,
-        "max_speed": 500.0,
-        "servo_mass": 0.009,
-        "cost_usd": 3.68,
-    },
-    "AD002": {
-        "link": "https://www.adeept.com/adeept-ad002-servo-motor-for-rc-robot-car-compatible-with-mg90s-sevo-metal-gear_p0275.html",
-        "tau_stall": 0.196,
-        "max_speed": 545.0,
-        "servo_mass": 0.013,
-        "cost_usd": 15.99,
-    },
-    "AD004": {
-        "link": "https://www.adeept.com/adeept-ad004-17g-micro-digital-servo-motor-48kgcm-torque-all-metal-gears-with-25t-servo-arm-for-rc-crawler-car-upgrade-servo-parts-model-boat_p0444.html",
-        "tau_stall": 0.471,
-        "max_speed": 395.0,
-        "servo_mass": 0.017,
-        "cost_usd": 28.99,
-    },
-    "MG996R": {
-        "link": "https://www.adeept.com/6xmg996r_p0299.html",
-        "tau_stall": 1.324,
-        "max_speed": 353.0,
-        "servo_mass": 0.055,
-        "cost_usd": 4.67,
-    },
-    "DS3218MG": {
-        "link": "https://speedyfpv.com/products/ds3218mg-digital-servo-high-speed-high-torque-metal-gear-waterproof-20kg-torque-180-degrees-w-accessories",
-        "tau_stall": 1.863,
-        "max_speed": 375.0,
-        "servo_mass": 0.058,
-        "cost_usd": 12.99,
-    },
-}
+def load_servo_catalog(catalog_path: Path | None = None) -> dict[str, dict[str, object]]:
+    """Load the servo catalog from a JSON input file."""
+    if catalog_path is None:
+        catalog_path = HERE / "full_input.json"
+
+    with catalog_path.open(encoding="utf-8") as handle:
+        payload = json.load(handle)
+
+    catalog = payload.get("servo_catalog")
+    if not isinstance(catalog, dict):
+        raise KeyError(f"{catalog_path} does not define a 'servo_catalog' object")
+    return catalog
+
+
+SERVO_CATALOG: dict[str, dict[str, object]] = load_servo_catalog()
 
 
 def cli_flag(path: tuple[str, ...]) -> str:
@@ -246,6 +219,86 @@ def flatten_for_csv(obj: object, prefix: str = "", out: dict | None = None) -> d
     return out
 
 
+def build_result_row(
+    sim_input: dict,
+    stop_time: float,
+    move_time: float,
+    shoulder_final: float = 0.0,
+    elbow_final: float = 0.0,
+    extra: dict | None = None,
+) -> dict:
+    flatten = flatten_for_csv(sim_input)
+    row: dict[str, object] = {}
+    row["success"] = move_time > 0.0
+    row["move_time_s"] = round(move_time, 4)
+    row.update(flatten)
+    row["stop_time"] = stop_time
+    if extra:
+        row.update(extra)
+    row["shoulder_final_deg"] = round(shoulder_final, 3)
+    row["elbow_final_deg"] = round(elbow_final, 3)
+    return row
+
+
+def default_output_path(output_dir: Path | None = None) -> Path:
+    if output_dir is None:
+        output_dir = HERE.parent / "output"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    return output_dir / f"sim_result_{timestamp}.csv"
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Run a single RoboticArm simulation")
+    for path, default, kind in LEAF_SPEC:
+        flag = cli_flag(path)
+        if kind == "float":
+            parser.add_argument(flag, type=float, default=default)
+        elif kind == "float_list":
+            parser.add_argument(flag, type=parse_float_list, default=default)
+        elif kind == "bool_list":
+            parser.add_argument(flag, type=parse_bool_list, default=default)
+        else:
+            raise ValueError(f"Unknown kind {kind!r} for {flag}")
+    parser.add_argument("--shoulder-servo-name", default="",
+                         help="Name of the catalog servo used (CSV labeling only)")
+    parser.add_argument("--elbow-servo-name", default="",
+                         help="Name of the catalog servo used (CSV labeling only)")
+    parser.add_argument("--output", type=Path, default=None,
+                         help="CSV file to write the result row to")
+    parser.add_argument("--append", action="store_true",
+                         help="Append the result row instead of overwriting")
+    return parser
+
+
+def build_sim_input(args: argparse.Namespace) -> tuple[dict, float]:
+    sim_input: dict = {}
+    stop_time = None
+    for path, _default, _kind in LEAF_SPEC:
+        value = getattr(args, dest_name(path))
+        if path == ("stop_time",):
+            stop_time = value
+        else:
+            set_nested(sim_input, path, value)
+    if stop_time is None:
+        raise ValueError("stop_time was not provided")
+    return sim_input, float(stop_time)
+
+
+def run_from_cli(argv: list[str] | None = None) -> dict:
+    args = build_parser().parse_args(argv)
+    sim_input, stop_time = build_sim_input(args)
+
+    extra = {}
+    if args.shoulder_servo_name:
+        extra["shoulder_servo_name"] = args.shoulder_servo_name
+    if args.elbow_servo_name:
+        extra["elbow_servo_name"] = args.elbow_servo_name
+
+    output_path = args.output or default_output_path()
+    return write_result_row(sim_input, stop_time, output_path, args.append, extra=extra)
+
+
 def write_result_row(
     sim_input: dict,
     stop_time: float,
@@ -257,14 +310,14 @@ def write_result_row(
     result_csv = run_simulation(omc, sim_input, stop_time)
     move_time, shoulder_final, elbow_final = parse_result(result_csv)
 
-    row = flatten_for_csv(sim_input)
-    row["stop_time"] = stop_time
-    if extra:
-        row.update(extra)
-    row["move_time_s"] = round(move_time, 4)
-    row["finished"] = move_time > 0.0
-    row["shoulder_final_deg"] = round(shoulder_final, 3)
-    row["elbow_final_deg"] = round(elbow_final, 3)
+    row = build_result_row(
+        sim_input,
+        stop_time,
+        move_time,
+        shoulder_final,
+        elbow_final,
+        extra=extra,
+    )
 
     import csv
 
@@ -277,5 +330,5 @@ def write_result_row(
             writer.writeheader()
         writer.writerow(row)
 
-    print(f"move_time = {move_time:.4f} s ({'finished' if row['finished'] else 'unfinished'})")
+    print(f"move_time = {move_time:.4f} s ({'success' if row['success'] else 'unsuccessful'})")
     return row
