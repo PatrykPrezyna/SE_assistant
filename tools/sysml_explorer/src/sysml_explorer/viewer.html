@@ -1171,7 +1171,6 @@ function renderTreeElem(n, container) {
       if (!activeView.elements.includes(n.id)) activeView.elements.push(n.id);
     } else {
       activeView.elements = activeView.elements.filter(id => id !== n.id);
-      delete posMap()[n.id];
     }
     rebuild();
     setDirty(true);
@@ -1224,7 +1223,6 @@ function renderTreePkg(name, node, container, forceOpen) {
     } else {
       const idSet = new Set(ids);
       activeView.elements = activeView.elements.filter(id => !idSet.has(id));
-      for (const id of ids) delete posMap()[id];
     }
     rebuild();
     setDirty(true);

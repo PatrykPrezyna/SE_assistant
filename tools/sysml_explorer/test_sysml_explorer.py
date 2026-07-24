@@ -1809,6 +1809,51 @@ class ElementTreeRenderingTests(unittest.TestCase):
             self.assertNotIn("checked", pkg_row(dom, "TestPkg"))
 
 
+@unittest.skipUnless(EDGE, "Microsoft Edge not found; skipping rendering tests")
+class TreeCheckboxPositionPersistenceTests(unittest.TestCase):
+    """Unchecking an element's tree checkbox (hiding it) must not forget its
+    saved canvas position — re-checking it later should restore the same
+    spot, not drop it back into auto-layout."""
+
+    RENDER_TREE_ELEM_JS = None
+
+    @classmethod
+    def setUpClass(cls):
+        cls.RENDER_TREE_ELEM_JS = viewer_js(
+            "function renderTreeElem", "function allElemsUnder")
+
+    def toggle_checkbox(self, checked):
+        setup = (
+            'let mode = "bdd";\n'
+            'let activeView = { elements: ["TestPkg::Motor"],\n'
+            '                    nodes: { "TestPkg::Motor": { x: 111, y: 222 } } };\n'
+            'let nodes = {};\n'
+            'function posMap() { return activeView.nodes; }\n'
+            'function rebuild() {}\n'
+            'function setDirty() {}\n'
+            'function treeDotClass() { return ""; }\n'
+            'function selectNode() {}\n'
+            'function centerOn() {}\n'
+            + self.RENDER_TREE_ELEM_JS
+            + '\nrenderTreeElem({ id: "TestPkg::Motor", name: "Motor", kind: "part" },'
+              ' document.body);\n'
+              'const cb = document.querySelector(\'input[type="checkbox"]\');\n'
+            + f'cb.checked = {"true" if checked else "false"};\n'
+            + 'cb.dispatchEvent(new Event("change"));\n'
+        )
+        return run_js(setup, "activeView.nodes")
+
+    def test_unchecking_keeps_the_saved_position(self):
+        nodes = self.toggle_checkbox(checked=False)
+        self.assertEqual(nodes.get("TestPkg::Motor"), {"x": 111, "y": 222})
+
+    def test_rechecking_also_keeps_the_saved_position(self):
+        # checking an already-checked box (no membership change) must be a
+        # no-op on the stored position too
+        nodes = self.toggle_checkbox(checked=True)
+        self.assertEqual(nodes.get("TestPkg::Motor"), {"x": 111, "y": 222})
+
+
 CONNECTOR_SAMPLE = """
 package ConnPkg {
     part def Pump;
