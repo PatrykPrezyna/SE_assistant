@@ -133,11 +133,16 @@ Both levels coexist, and a View picks whichever it wants:
   nothing appears twice.
 - Usage nodes are opt-in: check them in the element tree, or right-click a
   def and use **Show usages**.
+- **Singleton collapse (viewer only):** if a part def has exactly one
+  usage in the model, that usage is omitted from the element tree and
+  **Show usages**; if both are View members, only the def box is drawn
+  (see README "What the viewer simplifies"). Multi-usage types still
+  show each member usage in the tree and on the canvas.
 - A type-level edge is dropped from the canvas as soon as the usage node it
-  stands for is a member of the View, since `Reservoir ◆── inputTempSensor
-  ▷ Thermistor` already says what `Reservoir ◆──(inputTempSensor)──
-  Thermistor` said. The same applies to a connector whose two usage-node
-  endpoints are both visible.
+  stands for is **drawn** (not merely a View member), since
+  `Reservoir ◆── inputTempSensor ▷ Thermistor` already says what
+  `Reservoir ◆──(inputTempSensor)── Thermistor` said. The same applies to
+  a connector whose two usage-node endpoints are both visible.
 
 Port usages are unaffected: a `port x : Iface` still contributes only a
 typing edge (see above), no usage node.
@@ -227,6 +232,8 @@ README.
 - Toolbar is split into primary controls (Tree, view switcher, Save, Fit)
   and overflow (**Display ▾**, **More ▾**). The title shows the active View
   name only (or the drilldown diagram name) — not the source file list.
+  A muted **v0.0.1**-style label next to the title shows the explorer
+  package version.
 - An empty View shows a centered hint: check elements in the tree to add them.
 - parse errors are shown in a banner instead of a broken page
 - A **legend** (bottom-left) explains the arrow styles for edge kinds
@@ -371,7 +378,8 @@ for the reference set. Generating them from the parsed model is stubbed:
   diagram.
 - Each row gets a small color dot matching its kind (yellow = requirement,
   purple = actor, green = use case, blue = non-part usages; `part` /
-  `part def` and other def-level elements are uncolored).
+  `part def` and other def-level elements are uncolored). Singleton part
+  usages are omitted from the tree (their part def stands in for them).
 - Disabled (greyed out, non-interactive) while in UCD or activity mode,
   since View membership only applies to the block definition diagram.
 
@@ -428,13 +436,22 @@ for the reference set. Generating them from the parsed model is stubbed:
   Spec-level `activity def` as a first-class definition kind is still not
   parsed as its own diagram type.
 
+## Version
+
+Package version lives in `src/sysml_explorer/version.py` (`__version__`,
+currently **0.0.1**) and must match `pyproject.toml`. The viewer toolbar
+shows `v…` next to the title (injected when `GET /` serves `viewer.html`).
+`GET /api/model` also includes `explorerVersion`.
+
 ## Server (`src/sysml_explorer/app.py`)
 
-- `GET /` — the viewer page
+- `GET /` — the viewer page (version placeholder `{{EXPLORER_VERSION}}`
+  substituted from `__version__`)
 - `GET /api/model` — the folder is re-globbed for `.sysml` files and
   re-parsed on every request, so a file added, edited, or removed in the
   folder shows up on refresh/**Reload model** without restarting the server;
   the response includes the validation `warnings` array (see Validation)
+  and `explorerVersion`
 - `GET /api/layout` / `POST /api/layout` — global state persistence, always
   at `<folder>/layout.json`
 - `GET /api/views` — list of `{id, name}` for every View

@@ -103,6 +103,16 @@ turn back on per View, except where noted):
   the typing edge (legend: **is a**). Parts-compartment lines inside a
   def still show `role : Type`. Reverse: in `buildNodeContent`, append
   `+ (d.usageType ? " : " + d.usageType : "")` to the name line again.
+- **Singleton part usages collapse onto their part def** — in SysML a
+  usage (`part battery : Battery`) and its definition (`part def Battery`)
+  are two elements. Here, if a part def has **exactly one** usage in the
+  whole model, that usage is hidden from the **element tree** and from
+  **Show usages**, and if both are somehow View members only the **def**
+  is drawn on the canvas. If the type has **several** usages (e.g. two
+  Thermistors), every usage stays visible as today. Reverse: remove
+  `singletonPartUsageIds` filtering in `filterTreeNodes` /
+  `relatedGroups`, and `suppressedSingletonUsages` in `buildBddNodesEdges`
+  (`viewer.html`).
 - **Edge labels are hidden** — no composition role names or «satisfy»
   labels on the lines. A **legend** explains the arrow styles instead.
   Connector edges always keep their label (which connection / ports).

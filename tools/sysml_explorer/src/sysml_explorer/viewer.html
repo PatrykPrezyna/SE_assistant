@@ -12,6 +12,8 @@
     flex-wrap: wrap; min-height: 28px; }
   #toolbar .title { font-weight: 600; margin-right: 4px; max-width: 220px;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #toolbar .ver { color: #888; font-size: 12px; margin-right: 4px;
+    user-select: none; white-space: nowrap; }
   #toolbar .sep { width: 1px; height: 18px; background: #ddd; margin: 0 2px;
     flex: none; }
   #toolbar button { font-size: 13px; padding: 3px 10px; cursor: pointer; }
@@ -176,6 +178,7 @@
 <div id="toolbar">
   <button id="treeBtn" title="Show/hide the element tree">Tree</button>
   <span class="title" id="title">SysML Explorer</span>
+  <span class="ver" id="appVersion" title="sysml-explorer version">v{{EXPLORER_VERSION}}</span>
   <span class="sep"></span>
   <label>view <select id="viewSel"></select></label>
   <button id="newViewBtn" title="Create a new view">+</button>
@@ -1063,8 +1066,9 @@ function autoPlaceActivity(force) {
 
 function buildBddNodesEdges() {
   const vis = visibleIds();
+  const suppressed = suppressedSingletonUsages(vis);
   for (const d of model.nodes) {
-    if (!vis.has(d.id)) continue;
+    if (!vis.has(d.id) || suppressed.has(d.id)) continue;
     const saved = posMap()[d.id];
     const n = { data: d, x: saved ? saved.x : 0, y: saved ? saved.y : 0, w: 0, h: 0 };
     nodes[d.id] = n;
@@ -1135,8 +1139,11 @@ function treeKindMatch(kind, filter) {
 }
 
 function filterTreeNodes(nodeList) {
+  const hide = singletonPartUsageIds();
   const q = treeQuery.trim().toLowerCase();
   return nodeList.filter(n => {
+    // singleton part usages are represented by their part def only
+    if (hide.has(n.id)) return false;
     if (!treeKindMatch(n.kind, treeKind)) return false;
     if (!q) return true;
     return n.name.toLowerCase().includes(q)
@@ -1147,17 +1154,17 @@ function filterTreeNodes(nodeList) {
 
 function renderTreeElem(n, container) {
   const row = document.createElement("div");
-  const visible = n.id in nodes;             // a member of the active View, currently rendered
+  const isMember = (activeView.elements || []).includes(n.id);
   const classes = ["elem"];
   const dotCls = treeDotClass(n.kind);
   if (dotCls) classes.push(dotCls);
-  if (!visible) classes.push("dimmed");
+  if (!isMember) classes.push("dimmed");
   row.className = classes.join(" ");
-  row.title = visible ? "" : "not in this view — check to add it";
+  row.title = isMember ? "" : "not in this view — check to add it";
   const cb = document.createElement("input");
   cb.type = "checkbox";
-  cb.checked = visible;
-  cb.toggleAttribute("checked", visible);
+  cb.checked = isMember;
+  cb.toggleAttribute("checked", isMember);
   cb.disabled = mode !== "bdd";
   cb.addEventListener("change", () => {
     if (cb.checked) {
@@ -1194,7 +1201,8 @@ function allElemsUnder(node) {
 
 function renderTreePkg(name, node, container, forceOpen) {
   const descendants = allElemsUnder(node);
-  const visibleCount = descendants.filter(n => n.id in nodes).length;
+  const members = new Set(activeView.elements || []);
+  const visibleCount = descendants.filter(n => members.has(n.id)).length;
   const allVisible = descendants.length > 0 && visibleCount === descendants.length;
 
   const hdr = document.createElement("div");
@@ -1558,6 +1566,45 @@ async function openFileBrowser(onPick, onCancel) {
 
 // ------------------------------------------------- related-element lookup
 
+// part-def id → part usage node ids (typing edges only). Ignores
+// port/requirement typing (from is not kind "part").
+function partUsagesByTypeId() {
+  const byId = Object.fromEntries(model.nodes.map(n => [n.id, n]));
+  const map = new Map();
+  for (const e of model.edges) {
+    if (e.kind !== "typing") continue;
+    const usage = byId[e.from];
+    const type = byId[e.to];
+    if (!usage || usage.kind !== "part") continue;
+    if (!type || type.kind !== "part def") continue;
+    const list = map.get(e.to) || [];
+    list.push(e.from);
+    map.set(e.to, list);
+  }
+  return map;
+}
+
+// Usages of a part def that appears only once in the model. Those are
+// hidden in the tree / Show usages, and suppressed on the canvas when the
+// def is also a View member (see README "What the viewer simplifies").
+function singletonPartUsageIds() {
+  const out = new Set();
+  for (const usageIds of partUsagesByTypeId().values()) {
+    if (usageIds.length === 1) out.add(usageIds[0]);
+  }
+  return out;
+}
+
+function suppressedSingletonUsages(vis) {
+  const suppressed = new Set();
+  for (const [typeId, usageIds] of partUsagesByTypeId()) {
+    if (usageIds.length !== 1) continue;
+    const u = usageIds[0];
+    if (vis.has(typeId) && vis.has(u)) suppressed.add(u);
+  }
+  return suppressed;
+}
+
 // ids of the per-usage nodes (`Owner::role`), which sit alongside the def
 // nodes rather than replacing them
 function usageNodeIds() {
@@ -1599,10 +1646,12 @@ function relatedGroups(id) {
     ? "satisfy relations"
     : (satisfiers.length && !satisfied.length
         ? "satisfying elements" : "satisfied requirements");
+  const hideSingleton = singletonPartUsageIds();
   return [
     { label: "decomposition", ids: relatedIds(id, "composition", "down") },
     { label: "usages", ids: model.nodes.filter(n => n.usageOwner === id)
-                                       .map(n => n.id) },
+                                       .map(n => n.id)
+                                       .filter(uid => !hideSingleton.has(uid)) },
     { label: "specializations", ids: relatedIds(id, "specialization", "up") },
     { label: satisfyLabel, ids: [...new Set([...satisfied, ...satisfiers])] },
   ];

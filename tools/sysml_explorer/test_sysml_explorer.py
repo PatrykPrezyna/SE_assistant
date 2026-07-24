@@ -23,6 +23,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 from sysml_explorer import (  # noqa: E402
     DEFAULT_VIEW_SPECS,
+    __version__,
     build_default_views,
     make_handler,
     parse_models,
@@ -1005,6 +1006,20 @@ class ServerTests(unittest.TestCase):
     def test_root_serves_viewer(self):
         self.assertIn("<svg", self.srv.get("/"))
 
+    def test_package_version_is_0_0_1(self):
+        self.assertEqual(__version__, "0.0.1")
+        self.assertEqual(app_mod.__version__, "0.0.1")
+
+    def test_root_injects_explorer_version_into_toolbar(self):
+        page = self.srv.get("/")
+        self.assertIn('id="appVersion"', page)
+        self.assertIn(f"v{__version__}", page)
+        self.assertNotIn("{{EXPLORER_VERSION}}", page)
+
+    def test_model_endpoint_includes_explorer_version(self):
+        model = json.loads(self.srv.get("/api/model"))
+        self.assertEqual(model["explorerVersion"], __version__)
+
     def test_root_serves_click_to_highlight_feature(self):
         # click-to-highlight can't be exercised via a real mouse event in
         # these tests (see ViewerRenderingTests docstring for why), so check
@@ -1412,8 +1427,8 @@ class ViewRenderingTests(unittest.TestCase):
         v.update(overrides)
         return v
 
-    def serve(self, views, active, extra_layout=None):
-        srv = ServerFixture(views=views)
+    def serve(self, views, active, extra_layout=None, text=SAMPLE):
+        srv = ServerFixture(text=text, views=views)
         layout = {"activeView": active}
         if extra_layout:
             layout.update(extra_layout)
@@ -1512,22 +1527,51 @@ class ViewRenderingTests(unittest.TestCase):
                 'data-key="composition|TestPkg::Robot|TestPkg::BigMotor|drive"',
                 dump_dom(srv.url))
 
-    def test_usage_node_rendered_when_it_is_a_view_member(self):
+    def test_singleton_usage_collapsed_when_def_also_a_member(self):
+        # BigMotor has one usage (drive). Both members → only the def box.
         elements = ["TestPkg::Robot", "TestPkg::Robot::drive", "TestPkg::BigMotor"]
         with self.serve({"v": self.make_view("V", elements)}, "v") as srv:
             dom = dump_dom(srv.url)
+            self.assertNotIn('data-id="TestPkg::Robot::drive"', dom)
+            self.assertIn('data-id="TestPkg::BigMotor"', dom)
+            # type-level composition kept (usage not drawn)
+            self.assertIn(
+                'data-key="composition|TestPkg::Robot|TestPkg::BigMotor|drive"',
+                dom)
+            self.assertNotIn('data-key="typing|TestPkg::Robot::drive'
+                             '|TestPkg::BigMotor|"', dom)
+
+    def test_singleton_usage_shown_when_def_not_a_member(self):
+        elements = ["TestPkg::Robot", "TestPkg::Robot::drive"]
+        with self.serve({"v": self.make_view("V", elements)}, "v") as srv:
+            dom = dump_dom(srv.url)
             self.assertIn('data-id="TestPkg::Robot::drive"', dom)
-            # owner ◆── usage ▷ def, rather than owner ◆── def
             self.assertIn('data-key="composition|TestPkg::Robot'
                           '|TestPkg::Robot::drive|"', dom)
-            self.assertIn('data-key="typing|TestPkg::Robot::drive'
-                          '|TestPkg::BigMotor|"', dom)
+
+    def test_multi_usage_type_still_draws_each_usage_with_def(self):
+        # Thermistor has two usages — both stay visible next to the def.
+        elements = [
+            "P::Reservoir",
+            "P::Reservoir::inputTempSensor",
+            "P::Reservoir::outputTempSensor",
+            "P::Thermistor",
+        ]
+        with self.serve(
+                {"v": self.make_view("V", elements)}, "v",
+                text=UsageNodeTests.MODEL) as srv:
+            dom = dump_dom(srv.url)
+            self.assertIn('data-id="P::Reservoir::inputTempSensor"', dom)
+            self.assertIn('data-id="P::Reservoir::outputTempSensor"', dom)
+            self.assertIn('data-id="P::Thermistor"', dom)
+            self.assertIn(
+                'data-key="typing|P::Reservoir::inputTempSensor|P::Thermistor|"',
+                dom)
 
     def test_usage_node_looks_like_part_def_and_hides_type_in_header(self):
-        # part usages share part-def styling; header is role only (type is
-        # on the typing edge). View omits the owner so the parts compartment
-        # cannot contribute a "drive : BigMotor" line.
-        elements = ["TestPkg::Robot::drive", "TestPkg::BigMotor"]
+        # part usages share part-def styling; header is role only. Omit the
+        # type def so singleton collapse does not hide the usage node.
+        elements = ["TestPkg::Robot::drive"]
         with self.serve({"v": self.make_view("V", elements)}, "v") as srv:
             dom = dump_dom(srv.url)
             self.assertRegex(
@@ -1539,14 +1583,21 @@ class ViewRenderingTests(unittest.TestCase):
             self.assertIn(">drive</text>", dom)
             self.assertNotIn("drive : BigMotor", dom)
 
-    def test_type_level_edge_dropped_once_its_usage_node_is_shown(self):
-        key = 'data-key="composition|TestPkg::Robot|TestPkg::BigMotor|drive"'
-        elements = ["TestPkg::Robot", "TestPkg::BigMotor"]
-        with self.serve({"v": self.make_view("V", elements)}, "v") as srv:
-            self.assertIn(key, dump_dom(srv.url))
-        with self.serve({"v": self.make_view(
-                "V", elements + ["TestPkg::Robot::drive"])}, "v") as srv:
-            self.assertNotIn(key, dump_dom(srv.url))
+    def test_type_level_edge_dropped_once_multi_usage_node_is_shown(self):
+        # singleton collapse would keep the type-level edge; use a type with
+        # two usages so drawing one usage actually drops its type-level edge.
+        type_key = (
+            'data-key="composition|P::Reservoir|P::Thermistor|inputTempSensor"')
+        elements = ["P::Reservoir", "P::Thermistor"]
+        with self.serve(
+                {"v": self.make_view("V", elements)}, "v",
+                text=UsageNodeTests.MODEL) as srv:
+            self.assertIn(type_key, dump_dom(srv.url))
+        with self.serve(
+                {"v": self.make_view(
+                    "V", elements + ["P::Reservoir::inputTempSensor"])}, "v",
+                text=UsageNodeTests.MODEL) as srv:
+            self.assertNotIn(type_key, dump_dom(srv.url))
 
     def test_edge_labels_hidden_by_default(self):
         # Display → edge labels defaults to false: no role-name text on the
@@ -1682,9 +1733,12 @@ class ElementTreeRenderingTests(unittest.TestCase):
 
     def test_tree_lists_every_element_and_package_header(self):
         dom = self.render()
+        # singleton part usages (robot1, drive, …) are hidden — defs only
         for name in ["Motor", "BigMotor", "Wheel", "Chassis", "Robot",
-                     "robot1", "Req", "Fast"]:
+                     "Req", "Fast"]:
             elem_row(dom, name)  # raises if the row is missing
+        with self.assertRaises(AssertionError):
+            elem_row(dom, "robot1")
         self.assertIn(">Reqs<", dom.split('id="tree"')[1].split('<svg id="canvas"')[0])
 
     def test_checkbox_checked_for_view_member(self):
@@ -1710,9 +1764,22 @@ class ElementTreeRenderingTests(unittest.TestCase):
         dom = self.render()
         self.assertIn("k-req", elem_row(dom, "Fast"))
         # parts match part defs (uncolored); no k-usage tint
-        self.assertNotIn("k-usage", elem_row(dom, "robot1"))
         self.assertNotIn("k-req", elem_row(dom, "Motor"))
         self.assertNotIn("k-usage", elem_row(dom, "Motor"))
+
+    def test_tree_hides_singleton_part_usages_keeps_multi_usages(self):
+        with ServerFixture(text=UsageNodeTests.MODEL, views={
+            "v": {"name": "V", "elements": ["P::Thermistor"], "nodes": {},
+                  "hiddenEdges": [], "view": None, "options": {}},
+        }) as srv:
+            srv.layout_path.write_text(
+                json.dumps({"activeView": "v"}), encoding="utf-8")
+            dom = dump_dom(srv.url)
+            # two Thermistor roles stay listed; a one-off Controller role
+            # would be hidden — Controller has no usage in this fixture
+            elem_row(dom, "inputTempSensor")
+            elem_row(dom, "outputTempSensor")
+            elem_row(dom, "Thermistor")
 
     def test_package_checkbox_checked_when_all_descendants_are_members(self):
         dom = self.render()  # default view = every element
@@ -2246,7 +2313,7 @@ class MedicalDeviceDefaultViewTests(unittest.TestCase):
         ys = sorted({n["y"] for n in v["nodes"].values()})
         self.assertEqual(len(ys), 3)
         rows = [[i for i, n in v["nodes"].items() if n["y"] == y] for y in ys]
-        self.assertEqual(rows[0], ["CoolSpineSystem::CoolSpine"])
+        self.assertEqual(rows[0], ["CoolSpineSystem::CoolSpineDevice"])
         # each level is wider than the one above it — that's the pyramid
         self.assertLess(len(rows[0]), len(rows[1]))
         # level 2 is exactly the direct parts of the system block
@@ -2254,7 +2321,7 @@ class MedicalDeviceDefaultViewTests(unittest.TestCase):
         # composition edges (the unlabelled ones point at usage nodes)
         direct = {e["to"] for e in self.model["edges"]
                   if e["kind"] == "composition" and e["label"]
-                  and e["from"] == "CoolSpineSystem::CoolSpine"}
+                  and e["from"] == "CoolSpineSystem::CoolSpineDevice"}
         self.assertEqual(set(rows[1]), direct)
 
     def test_decomposition_view_hides_connectors(self):
@@ -2277,11 +2344,11 @@ class MedicalDeviceDefaultViewTests(unittest.TestCase):
         # composition edges (the unlabelled ones point at usage nodes)
         direct = {e["to"] for e in self.model["edges"]
                   if e["kind"] == "composition" and e["label"]
-                  and e["from"] == "CoolSpineSystem::CoolSpine"}
+                  and e["from"] == "CoolSpineSystem::CoolSpineDevice"}
         self.assertEqual(set(v["elements"]), direct)
         # the system block itself is not a member, so no composition edge
         # competes with the connectors
-        self.assertNotIn("CoolSpineSystem::CoolSpine", v["elements"])
+        self.assertNotIn("CoolSpineSystem::CoolSpineDevice", v["elements"])
 
     def test_interconnections_view_hides_nothing(self):
         self.assertEqual(self.view("interconnections")["hiddenEdges"], [])
