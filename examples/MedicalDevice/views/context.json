@@ -3,7 +3,7 @@
   "name": "1 Context",
   "elements": [
     "CoolSpineSystemContext::Kontext",
-    "CoolSpineSystem::CoolSpine",
+    "CoolSpineSystem::CoolSpineDevice",
     "CoolSpineSystemContext::Surgeon",
     "CoolSpineSystemContext::Anesthesiologist",
     "CoolSpineSystemContext::Patient",
@@ -14,7 +14,7 @@
       "x": 50,
       "y": 0
     },
-    "CoolSpineSystem::CoolSpine": {
+    "CoolSpineSystem::CoolSpineDevice": {
       "x": -750,
       "y": 340
     },
@@ -35,11 +35,17 @@
       "y": 326
     }
   },
-  "hiddenEdges": [],
+  "hiddenEdges": [
+    "composition|CoolSpineSystemContext::Kontext|CoolSpineSystem::CoolSpineDevice|coolSpine",
+    "composition|CoolSpineSystemContext::Kontext|CoolSpineSystemContext::Patient|patient",
+    "composition|CoolSpineSystemContext::Kontext|CoolSpineSystemContext::Surgeon|surgeon",
+    "composition|CoolSpineSystemContext::Kontext|CoolSpineSystemContext::Anesthesiologist|anesthesiologist",
+    "composition|CoolSpineSystemContext::Kontext|CoolSpineSystemContext::CsfDrain|csfDrain"
+  ],
   "view": {
-    "tx": 836.1106909684439,
-    "ty": 192.19118607181716,
-    "s": 0.7085418933623504
+    "tx": 667.8993529834651,
+    "ty": 227.09884974838243,
+    "s": 1.0740474478792237
   },
   "options": {
     "attrs": false,

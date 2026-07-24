@@ -139,7 +139,7 @@ package CoolSpineSystemContext {
         → pump → reservoir); the catheter is the patient-inserted segment.
         */
 
-        part coolSpine : CoolSpine;
+        part coolSpine : CoolSpineDevice;
         part patient : Patient;
         part surgeon : Surgeon;
         part anesthesiologist : Anesthesiologist;
@@ -174,7 +174,7 @@ package CoolSpineSystemContext {
             perform operateTherapy.stopTherapy;
         }
 
-        part coolSpine : CoolSpine {
+        part coolSpine : CoolSpineDevice {
             perform operateTherapy.deliverTherapy;
             perform operateTherapy.applyAdjustment;
             perform operateTherapy.shutdown;

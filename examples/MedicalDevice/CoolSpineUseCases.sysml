@@ -31,7 +31,7 @@ package CoolSpineUseCases {
             perform deliverCooling.enterSetpoint;
         }
 
-        subject coolSpine : CoolSpine {
+        subject coolSpine : CoolSpineDevice {
             perform deliverCooling.completeSelfCheck;
             perform deliverCooling.startCoolingAndAwaitStop;
         }
@@ -114,7 +114,7 @@ package CoolSpineUseCases {
         hold-up time.
         */
 
-        subject coolSpine : CoolSpine;
+        subject coolSpine : CoolSpineDevice;
 
         actor anesthesiologist : Anesthesiologist;
 

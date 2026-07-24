@@ -41,19 +41,19 @@ package CoolSpineSystem {
 
         part compressor : Compressor;
         part coolPlate : CoolPlate;
-        part heatExchange1TempSensor : Thermocouple;
-        part heatExchange2TempSensor : Thermocouple;
+        part heatExchange1 : Thermocouple;
+        part heatExchange2 : Thermocouple;
 
         connection refrigerantLoop
             connect compressor to coolPlate {
             doc /* Compressed refrigerant into the cold plate and back. */
         }
         connection senseHeatExchange1
-            connect coolPlate to heatExchange1TempSensor {
+            connect coolPlate to heatExchange1 {
             doc /* Heat Exchange 1 temperature at the cold plate. */
         }
         connection senseHeatExchange2
-            connect coolPlate to heatExchange2TempSensor {
+            connect coolPlate to heatExchange2 {
             doc /* Heat Exchange 2 temperature at the cold plate. */
         }
     }
@@ -197,17 +197,19 @@ package CoolSpineSystem {
     // System composition
     // ------------------------------------------------------------------
 
-    part def CoolSpine {
+    part def CoolSpineDevice {
         doc /*
-        Therapeutic temperature-control device. Closed fluid loop:
-        reservoir (cold) → catheter (warms) → pump → reservoir. Pressure is
-        measured inside the pump (inlet/outlet), saline temperature inside
-        the reservoir (input/output), CSF temperature in the catheter, and
-        heat-exchange temperature in the micro-refrigeration unit. Controller
-        (Pi-based) is powered from the UPS, reads sensors, hosts the
-        operator touch display, drives pump setpoints, and switches the
-        micro-refrigeration unit.
+        Therapeutic temperature-control device (the CoolSpine product).
+        Closed fluid loop: reservoir (cold) → catheter (warms) → pump →
+        reservoir. Pressure is measured inside the pump (inlet/outlet),
+        saline temperature inside the reservoir (input/output), CSF
+        temperature in the catheter, and heat-exchange temperature in the
+        micro-refrigeration unit. Controller (Pi-based) is powered from the
+        UPS, reads sensors, hosts the operator touch display, drives pump
+        setpoints, and switches the micro-refrigeration unit.
         Patient and clinical staff live in CoolSpineSystemContext::Kontext.
+        One definition, used as a part in context / use cases / concerns —
+        not a second root instance beside this def.
         */
 
         satisfy 'REQ-CP-004';  // PortableFormFactor
@@ -263,11 +265,11 @@ package CoolSpineSystem {
             doc /* CSF temperature at the catheter, read by the controller. */
         }
         connection senseHeatExchange1Temp
-            connect microRef.heatExchange1TempSensor to controller {
+            connect microRef.heatExchange1 to controller {
             doc /* Heat Exchange 1 temperature read by controller ADC. */
         }
         connection senseHeatExchange2Temp
-            connect microRef.heatExchange2TempSensor to controller {
+            connect microRef.heatExchange2 to controller {
             doc /* Heat Exchange 2 temperature read by controller ADC. */
         }
 
@@ -285,6 +287,4 @@ package CoolSpineSystem {
             doc /* Warm saline from the pump outlet back to the reservoir. */
         }
     }
-
-    part coolSpine : CoolSpine;
 }

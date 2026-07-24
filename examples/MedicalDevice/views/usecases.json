@@ -1,7 +1,7 @@
 {
   "name": "Clinical use cases",
   "elements": [
-    "CoolSpineSystem::CoolSpine",
+    "CoolSpineSystem::CoolSpineDevice",
     "CoolSpineSystemContext::Anesthesiologist",
     "CoolSpineSystemContext::Surgeon",
     "CoolSpineSystemContext::Patient",
@@ -29,7 +29,7 @@
       "x": -40,
       "y": 280
     },
-    "CoolSpineSystem::CoolSpine": {
+    "CoolSpineSystem::CoolSpineDevice": {
       "x": 360,
       "y": 140
     }

@@ -19,7 +19,7 @@
     "CoolSpineSystem::PressureSensor",
     "CoolSpineSystem::TemperatureSensor",
     "CoolSpineSystem::Controller",
-    "CoolSpineSystem::CoolSpine"
+    "CoolSpineSystem::CoolSpineDevice"
   ],
   "nodes": {
     "CoolSpineUseCases::DeliverTherapeuticCooling": {
@@ -94,7 +94,7 @@
       "x": 620,
       "y": 800
     },
-    "CoolSpineSystem::CoolSpine": {
+    "CoolSpineSystem::CoolSpineDevice": {
       "x": 747,
       "y": 316
     }

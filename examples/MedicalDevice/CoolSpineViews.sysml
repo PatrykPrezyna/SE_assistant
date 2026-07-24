@@ -29,7 +29,7 @@ package CoolSpineViews {
         How clinicians interact with CoolSpine during a procedure — who
         initiates therapy, who sets flow / temperature, who benefits.
         */
-        subject coolSpine : CoolSpine;
+        subject coolSpine : CoolSpineDevice;
         stakeholder anesthesiologist : Anesthesiologist;
         stakeholder surgeon : Surgeon;
     }
@@ -40,7 +40,7 @@ package CoolSpineViews {
         implement those requirements — without showing full fluid / power
         interconnection detail.
         */
-        subject coolSpine : CoolSpine;
+        subject coolSpine : CoolSpineDevice;
         stakeholder anesthesiologist : Anesthesiologist;
     }
 
@@ -81,7 +81,7 @@ package CoolSpineViews {
         viewpoint vp : ClinicalUserViewpoint;
 
         expose CoolSpineUseCases::*;
-        expose CoolSpineSystem::CoolSpine;
+        expose CoolSpineSystem::CoolSpineDevice;
         expose CoolSpineSystemContext::Anesthesiologist;
         expose CoolSpineSystemContext::Surgeon;
         expose CoolSpineSystemContext::Patient;
@@ -101,7 +101,7 @@ package CoolSpineViews {
 
         expose CoolSpineUseCases::*;
         expose CoolSpineRequirements::*;
-        expose CoolSpineSystem::CoolSpine;
+        expose CoolSpineSystem::CoolSpineDevice;
         expose CoolSpineSystem::CustomMicroRefrigerationUnit;
         expose CoolSpineSystem::Battery;
         expose CoolSpineSystem::UPS;
