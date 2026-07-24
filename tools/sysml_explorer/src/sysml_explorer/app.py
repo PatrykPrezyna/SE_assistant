@@ -180,10 +180,12 @@ RE_UC_CONNECTION = re.compile(
 # see FEATURES.md dialect notes.
 RE_PERFORM_ACTION = re.compile(r"^perform\s+action\s+(\w+)$")
 RE_PERFORM_LANE = re.compile(r"^perform\s+(\w+)\.(\w+)$")
-# actor / subject usages (e.g. inside a use case def) — swimlane roles only;
-# not treated as nested parts / composition
-RE_ACTOR_SUBJECT_USAGE = re.compile(
-    r"^(actor|subject)\s+(?:<'([^']*)'>\s*)?(\w+)"
+# actor / subject / `ref part` usages — swimlane roles only; not treated as
+# nested parts / composition. `ref part` (SysML v2 reference usage) names an
+# instance that some other element composes, so it must not add a second node
+# for the same thing.
+RE_REFERENCE_USAGE = re.compile(
+    r"^(actor|subject|ref\s+part)\s+(?:<'([^']*)'>\s*)?(\w+)"
     r"(?:\s*:\s*([\w][\w:]*))?"
     r"(?:\s*(\[[^\]]+\]))?$"
 )
@@ -448,7 +450,7 @@ def _interpret_def(block, model, pkg_path, warn):
                 {"owner_id": node["id"], "name": cname, "from": cfrom, "to": cto}
             )
             continue
-        asu = RE_ACTOR_SUBJECT_USAGE.match(header)
+        asu = RE_REFERENCE_USAGE.match(header)
         if asu:
             _role_kw, _short, uname, utype, _mult = asu.groups()
             _collect_lane_performs(uname, utype, child["children"])

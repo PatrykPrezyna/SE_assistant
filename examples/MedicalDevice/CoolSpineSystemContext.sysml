@@ -5,82 +5,85 @@ package CoolSpineSystemContext {
     private import CoolSpineSystem::*;
 
     // ------------------------------------------------------------------
-    // Clinical / environmental actors and the patient
-    // Connections are simple part-to-part links (same style everywhere).
+    // People in the OR
     // ------------------------------------------------------------------
 
     part def Patient {
         doc /*
-        Patient receiving therapeutic temperature control via the CoolSpine
-        catheter (inserted heat-exchange path). CSF drain path optional
-        for monitoring.
+        Person receiving cooling. The CoolSpine catheter is the heat-exchange
+        path in the patient. A separate CSF drain may be used for pressure /
+        drainage monitoring (not part of the CoolSpine fluid loop).
         */
     }
 
     part def Surgeon {
         doc /*
-        Operating surgeon who directs the procedure and may request changes
-        to cooling / flow setpoints via the clinical team.
+        Lead clinician for the procedure. Decides whether to use CoolSpine and
+        may ask for changes to cooling or flow; does not usually drive the
+        device UI (that is the anesthesiologist).
         */
     }
 
     part def Anesthesiologist {
         doc /*
-        Anesthesiologist responsible for patient physiology during the
-        procedure and primary operator of CoolSpine setpoints.
+        Clinician who watches patient physiology and is the main operator of
+        CoolSpine (power on, setpoints, stop) during the case.
         */
     }
 
     // ------------------------------------------------------------------
-    // CSF drain — internal structure
+    // Optional CSF drain (hospital equipment next to CoolSpine)
     // ------------------------------------------------------------------
 
     part def PressureSensor {
         doc /*
-        Measures CSF pressure at the stopcock and provides readings
-        to an optional display.
+        Measures CSF pressure at the stopcock. Reading can go to an optional
+        bedside display. (Different from CoolSpine's saline pressure sensors.)
         */
     }
 
     part def Display {
-        doc /* Optional display of pressure measurement data. */
+        doc /* Optional screen showing CSF pressure from the drain set. */
     }
 
     part def Stopcock {
         doc /*
-        Controls CSF flow into the burette; also provides a sense
-        connection for the pressure sensor.
+        Valve that controls CSF into the burette and is where the pressure
+        sensor taps the line.
         */
     }
 
     part def Burette {
-        doc /* Chamber that receives CSF from the stopcock and drains to the bag. */
+        doc /*
+        Clear chamber that receives CSF from the stopcock before it drains
+        into the collection bag; used with the scale to read level/pressure.
+        */
     }
 
     part def CollectionBag {
-        doc /* Collects CSF transferred from the burette. */
+        doc /* Bag that collects CSF from the burette. */
     }
 
     part def GraduatedScale {
         doc /*
-        Scale associated with the burette for reading fluid level
-        and pressure values.
+        Ruler / scale next to the burette so staff can read fluid level and
+        related pressure values.
         */
     }
 
     part def LevelingDevice {
         doc /*
-        Aligns / positions the graduated scale relative to a
-        reference level (e.g. external auditory meatus).
+        Helps align the scale to a clinical zero height (often near the ear
+        canal) so pressure readings are meaningful.
         */
     }
 
     part def CsfDrain {
         doc /*
-        External ventricular drain / CSF collection set:
-        Pressure Sensor — Stopcock — Burette — Collection Bag,
-        with Graduated Scale and Leveling Device for level/pressure
-        reference, and an optional Display for pressure readings.
+        Standard external CSF drain set used beside CoolSpine when ICP /
+        drainage monitoring is needed. Fluid path: stopcock → burette → bag,
+        with pressure sense, optional display, scale, and leveling.
+        Not the CoolSpine saline loop.
         */
 
         part pressureSensor : PressureSensor;
@@ -91,52 +94,49 @@ package CoolSpineSystemContext {
         part graduatedScale : GraduatedScale;
         part levelingDevice : LevelingDevice;
 
-        // Fluid path: Stopcock → Burette → Collection Bag
         connection csfIntoBurette
             connect stopcock to burette {
-            doc /* Stopcock controls CSF flow into the burette. */
+            doc /* CSF flows from stopcock into the burette. */
         }
         connection csfToCollectionBag
             connect burette to collectionBag {
-            doc /* Burette transfers collected CSF to the bag. */
+            doc /* CSF drains from burette into the bag. */
         }
 
-        // Pressure Sensor connected to Stopcock
         connection senseCsfPressure
             connect stopcock to pressureSensor {
-            doc /* Pressure sense connection at the stopcock. */
+            doc /* Pressure is sensed at the stopcock. */
         }
 
-        // Measurement path: Pressure Sensor → optional Display
         connection displayCsfPressure
             connect pressureSensor to display {
-            doc /* Pressure measurement data to the optional display. */
+            doc /* Pressure value shown on the optional display. */
         }
 
-        // Measurement reference: Graduated Scale ↔ Burette
         connection indicateFluidLevel
             connect graduatedScale to burette {
-            doc /* Scale used to read fluid level and pressure on the burette. */
+            doc /* Scale is read against the burette fluid level. */
         }
 
-        // Reference / alignment: Leveling Device ↔ Graduated Scale
         connection alignScaleLevel
             connect levelingDevice to graduatedScale {
-            doc /* Aligns the scale relative to a clinical reference level. */
+            doc /* Leveling sets the scale to the clinical reference height. */
         }
     }
 
     // ------------------------------------------------------------------
-    // Operational context
+    // Operating room picture (who is there with the device)
     // ------------------------------------------------------------------
 
     part def Kontext {
         doc /*
-        Operating context of CoolSpine: the device (including its catheter),
-        the patient, clinical staff, and an optional CSF drain for
-        intracranial pressure / drainage monitoring.
-        Fluid circulation is closed inside CoolSpine (reservoir → catheter
-        → pump → reservoir); the catheter is the patient-inserted segment.
+        One operating-room snapshot: CoolSpine device, patient, surgeon,
+        anesthesiologist, and optionally a CSF drain.
+
+        CoolSpine's saline stays inside the device loop
+        (reservoir → catheter → pump → reservoir). The catheter is the only
+        part of that loop inside the patient. The CSF drain is separate
+        hospital gear for monitoring, not CoolSpine plumbing.
         */
 
         part coolSpine : CoolSpineDevice;
@@ -147,34 +147,36 @@ package CoolSpineSystemContext {
 
         connection drainPatientCsf
             connect patient to csfDrain {
-            doc /* Patient CSF drain outlet to the CSF drain assembly. */
+            doc /* Patient CSF line into the optional drain set. */
         }
     }
 
     // ------------------------------------------------------------------
-    // Activity — clinical interaction with CoolSpine
+    // Who does what during a cooling case (simple sequence)
     // ------------------------------------------------------------------
 
     part def ClinicalCoolingInteraction {
         doc /*
-        Simple activity diagram: interaction among the surgeon,
-        anesthesiologist, and CoolSpine during therapeutic cooling.
-        Swimlanes are expressed via perform on each participant.
+        Step-by-step clinical flow while CoolSpine is used: surgeon asks for
+        cooling, anesthesiologist configures the device, CoolSpine delivers
+        therapy, setpoints may change mid-case, then everyone shuts down.
+        Same people and device as in the OR context — this is the workflow,
+        not a second copy of the hardware.
         */
 
-        part surgeon : Surgeon {
+        ref part surgeon : Surgeon {
             perform operateTherapy.requestCooling;
             perform operateTherapy.requestChange;
             perform operateTherapy.endProcedure;
         }
 
-        part anesthesiologist : Anesthesiologist {
+        ref part anesthesiologist : Anesthesiologist {
             perform operateTherapy.setSetpoints;
             perform operateTherapy.adjustSetpoints;
             perform operateTherapy.stopTherapy;
         }
 
-        part coolSpine : CoolSpineDevice {
+        ref part coolSpine : CoolSpineDevice {
             perform operateTherapy.deliverTherapy;
             perform operateTherapy.applyAdjustment;
             perform operateTherapy.shutdown;
@@ -182,30 +184,32 @@ package CoolSpineSystemContext {
 
         perform action operateTherapy {
             doc /*
-            Clinical cooling procedure:
-            surgeon requests therapy → anesthesiologist configures CoolSpine →
-            CoolSpine delivers cooling → surgeon may request a change →
-            anesthesiologist adjusts → procedure ends → CoolSpine shuts down.
+            Typical order of work:
+            1) surgeon requests cooling
+            2) anesthesiologist sets flow / temperature
+            3) CoolSpine runs
+            4) surgeon may ask for a change → anesthesiologist updates → device applies
+            5) case ends → stop → device standby
             */
 
             action requestCooling {
-                doc /* Surgeon requests therapeutic cooling for the patient. */
+                doc /* Surgeon asks for therapeutic cooling for this patient. */
             }
 
             action setSetpoints {
-                doc /* Anesthesiologist sets initial flow and temperature on CoolSpine. */
+                doc /* Anesthesiologist enters initial flow and temperature. */
             }
 
             action deliverTherapy {
-                doc /* CoolSpine runs the saline loop and delivers cooling. */
+                doc /* CoolSpine runs the saline loop and cools. */
             }
 
             action requestChange {
-                doc /* Surgeon requests a setpoint change during the procedure. */
+                doc /* Surgeon asks for a different setpoint during the case. */
             }
 
             action adjustSetpoints {
-                doc /* Anesthesiologist updates flow / temperature setpoints. */
+                doc /* Anesthesiologist changes flow / temperature on the UI. */
             }
 
             action applyAdjustment {
@@ -213,15 +217,15 @@ package CoolSpineSystemContext {
             }
 
             action endProcedure {
-                doc /* Surgeon indicates cooling is no longer required. */
+                doc /* Surgeon says cooling is no longer needed. */
             }
 
             action stopTherapy {
-                doc /* Anesthesiologist commands end of therapy on CoolSpine. */
+                doc /* Anesthesiologist stops therapy on the device. */
             }
 
             action shutdown {
-                doc /* CoolSpine stops circulation and returns to standby. */
+                doc /* CoolSpine stops the loop and goes to standby. */
             }
 
             first start;
@@ -238,4 +242,3 @@ package CoolSpineSystemContext {
         }
     }
 }
-

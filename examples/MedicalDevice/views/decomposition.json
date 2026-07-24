@@ -22,68 +22,68 @@
   ],
   "nodes": {
     "CoolSpineSystem::CoolSpineDevice": {
-      "x": 25,
-      "y": -255
+      "x": 69,
+      "y": -582
     },
     "CoolSpineSystem::Battery": {
-      "x": -348,
-      "y": -120
+      "x": -380,
+      "y": -122
     },
     "CoolSpineSystem::Catheter": {
-      "x": 563,
-      "y": -120
+      "x": 670,
+      "y": -128
     },
     "CoolSpineSystem::Controller": {
-      "x": -185,
-      "y": -120
+      "x": -144,
+      "y": -136
     },
     "CoolSpineSystem::CustomMicroRefrigerationUnit": {
-      "x": 102,
-      "y": -120
+      "x": 109,
+      "y": -134
     },
     "CoolSpineSystem::FluidReservoir": {
-      "x": 398,
-      "y": -120
+      "x": 383,
+      "y": -124
     },
     "CoolSpineSystem::PeristalticPump": {
-      "x": 738,
+      "x": 955,
       "y": -120
     },
     "CoolSpineSystem::UPS": {
-      "x": -519,
-      "y": -120
+      "x": -654,
+      "y": -127
     },
     "CoolSpineSystem::Thermistor": {
-      "x": -500,
-      "y": 60
+      "x": 636,
+      "y": 95
     },
     "CoolSpineSystem::AdafruitAnalogInput": {
-      "x": -214,
-      "y": 60
+      "x": -347,
+      "y": 332
     },
     "CoolSpineSystem::PowerHat": {
-      "x": -353,
-      "y": 60
+      "x": -597,
+      "y": 344
     },
     "CoolSpineSystem::RaspberryPi": {
-      "x": -496,
-      "y": 60
+      "x": -636,
+      "y": 185
     },
     "CoolSpineSystem::TouchDisplay": {
-      "x": -58,
-      "y": 60
+      "x": -139,
+      "y": 193
     },
     "CoolSpineSystem::Compressor": {
-      "x": 90,
-      "y": 60
+      "x": 68,
+      "y": 101
     },
     "CoolSpineSystem::CoolPlate": {
-      "x": 262,
-      "y": 60
+      "x": 356,
+      "y": 93
     },
     "CoolSpineSystem::Thermocouple": {
-      "x": 60,
-      "y": 60
+      "x": 222,
+      "y": 263
     },
     "CoolSpineSystem::PressureSensor": {
       "x": 932,
@@ -114,9 +114,9 @@
     "connector|CoolSpineSystem::PeristalticPump|CoolSpineSystem::FluidReservoir|warmSalineToReservoir"
   ],
   "view": {
-    "tx": 811.9270582549111,
-    "ty": 399.8911816972209,
-    "s": 0.9038878065897905
+    "tx": 891.8159716415561,
+    "ty": 517.6117067597452,
+    "s": 0.6791042874453722
   },
   "options": {
     "attrs": false,

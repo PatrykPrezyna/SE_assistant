@@ -1,10 +1,23 @@
-add the mcp to readme, or the oficial parser if easy to isntall
+## next steps
+1. add legend
+0.sysml v2 and consise list what we do differently
+2. make the activity diagram useull
+
 
 In tis tool: the system model should be 100% compatible tiwh sysmv2 model, any additioanl infromation like the link to a documentation or a picture should be saved outside the model, every simplification (like not showing the <part def>), the views with its meta data are saved independently of the model but should be validated and the ai agent in my coding ide should be instucted to validate all the viesw and ask if thait should be updated too, 
 
+z. test the pasrser on a diferent laptop (is the oficial parser fast enough or should we use the one from the extension as a backup)
+x. define a methodology 
+y. 
 
+## digital thread
+1. connect to a CAD model or Simulation 
+2. 
 
-
+## Deployment
+1. make people use it and comment
+2. try differnt models, open source, hosted locally
+3. make it easier to install maybe VS extension or clound hosted
 
 
 Software craftsmanship — weaknesses

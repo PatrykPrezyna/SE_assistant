@@ -661,6 +661,47 @@ class ActivityParserTests(unittest.TestCase):
         # actor/subject swimlanes must not invent composition edges
         self.assertEqual(edges_of(model, "composition"), [])
 
+    def test_ref_part_refers_to_an_instance_owned_elsewhere(self):
+        model = parse_sysml("""
+        package P {
+            part def Surgeon;
+
+            part def Kontext {
+                part surgeon : Surgeon;
+            }
+
+            part def Interaction {
+                ref part surgeon : Surgeon {
+                    perform go.request;
+                }
+
+                perform action go {
+                    action request { doc /* Request. */ }
+                    first start;
+                    then request;
+                    then done;
+                }
+            }
+        }
+        """)
+        # only the composing def contributes a usage node, so the surgeon
+        # stays a singleton and is not shown twice
+        self.assertEqual(
+            [n["id"] for n in model["nodes"] if n.get("usageOwner")],
+            ["P::Kontext::surgeon"],
+        )
+        self.assertNotIn(
+            "P::Interaction",
+            [e["from"] for e in edges_of(model, "composition")],
+        )
+        # the reference still carries its swimlane assignment
+        act = next(a for a in model["activities"] if a["owner"] == "P::Interaction")
+        self.assertEqual(
+            [(l["role"], l["type"], l["action"]) for l in act["lanes"]],
+            [("surgeon", "Surgeon", "request")],
+        )
+        self.assertEqual(model["warnings"], [])
+
 
 class ValidationTests(unittest.TestCase):
     """Parser validation warnings: syntax trouble, name collisions, and

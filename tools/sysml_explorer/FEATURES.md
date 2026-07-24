@@ -61,8 +61,9 @@ Pragmatic regex/brace-based parser (not a full KerML grammar). Supported:
   nested inside a `part def` or `use case def` — declares an activity for that
   def (swimlane drilldown; see Activity diagrams). Role usages elsewhere in
   the same def may assign actions to lanes with `perform Name.action;` on
-  `part`, `actor`, or `subject` (actor/subject are swimlane-only — they do
-  not create composition edges). Branching uses SysML v2 `then decide;`
+  `part`, `ref part`, `actor`, or `subject` (all but plain `part` are
+  reference usages — swimlane-only, no usage node and no composition
+  edge; see Reference usages). Branching uses SysML v2 `then decide;`
   followed by `if <guard> then <target>;` / `else <target>;` (and `then`
   right after an `action` declaration continues that action's path). The
   parser emits `edges: [{from,to,label}]` plus `decisions` for diamond
@@ -146,6 +147,26 @@ Both levels coexist, and a View picks whichever it wants:
 
 Port usages are unaffected: a `port x : Iface` still contributes only a
 typing edge (see above), no usage node.
+
+#### Reference usages (`ref part`, `actor`, `subject`)
+
+A composite `part x : Def` declares that the owner *has its own* `x`. When
+several defs each need to name the **same** instance — the surgeon in the
+operational context is the same person as the surgeon in the clinical
+activity — only one of them should compose it; the rest declare a
+reference:
+
+```
+part def Kontext          { part surgeon : Surgeon; }          // owns it
+part def ClinicalCooling  { ref part surgeon : Surgeon { … } } // refers to it
+```
+
+A `ref part` (and likewise `actor` / `subject`) contributes **no usage
+node, no composition edge, and no line in the owner's box** — only its
+`perform Name.action;` swimlane assignments are read. Without this, each
+context would add another `…::surgeon` node, the type would no longer be a
+singleton, and the same person would appear several times in the tree and
+on the canvas.
 
 ### Dialect notes — non-standard constructs
 
