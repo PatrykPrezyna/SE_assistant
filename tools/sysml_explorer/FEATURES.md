@@ -86,15 +86,18 @@ Relationships extracted as edges:
   several models are loaded; an unresolved reference drops the edge and
   emits a validation warning. An edge only renders when both endpoints are
   members of the active View (see Views below).
-- **association** (an actor ↔ use case link declared in a `useDiagram`
-  block) — plain purple line, no arrowhead. A `useDiagram`'s connections are
-  between local role usages (e.g. `operator : Operator`), but the
-  relationship is really between the actor/use-case *defs* they're typed by,
-  so it's resolved to those defs and surfaced as an ordinary edge — it
-  renders in the block definition diagram too, not just inside UCD mode,
-  whenever both the actor and use case happen to be in the same View. A def
-  reused across several roles/diagrams gets one edge per distinct pair, not
-  a duplicate for each connection.
+- **association** (use case ↔ actor / subject) — plain purple line, no
+  arrowhead. Produced from either:
+  - an `actor x : ActorDef` / `subject x : SubjectDef` usage nested in a
+    `use case def` (the usual SysML v2 spelling — e.g. CoolSpine's
+    `DeliverTherapeuticCooling` body), edge labeled with the role name; or
+  - a `connection n from a to u` inside a `useDiagram` block (role usages
+    resolved to the defs they are typed by, labeled with the connection
+    name).
+  Both forms render in the block definition diagram whenever both ends are
+  View members, not only in UCD mode. A def reused across several
+  roles/diagrams gets one edge per distinct pair, not a duplicate for each
+  connection.
 - **connector** (a `connect`/`connection` statement inside a `part def`
   body) — green line, ball at both ends, labeled with the connection name
   and the two port names (`name · fromPort · toPort`). The statement wires
@@ -129,11 +132,10 @@ besides the owner→def composition edge, every part usage also gets:
 
 Both levels coexist, and a View picks whichever it wants:
 
-- Def level (the default) is unchanged — auto-seeded Views and **Show
-  decomposition** contain defs only, so existing Views keep working and
-  nothing appears twice.
+- Def level (the default) is unchanged — auto-seeded Views contain defs
+  only, so existing Views keep working and nothing appears twice.
 - Usage nodes are opt-in: check them in the element tree, or right-click a
-  def and use **Show usages**.
+  def and use **Show decomposition** / **Show usages**.
 - **Singleton collapse (viewer only):** if a part def has exactly one
   usage in the model, that usage is omitted from the element tree and
   **Show usages**; if both are View members, only the def box is drawn
@@ -157,7 +159,7 @@ activity — only one of them should compose it; the rest declare a
 reference:
 
 ```
-part def Kontext          { part surgeon : Surgeon; }          // owns it
+part def Context          { part surgeon : Surgeon; }          // owns it
 part def ClinicalCooling  { ref part surgeon : Surgeon { … } } // refers to it
 ```
 
@@ -167,6 +169,11 @@ node, no composition edge, and no line in the owner's box** — only its
 context would add another `…::surgeon` node, the type would no longer be a
 singleton, and the same person would appear several times in the tree and
 on the canvas.
+
+Exception: an `actor` / `subject` usage nested in a **`use case def`**
+also emits an **association** edge from the use case to that role's type
+(see association under Relationships above). `ref part` never does —
+it remains a pure reference.
 
 ### Dialect notes — non-standard constructs
 
@@ -303,13 +310,17 @@ typically from the element tree.
 - **Show related elements**: right-click an element (in a View, not in a
   drilldown) to pull everything the model associates with it into the
   current View, without hunting for the names in the tree:
-  - **Show decomposition (n)** — its composition children, all levels down
-    (the internal blocks of the block, and their own parts). Def level
-    only: the walk skips usage nodes, so one right-click can't drag both
-    levels of the tree in at once.
-  - **Show usages (n)** — the per-usage nodes this def declares
-    (`inputTempSensor : Thermistor`, `outputTempSensor : Thermistor`), for
-    when the roles matter more than the type they share. See Usage nodes.
+  - **Show decomposition (n)** — its direct composition children as
+    **usage nodes** (roles), one hop only — e.g. `FluidReservoir` →
+    `inputTempSensor` and `outputTempSensor`, not the shared
+    `Thermistor` type and not grandchildren. See Usage nodes.
+  - **Show usages (n)** — the same role nodes, but only for types that
+    have more than one usage in the model (singleton usages stay
+    collapsed onto their part def). Prefer **Show decomposition** when
+    you want every part of the block.
+  - **Show type (n)** — the definition this usage is typed by (the
+    typing / "is a" edge) — e.g. right-click `outputTempSensor` to get
+    `Thermistor`. Empty on a part def that isn't itself a typed usage.
   - **Show specializations (n)** — the elements that specialize it, all
     levels down (e.g. right-click `TemperatureSensor` to get `Thermistor`
     and `Thermocouple` — the possible realizations).
@@ -317,7 +328,7 @@ typically from the element tree.
     On a requirement the same entry reads **Show satisfying elements**
     (what satisfies it), and **Show satisfy relations** when both
     directions exist.
-  - **Show all related (n)** — the union of the four.
+  - **Show all related (n)** — the union of the five.
   Each count is what the View is still *missing*; an entry with nothing to
   add is greyed out. Added elements get auto-layout positions (nothing
   already in the View moves), so remember to **Save**. Implemented by
@@ -350,7 +361,7 @@ what belongs in the View):
 
 | id | name | shows |
 | --- | --- | --- |
-| `context` | **1 Context** | every member of the context block plus the connections between them; the context block itself on top, **unconnected** — its composition edges to the members are in `hiddenEdges`, since containment is what the diagram is about rather than information in it |
+| `context` | **1 Context** | every member of the context block plus the connections between them; the context block itself on top, with composition edges shown to its members (system, actors, external systems) |
 | `decomposition` | **2 Decomposition** | the system part def and up to three levels of composition below it, as a pyramid: level 1 centred on top, level 2 spread beneath, level 3 under its own parent. Realization specializations of a level-2 part (`Thermistor :> TemperatureSensor`) count as level 3. Attributes/parts compartments off, **docs on**; connector edges hidden so only the tree shows |
 | `interconnections` | **3 Interconnections** | the connections declared in the system part def, between its **first-level parts only**. The system block itself is deliberately not a member, so no composition edge competes with the connectors. (The system's "internal block diagram", named for what it shows rather than for SysML v1.) |
 
@@ -411,8 +422,9 @@ for the reference set. Generating them from the parsed model is stubbed:
   green — so they show up in the normal BDD view and can be added to any
   View like any other element, including `satisfy` edges from a use case to
   the requirements it addresses, and **association** edges to whichever
-  actors/use cases they're linked to in a `useDiagram` (see the association
-  bullet under Parsing above) — add both ends to a View to see it.
+  actors/subjects are nested in the use case (or linked via a
+  `useDiagram` — see association under Parsing above) — add both ends to
+  a View to see it.
 - A `use case useDiagram Name for Subject { ... }` block turns `Subject`
   into an entry point: it carries a 🎭 marker (next to any 📄 marker) and
   gains **Open use case diagram** in its right-click menu (only offered from
@@ -427,9 +439,9 @@ for the reference set. Generating them from the parsed model is stubbed:
 - The drilldown chrome: the **◀ Back to BDD** toolbar button, **Close use
   case diagram** in the background menu, and the **view** controls/**Unhide**
   disabled while active.
-- The legend gains an **association (actor ↔ use case)** row whenever
-  association edges are visible — in UCD mode or in the block definition
-  diagram, wherever they end up rendering.
+- The legend gains an **association (actor/subject ↔ use case)** row
+  whenever association edges are visible — in UCD mode or in the block
+  definition diagram, wherever they end up rendering.
 - The current mode and owner are saved in the layout file (`mode`,
   `ucdOwner`); an owner that no longer resolves falls back to the block
   definition diagram.

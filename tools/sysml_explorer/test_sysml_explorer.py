@@ -146,12 +146,12 @@ class ParserTests(unittest.TestCase):
 
     def test_part_usage_with_multiplicity(self):
         # optional / bounded parts must still show as nested parts and
-        # composition edges (CoolSpine Kontext.csfDrain : CsfDrain [0..1])
+        # composition edges (CoolSpine Context.csfDrain : CsfDrain [0..1])
         model = parse_sysml("""
         package P {
             part def Drain;
             part def Display;
-            part def Kontext {
+            part def Context {
                 part csfDrain : Drain [0..1];
                 part display : Display [0..1];
                 part required : Drain [1];
@@ -159,7 +159,7 @@ class ParserTests(unittest.TestCase):
         }
         """)
         self.assertEqual(
-            node(model, "Kontext")["parts"],
+            node(model, "Context")["parts"],
             [
                 {"text": "csfDrain : Drain [0..1]", "attrs": [], "isPort": False},
                 {"text": "display : Display [0..1]", "attrs": [], "isPort": False},
@@ -167,9 +167,9 @@ class ParserTests(unittest.TestCase):
             ],
         )
         comps = [(e["from"], e["to"], e["label"]) for e in edges_of(model, "composition")]
-        self.assertIn(("P::Kontext", "P::Drain", "csfDrain"), comps)
-        self.assertIn(("P::Kontext", "P::Display", "display"), comps)
-        self.assertIn(("P::Kontext", "P::Drain", "required"), comps)
+        self.assertIn(("P::Context", "P::Drain", "csfDrain"), comps)
+        self.assertIn(("P::Context", "P::Display", "display"), comps)
+        self.assertIn(("P::Context", "P::Drain", "required"), comps)
 
     def test_specialization_edges(self):
         specs = edges_of(self.model, "specialization")
@@ -504,6 +504,53 @@ class UcdParserTests(unittest.TestCase):
              ("UcdPkg::Operator", "UcdPkg::Stop")},
         )
 
+    def test_nested_actor_and_subject_in_use_case_become_associations(self):
+        model = parse_sysml("""
+        package P {
+            actor def Surgeon;
+            actor def Patient;
+            part def Device;
+            use case def Cooling {
+                subject device : Device;
+                actor surgeon : Surgeon;
+                actor patient : Patient;
+            }
+        }
+        """)
+        self.assertEqual(
+            {(e["from"], e["to"], e["label"])
+             for e in edges_of(model, "association")},
+            {
+                ("P::Cooling", "P::Device", "device"),
+                ("P::Cooling", "P::Surgeon", "surgeon"),
+                ("P::Cooling", "P::Patient", "patient"),
+            },
+        )
+        self.assertEqual(model["warnings"], [])
+
+    def test_ref_part_in_use_case_does_not_become_association(self):
+        model = parse_sysml("""
+        package P {
+            part def Surgeon;
+            use case def Cooling {
+                ref part surgeon : Surgeon;
+            }
+        }
+        """)
+        self.assertEqual(edges_of(model, "association"), [])
+
+    def test_actor_in_part_def_does_not_become_association(self):
+        # swimlane role on a part/interaction — not a use-case participant
+        model = parse_sysml("""
+        package P {
+            part def Surgeon;
+            part def Interaction {
+                actor surgeon : Surgeon;
+            }
+        }
+        """)
+        self.assertEqual(edges_of(model, "association"), [])
+
     def test_duplicate_association_pairs_across_diagrams_are_deduped(self):
         text = """
         package P {
@@ -660,13 +707,24 @@ class ActivityParserTests(unittest.TestCase):
         )
         # actor/subject swimlanes must not invent composition edges
         self.assertEqual(edges_of(model, "composition"), [])
+        # …but inside a use case def they do become associations to the
+        # actor/subject types (so the BDD can show who participates)
+        self.assertEqual(
+            {(e["from"], e["to"], e["label"])
+             for e in edges_of(model, "association")},
+            {
+                ("P::Deliver", "P::Device", "device"),
+                ("P::Deliver", "P::Surgeon", "surgeon"),
+                ("P::Deliver", "P::Anesthesiologist", "anesthesiologist"),
+            },
+        )
 
     def test_ref_part_refers_to_an_instance_owned_elsewhere(self):
         model = parse_sysml("""
         package P {
             part def Surgeon;
 
-            part def Kontext {
+            part def Context {
                 part surgeon : Surgeon;
             }
 
@@ -688,7 +746,7 @@ class ActivityParserTests(unittest.TestCase):
         # stays a singleton and is not shown twice
         self.assertEqual(
             [n["id"] for n in model["nodes"] if n.get("usageOwner")],
-            ["P::Kontext::surgeon"],
+            ["P::Context::surgeon"],
         )
         self.assertNotIn(
             "P::Interaction",
@@ -1994,7 +2052,7 @@ class UcdRenderingTests(unittest.TestCase):
     def test_association_legend_row_shown_in_both_bdd_and_ucd_mode(self):
         def legend_segment(dom):
             return dom.split('id="legend"')[1].split('<svg id="canvas"')[0]
-        label = "association (actor ↔ use case)"
+        label = "association (actor/subject ↔ use case)"
         self.assertIn(label, legend_segment(self.render(self.BDD_LAYOUT)))
         self.assertIn(label, legend_segment(self.render(self.UCD_LAYOUT)))
 
@@ -2202,42 +2260,78 @@ class RelatedElementsMenuTests(unittest.TestCase):
                        ".map(i => [i.label, !!i.disabled])")
         return items
 
-    def test_decomposition_group_is_transitive(self):
-        [decomp, _, _, _] = self.groups("TestPkg::Robot")
+    def test_decomposition_group_is_direct_usage_children(self):
+        [decomp, *_] = self.groups("TestPkg::Robot")
         self.assertEqual(decomp["label"], "decomposition")
-        # Robot -> BigMotor, Chassis -> Wheel (a level below Chassis)
+        # role-level parts (drive, frame), not the shared types and not
+        # Wheel (a level below Chassis / frame)
         self.assertEqual(sorted(decomp["ids"]),
-                         ["TestPkg::BigMotor", "TestPkg::Chassis", "TestPkg::Wheel"])
+                         ["TestPkg::Robot::drive", "TestPkg::Robot::frame"])
+
+    def test_decomposition_separates_two_usages_of_the_same_type(self):
+        # FluidReservoir-style: two Thermistors must both appear as roles
+        model = parse_sysml("""
+        package P {
+            part def Thermistor;
+            part def Reservoir {
+                part inputTempSensor : Thermistor;
+                part outputTempSensor : Thermistor;
+            }
+        }
+        """)
+        setup = (
+            f"const model = {json.dumps(model)};\n"
+            "let activeView = { elements: [] };\n"
+            "function visibleIds() { return new Set(activeView.elements); }\n"
+            "function rebuild() {}\n"
+            "function setDirty() {}\n"
+            + self.RELATED_JS
+        )
+        groups = run_js(setup, "relatedGroups('P::Reservoir')")
+        self.assertEqual(sorted(groups[0]["ids"]),
+                         ["P::Reservoir::inputTempSensor",
+                          "P::Reservoir::outputTempSensor"])
+
+    def test_type_group_lists_the_def_a_usage_is_typed_by(self):
+        [_, _, typ, _, _] = self.groups("TestPkg::Robot::drive")
+        self.assertEqual(typ["label"], "type")
+        self.assertEqual(typ["ids"], ["TestPkg::BigMotor"])
+        # top-level usage too
+        self.assertEqual(self.groups("TestPkg::robot1")[2]["ids"],
+                         ["TestPkg::Robot"])
+        # a bare part def has no typing edge of its own
+        self.assertEqual(self.groups("TestPkg::Wheel")[2]["ids"], [])
 
     def test_specializations_group_lists_subtypes_not_supertypes(self):
-        [_, _, spec, _] = self.groups("TestPkg::Motor")
+        [_, _, _, spec, _] = self.groups("TestPkg::Motor")
         self.assertEqual(spec["ids"], ["TestPkg::BigMotor"])
         # the other direction stays empty: BigMotor has no subtypes
-        self.assertEqual(self.groups("TestPkg::BigMotor")[2]["ids"], [])
+        self.assertEqual(self.groups("TestPkg::BigMotor")[3]["ids"], [])
 
     def test_satisfy_group_lists_the_requirement_a_part_satisfies(self):
-        [_, _, _, sat] = self.groups("TestPkg::Motor")
+        [_, _, _, _, sat] = self.groups("TestPkg::Motor")
         self.assertEqual(sat["label"], "satisfied requirements")
         self.assertEqual(sat["ids"], ["TestPkg::Reqs::Fast"])
 
     def test_satisfy_group_on_a_requirement_lists_its_satisfiers(self):
-        [_, _, _, sat] = self.groups("TestPkg::Reqs::Fast")
+        [_, _, _, _, sat] = self.groups("TestPkg::Reqs::Fast")
         self.assertEqual(sat["label"], "satisfying elements")
         self.assertEqual(sat["ids"], ["TestPkg::Motor"])
 
     def test_unrelated_edge_kinds_are_ignored(self):
-        # Wheel is only ever a composition target; robot1 types Robot and
-        # BigMotor has a connector to Chassis — neither is "related"
+        # Wheel is only ever a composition target; BigMotor has a connector
+        # to Chassis — neither is "related" on those elements
         self.assertEqual([g["ids"] for g in self.groups("TestPkg::Wheel")],
-                         [[], [], [], []])
+                         [[], [], [], [], []])
         self.assertEqual(self.groups("TestPkg::BigMotor")[0]["ids"], [])
 
     def test_menu_counts_only_what_the_view_is_missing(self):
         labels = dict(self.labels("TestPkg::Robot", ["TestPkg::Robot"]))
-        self.assertIn("Show decomposition (3)", labels)
-        labels = dict(self.labels("TestPkg::Robot",
-                                  ["TestPkg::Robot", "TestPkg::Chassis"]))
         self.assertIn("Show decomposition (2)", labels)
+        labels = dict(self.labels(
+            "TestPkg::Robot",
+            ["TestPkg::Robot", "TestPkg::Robot::frame"]))
+        self.assertIn("Show decomposition (1)", labels)
 
     def test_menu_item_disabled_when_nothing_to_add(self):
         labels = dict(self.labels("TestPkg::Wheel", ["TestPkg::Wheel"]))
@@ -2256,8 +2350,8 @@ class RelatedElementsMenuTests(unittest.TestCase):
             " return activeView.elements; })()",
         )
         self.assertEqual(sorted(elements),
-                         ["TestPkg::BigMotor", "TestPkg::Chassis",
-                          "TestPkg::Robot", "TestPkg::Wheel"])
+                         ["TestPkg::Robot", "TestPkg::Robot::drive",
+                          "TestPkg::Robot::frame"])
 
 
 EXAMPLE_DIR = Path(__file__).resolve().parents[2] / "examples" / "MedicalDevice"
@@ -2366,22 +2460,25 @@ class MedicalDeviceDefaultViewTests(unittest.TestCase):
             v = self.view(spec["id"])
             self.assertEqual(sorted(v["nodes"]), sorted(v["elements"]), spec["id"])
 
-    def test_context_view_shows_the_context_block_unconnected(self):
+    def test_context_view_shows_the_context_block_connected_to_members(self):
         v = self.view("context")
-        self.assertIn("CoolSpineSystemContext::Kontext", v["elements"])
-        block = "CoolSpineSystemContext::Kontext"
+        self.assertIn("CoolSpineSystemContext::Context", v["elements"])
+        block = "CoolSpineSystemContext::Context"
         # the context block is topmost...
         top = min(n["y"] for n in v["nodes"].values())
         self.assertEqual(v["nodes"][block]["y"], top)
         self.assertTrue(all(n["y"] > top for i, n in v["nodes"].items() if i != block))
-        # ...and every edge touching it is hidden
-        touching = {k for k in self.edge_keys
-                    if k.split("|")[1] == block or k.split("|")[2] == block}
-        visible = touching - set(v["hiddenEdges"])
-        members = set(v["elements"])
-        self.assertEqual(
-            [k for k in visible
-             if k.split("|")[1] in members and k.split("|")[2] in members], [])
+        # ...with composition edges to each member visible
+        for member, role in (
+            ("CoolSpineSystem::CoolSpineDevice", "coolSpine"),
+            ("CoolSpineSystemContext::Surgeon", "surgeon"),
+            ("CoolSpineSystemContext::Anesthesiologist", "anesthesiologist"),
+            ("CoolSpineSystemContext::Patient", "patient"),
+            ("CoolSpineSystemContext::CsfDrain", "csfDrain"),
+        ):
+            key = f"composition|{block}|{member}|{role}"
+            self.assertIn(key, self.edge_keys, f"missing model edge {key}")
+            self.assertNotIn(key, v["hiddenEdges"], f"edge still hidden: {key}")
 
     def test_context_view_keeps_connections_between_members(self):
         v = self.view("context")

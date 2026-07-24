@@ -128,7 +128,7 @@ package CoolSpineSystemContext {
     // Operating room picture (who is there with the device)
     // ------------------------------------------------------------------
 
-    part def Kontext {
+    part def Context {
         doc /*
         One operating-room snapshot: CoolSpine device, patient, surgeon,
         anesthesiologist, and optionally a CSF drain.

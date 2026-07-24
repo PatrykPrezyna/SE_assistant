@@ -646,7 +646,7 @@ const LEGEND_LABELS = {
   typing: "is a",
   satisfy: "satisfies requirement",
   connector: "connector",
-  association: "association (actor ↔ use case)",
+  association: "association (actor/subject ↔ use case)",
 };
 
 function legendRow(kind) {
@@ -1610,12 +1610,13 @@ function usageNodeIds() {
 }
 
 // "Show related" walks the parsed model's own edges outward from one
-// element, transitively, so a right-click can pull the whole decomposition
-// (or specialization tree) of a block into the View in one go.
+// element. Pass `transitive: true` to follow a whole tree (specializations);
+// direct children only is the default.
 // `dir` is "down" to follow edges from→to, "up" for to→from.
-// Usage nodes are skipped here: walking composition through them would pull
-// both levels of every part in at once. They get their own menu group.
-function relatedIds(id, kind, dir) {
+// By default usage nodes are skipped (so satisfy/specialization don't mix
+// levels). Pass `usagesOnly: true` for decomposition: only the role-level
+// composition targets (`Owner::inputTempSensor`), not the shared type def.
+function relatedIds(id, kind, dir, {transitive = false, usagesOnly = false} = {}) {
   const usageIds = usageNodeIds();
   const out = new Set();
   const queue = [id];
@@ -1625,17 +1626,19 @@ function relatedIds(id, kind, dir) {
       if (e.kind !== kind) continue;
       const from = dir === "down" ? e.from : e.to;
       const to = dir === "down" ? e.to : e.from;
-      if (from !== cur || to === id || out.has(to) || usageIds.has(to)) continue;
+      if (from !== cur || to === id || out.has(to)) continue;
+      if (usagesOnly ? !usageIds.has(to) : usageIds.has(to)) continue;
       out.add(to);
-      queue.push(to);
+      if (transitive) queue.push(to);
     }
   }
   return [...out];
 }
 
-// The three "show related" groups offered on an element's context menu:
-// its decomposition (composition children, all levels), its
-// specializations (subtypes, all levels) and its satisfy links
+// The "show related" groups offered on an element's context menu:
+// decomposition (direct composition children as usage nodes / roles),
+// its type (typing edge — e.g. outputTempSensor → Thermistor),
+// specializations (subtypes, all levels) and satisfy links
 // (requirements it satisfies, or — on a requirement — what satisfies it).
 function relatedGroups(id) {
   const satisfied = relatedIds(id, "satisfy", "down");   // requirements of a part
@@ -1646,11 +1649,14 @@ function relatedGroups(id) {
         ? "satisfying elements" : "satisfied requirements");
   const hideSingleton = singletonPartUsageIds();
   return [
-    { label: "decomposition", ids: relatedIds(id, "composition", "down") },
+    { label: "decomposition",
+      ids: relatedIds(id, "composition", "down", {usagesOnly: true}) },
     { label: "usages", ids: model.nodes.filter(n => n.usageOwner === id)
                                        .map(n => n.id)
                                        .filter(uid => !hideSingleton.has(uid)) },
-    { label: "specializations", ids: relatedIds(id, "specialization", "up") },
+    { label: "type", ids: relatedIds(id, "typing", "down") },
+    { label: "specializations",
+      ids: relatedIds(id, "specialization", "up", {transitive: true}) },
     { label: satisfyLabel, ids: [...new Set([...satisfied, ...satisfiers])] },
   ];
 }

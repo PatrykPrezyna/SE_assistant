@@ -452,8 +452,19 @@ def _interpret_def(block, model, pkg_path, warn):
             continue
         asu = RE_REFERENCE_USAGE.match(header)
         if asu:
-            _role_kw, _short, uname, utype, _mult = asu.groups()
+            role_kw, _short, uname, utype, _mult = asu.groups()
             _collect_lane_performs(uname, utype, child["children"])
+            # actor/subject nested in a use case def is the SysML v2 way of
+            # saying who participates — surface that as an association to
+            # the role's type so the BDD can show use case ↔ actor/subject
+            # without a separate useDiagram block. `ref part` stays a
+            # swimlane-only reference (owned elsewhere).
+            if (utype and node["kind"] == "use case def"
+                    and role_kw in ("actor", "subject")):
+                model.edges.append(
+                    {"kind": "association", "from": node["id"],
+                     "to_name": utype, "label": uname}
+                )
             continue
         um = RE_USAGE.match(header)
         if um:
@@ -715,14 +726,23 @@ def parse_models(texts, names=None):
                 "the diagram was dropped"
             )
 
-    # a use case diagram's associations are between role usages (e.g.
+    # Associations also come from actor/subject usages nested in a use case
+    # def (resolved above with the other edges). Collapse duplicates first
+    # (two roles of the same type in one use case → one edge).
+    # A useDiagram's connections are between role usages (e.g.
     # `operator : Operator`), local to that diagram — but they're really
     # relationships between the actor/use-case defs themselves, so surface
-    # them as ordinary edges too, resolving each role to its type. That way
-    # they render in the block definition diagram whenever both the actor
-    # and use case happen to be in the same View, not just inside the UCD.
-    # A def can appear in several roles/diagrams; keep one edge per pair.
+    # them as ordinary edges too. Keep one edge per unordered pair.
     seen_association_pairs = set()
+    collapsed = []
+    for e in edges:
+        if e["kind"] == "association":
+            pair = tuple(sorted((e["from"], e["to"])))
+            if pair in seen_association_pairs:
+                continue
+            seen_association_pairs.add(pair)
+        collapsed.append(e)
+    edges = collapsed
     for u in ucds:
         role_types = {r["name"]: r["type"] for r in u["roles"]}
         for c in u["connections"]:
@@ -805,9 +825,8 @@ DEFAULT_VIEW_SPECS = [
         "doc": "Every element of the context block (the part def whose "
                "usages are the system, the actors and the external "
                "systems) plus the connections between them. The context "
-               "block itself sits on top, unconnected — its composition "
-               "edges to the members are hidden, since containment is "
-               "what the diagram is about rather than information in it.",
+               "block itself sits on top, with composition edges shown "
+               "to its members (system, actors, external systems).",
     },
     {
         "id": "decomposition",
