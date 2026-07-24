@@ -29,6 +29,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
+from .version import __version__
+
 # ----------------------------------------------------------------------
 # Parsing
 # ----------------------------------------------------------------------
@@ -949,22 +951,28 @@ def make_handler(folder: Path, layout_path: Path):
         def do_GET(self):
             path = self.path.split("?")[0]
             if path == "/":
-                self._send(VIEWER.read_text(encoding="utf-8"), "text/html")
+                html = VIEWER.read_text(encoding="utf-8").replace(
+                    "{{EXPLORER_VERSION}}", __version__
+                )
+                self._send(html, "text/html")
             elif path == "/api/model":
                 try:
                     model_paths = _sysml_files(folder)
                     if not model_paths:
                         self._send(json.dumps(
-                            {"error": f"no .sysml files found in {folder}"}))
+                            {"error": f"no .sysml files found in {folder}",
+                             "explorerVersion": __version__}))
                         return
                     model = parse_models(
                         [p.read_text(encoding="utf-8") for p in model_paths],
                         [p.name for p in model_paths],
                     )
                     model["file"] = ", ".join(p.name for p in model_paths)
+                    model["explorerVersion"] = __version__
                     self._send(json.dumps(model))
                 except Exception as exc:  # surface parse errors in the UI
-                    self._send(json.dumps({"error": str(exc)}))
+                    self._send(json.dumps(
+                        {"error": str(exc), "explorerVersion": __version__}))
             elif path == "/api/layout":
                 if layout_path.exists():
                     self._send(layout_path.read_text(encoding="utf-8"))

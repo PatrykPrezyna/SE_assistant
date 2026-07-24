@@ -1,6 +1,6 @@
 [project]
 name = "sysml-explorer"
-version = "0.1.0"
+version = "0.0.1"
 description = "Interactive SysML v2 model explorer with manual element placement."
 readme = "README.md"
 requires-python = ">=3.9"
