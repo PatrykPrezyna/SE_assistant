@@ -90,6 +90,19 @@ turn back on per View, except where noted):
 
 - **Element kind keywords are hidden** — node headers show just the name,
   not «part def» / «requirement» / etc.
+- **Parts and part definitions look the same** — standard BDD often
+  distinguishes usage vs definition boxes; here a `part` usage node uses
+  the same white fill (and uncolored tree dot) as a `part def`. Other
+  non-def kinds can still get a tint. Reverse: in
+  [`viewer.html`](src/sysml_explorer/viewer.html), drop the
+  `&& d.kind !== "part"` / `&& kind !== "part"` guards in `createNodeEl`
+  and `treeDotClass` so parts get `.usage` / `k-usage` again.
+- **Usage node headers omit `: Type`** — SysML often labels a usage
+  `inputTempSensor : Thermistor`; the viewer shows only the role name
+  (`inputTempSensor`). The type remains in the model (`usageType`) and on
+  the typing edge (legend: **is a**). Parts-compartment lines inside a
+  def still show `role : Type`. Reverse: in `buildNodeContent`, append
+  `+ (d.usageType ? " : " + d.usageType : "")` to the name line again.
 - **Edge labels are hidden** — no composition role names or «satisfy»
   labels on the lines. A **legend** explains the arrow styles instead.
   Connector edges always keep their label (which connection / ports).

@@ -113,10 +113,12 @@ outputTempSensor : Thermistor` are two distinct parts of their owner. So
 besides the owner→def composition edge, every part usage also gets:
 
 - a **node** of its own, id `Owner::role` (e.g.
-  `CoolSpineSystem::FluidReservoir::inputTempSensor`), header rendered
-  `role : Type`, carrying that usage's own `doc` and its `:>>` attribute
-  redefinitions. It reports `usageOwner` (the def that declares it) and
-  `usageType` (the type name as written).
+  `CoolSpineSystem::FluidReservoir::inputTempSensor`), header showing
+  only the role name (not `role : Type` — type is on the typing edge;
+  see README "What the viewer simplifies"), carrying that usage's own
+  `doc` and its `:>>` attribute redefinitions. It reports `usageOwner`
+  (the def that declares it) and `usageType` (the type name as written).
+  Canvas fill and tree-dot color match `part def` (no usage tint).
 - a **composition** edge owner → usage node (unlabeled — the node itself
   carries the role name) and a **typing** edge usage node → def.
 - for a `connect`/`connection` between two roles of the same owner, a
@@ -368,8 +370,8 @@ for the reference set. Generating them from the parsed model is stubbed:
   on it — a quick way to locate an element without hunting across a large
   diagram.
 - Each row gets a small color dot matching its kind (yellow = requirement,
-  purple = actor, green = use case, blue = any other usage; def-level
-  elements are uncolored).
+  purple = actor, green = use case, blue = non-part usages; `part` /
+  `part def` and other def-level elements are uncolored).
 - Disabled (greyed out, non-interactive) while in UCD or activity mode,
   since View membership only applies to the block definition diagram.
 

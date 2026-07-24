@@ -19,16 +19,16 @@
       "y": 340
     },
     "CoolSpineSystemContext::Surgeon": {
-      "x": -350,
-      "y": 340
+      "x": -302,
+      "y": 348
     },
     "CoolSpineSystemContext::Anesthesiologist": {
       "x": 50,
-      "y": 340
+      "y": 357
     },
     "CoolSpineSystemContext::Patient": {
-      "x": 430,
-      "y": 340
+      "x": 393,
+      "y": 341
     },
     "CoolSpineSystemContext::CsfDrain": {
       "x": 851,
@@ -45,7 +45,7 @@
     "attrs": false,
     "parts": false,
     "keywords": true,
-    "edgeLabels": true,
+    "edgeLabels": false,
     "packages": false,
     "docsOnNode": true
   }

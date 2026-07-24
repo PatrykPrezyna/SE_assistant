@@ -425,10 +425,10 @@ function buildNodeContent(d) {
   const header = [];
   if (opts.keywords)
     header.push({ text: "«" + d.kind + "»", cls: "stereo" });
-  // a usage node carries its declared type in the header, SysML style
-  // (`inputTempSensor : Thermistor`), since its own name is only a role
-  header.push({ text: (d.shortName ? d.shortName + " " : "") + d.name
-                      + (d.usageType ? " : " + d.usageType : ""),
+  // Usage nodes show only the role name (not `role : Type`). The type is
+  // already on the typing edge ("is a"); see README "What the viewer
+  // simplifies". `usageType` stays on the model for edges / menus.
+  header.push({ text: (d.shortName ? d.shortName + " " : "") + d.name,
                 cls: "name", italic: d.abstract });
   if (opts.packages && d.package) header.push({ text: d.package, cls: "pkg" });
   const compartments = [];
@@ -476,7 +476,9 @@ function createNodeEl(n) {
   if (d.kind === "action") g.classList.add("action");
   if (d.kind === "control") g.classList.add("control");
   if (d.kind === "decision") g.classList.add("decision");
-  if (!d.kind.endsWith("def")) g.classList.add("usage");
+  // Parts look the same as part defs (no usage tint). Other non-def
+  // kinds still get `.usage` unless they have their own class above.
+  if (!d.kind.endsWith("def") && d.kind !== "part") g.classList.add("usage");
   g.dataset.id = d.id;
 
   // decision nodes are empty diamonds (UML/SysML activity control node)
@@ -1114,7 +1116,8 @@ function treeDotClass(kind) {
   if (kind.startsWith("requirement")) return "k-req";
   if (kind === "actor def" || kind === "actor") return "k-actor";
   if (kind === "use case def" || kind === "use case") return "k-usecase";
-  if (!kind.endsWith("def")) return "k-usage";
+  // Parts match part defs (uncolored); other non-def kinds stay blue.
+  if (!kind.endsWith("def") && kind !== "part") return "k-usage";
   return "";
 }
 

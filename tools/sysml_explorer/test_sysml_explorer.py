@@ -1523,6 +1523,22 @@ class ViewRenderingTests(unittest.TestCase):
             self.assertIn('data-key="typing|TestPkg::Robot::drive'
                           '|TestPkg::BigMotor|"', dom)
 
+    def test_usage_node_looks_like_part_def_and_hides_type_in_header(self):
+        # part usages share part-def styling; header is role only (type is
+        # on the typing edge). View omits the owner so the parts compartment
+        # cannot contribute a "drive : BigMotor" line.
+        elements = ["TestPkg::Robot::drive", "TestPkg::BigMotor"]
+        with self.serve({"v": self.make_view("V", elements)}, "v") as srv:
+            dom = dump_dom(srv.url)
+            self.assertRegex(
+                dom,
+                r'<g class="node"[^>]*data-id="TestPkg::Robot::drive"')
+            self.assertNotRegex(
+                dom,
+                r'<g class="node usage"[^>]*data-id="TestPkg::Robot::drive"')
+            self.assertIn(">drive</text>", dom)
+            self.assertNotIn("drive : BigMotor", dom)
+
     def test_type_level_edge_dropped_once_its_usage_node_is_shown(self):
         key = 'data-key="composition|TestPkg::Robot|TestPkg::BigMotor|drive"'
         elements = ["TestPkg::Robot", "TestPkg::BigMotor"]
@@ -1693,7 +1709,8 @@ class ElementTreeRenderingTests(unittest.TestCase):
     def test_dot_classes_reflect_element_kind(self):
         dom = self.render()
         self.assertIn("k-req", elem_row(dom, "Fast"))
-        self.assertIn("k-usage", elem_row(dom, "robot1"))
+        # parts match part defs (uncolored); no k-usage tint
+        self.assertNotIn("k-usage", elem_row(dom, "robot1"))
         self.assertNotIn("k-req", elem_row(dom, "Motor"))
         self.assertNotIn("k-usage", elem_row(dom, "Motor"))
 
