@@ -190,45 +190,17 @@ package RobotArmLogicalArchitecture {
         part elbowJoint    : ElbowJoint;
         part wristJoint    : WristJoint;
         part gripperJoint  : GripperJoint;
-        
+
         satisfy REQ-272;  // Modular architecture with 5 DOF base + gripper
+
+        // Electrical power connections from controller to all joint servos
+        connection controlPower connect controller.powerSupply to baseJoint.servo;
+        connection shoulder_power connect controller.powerSupply to shoulderJoint.servo;
+        connection elbow_power connect controller.powerSupply to elbowJoint.servo;
+        connection wrist_power connect controller.powerSupply to wristJoint.servo;
+        connection gripper_power connect controller.powerSupply to gripperJoint.servo;
     }
 
     // Usage-level instance of the complete system
     part robotArm : RobotArmSystem;
-
-    // ------------------------------------------------------------------
-    // Internal Block Diagram (IBD) - Mechanical & Electrical Connections
-    // ------------------------------------------------------------------
-
-    ibd def RobotArmIBD of RobotArmSystem {
-        // Internal parts (implicit from RobotArmSystem definition)
-        ref controller : StandardController;
-        ref baseJoint : BaseJoint;
-        ref shoulderJoint : ShoulderJoint;
-        ref elbowJoint : ElbowJoint;
-        ref wristJoint : WristJoint;
-        ref gripperJoint : GripperJoint;
-
-        // Electrical power connections from controller to all joint servos
-        connection controlPower : controller.powerSupply to baseJoint.servo {
-            // Power distribution from controller to base joint servo
-        }
-        
-        connection shoulder_power : controller.powerSupply to shoulderJoint.servo {
-            // Power to shoulder joint servo
-        }
-        
-        connection elbow_power : controller.powerSupply to elbowJoint.servo {
-            // Power to elbow joint servo
-        }
-        
-        connection wrist_power : controller.powerSupply to wristJoint.servo {
-            // Power to wrist joint servo
-        }
-        
-        connection gripper_power : controller.powerSupply to gripperJoint.servo {
-            // Power to gripper joint servo
-        }
-    }
 }

@@ -11,6 +11,11 @@ of every other View.
 Built as an alternative to auto-layout-only viewers (SysML v2 pilot Jupyter
 implementation, SysIDE) and heavyweight commercial modelers (Cameo/MagicDraw).
 
+This file covers **setup and developer workflow**. The complete feature
+reference (parsing dialect, validation rules, viewer behavior, HTTP API) is
+in **[FEATURES.md](FEATURES.md)** — written so it can also be loaded as
+context by an LLM coding agent (see "Using an LLM coding agent" below).
+
 ## Installation
 
 This tool is a standalone pip package (no dependencies beyond the stdlib),
@@ -37,7 +42,7 @@ sysml-explorer <folder> [--port 8199] [--no-open]
 
 Opens the diagram in your browser at `http://127.0.0.1:<port>/`. Each View is
 saved to `<folder>/views/<id>.json`; everything else (documentation links,
-the element tree panel, IBD/UCD drilldown state) is saved to
+the element tree panel, UCD drilldown state) is saved to
 `<folder>/layout.json`.
 
 Every `.sysml` file directly inside `<folder>` (not recursive — subfolders are
@@ -55,243 +60,195 @@ Debugging aid — dump the parsed model as JSON without starting the server:
 sysml-explorer <folder> --print
 ```
 
-Without installing, from a checkout of this tool (e.g. while developing it
-in place inside SE_assistant):
+Validate without starting the server — prints every validation warning (see
+Validation in [FEATURES.md](FEATURES.md)) and exits nonzero if there are
+any, so it can be used as a pre-commit or CI gate:
 
 ```
-python -m sysml_explorer <folder>   # run from tools/sysml_explorer/src, or
-                                     # with tools/sysml_explorer/src on PYTHONPATH
+sysml-explorer <folder> --check
 ```
 
-## Features
+When developing this tool, always start the version from the current checkout
+in this workspace rather than any older package you may have installed in the
+past. From the package source directory of this checkout, run:
 
-### Parsing (`src/sysml_explorer/app.py`)
-Pragmatic regex/brace-based parser (not a full KerML grammar). Supported:
+```
+cd tools/sysml_explorer/src
+python -m sysml_explorer C:\sources\SE_assistant\examples\MedicalDevice
+```
 
-- `package` (incl. nested packages; nested package path shown in node header,
-  and every node carries its full `packagePath`, used to group the element
-  tree below)
-- `part def` / `requirement def` / `item def` / `action def` / `port def` /
-  `actor def` / `use case def`, including `abstract` (name rendered italic)
-  and specialization `:> Super`
-- attributes: type, `default` value, and `:>>` redefinitions with `= value`
-- nested part usages (`part servo : ServoDrive`), including `:>>` redefinitions
-  and attribute redefinitions inside them (e.g. `mechanics` length overrides).
-  Each part entry is `{"text": "name : Type", "attrs": [nested redefs]}` so the
-  viewer can filter nested attribute lines independently.
-- top-level usages (`part robotArm : RobotArmSystem`, requirements with
-  `<'REQ-123'>` short names) and their `doc /* ... */` text
-- comments (`//`, `/* */`) are stripped; `doc` bodies are preserved
-- `ibd def IbdName of Owner { connection role : a.b to c.d; }` — an internal
-  block diagram definition contributes no node of its own; its connections
-  are attached to `Owner` (resolved after all files are parsed, same as
-  `satisfy`; an unresolved `of` target drops the connections silently). The
-  shorthand `connect a.b to c.d;` directly inside a `part def` body is also
-  recognized, without a wrapping `ibd def`.
-- `use case useDiagram Name for Subject { actor a : ActorDef; use case u :
-  UseCaseDef; connection n from a to u; }` — a use case diagram, handled the
-  same way as `ibd def`: contributes no node of its own, and its role usages
-  + named associations attach to `Subject` (resolved after all files are
-  parsed; an unresolved `for` target, or a connection missing the mandatory
-  `from` clause, drops silently — see Use case diagrams below).
+If you previously installed `sysml-explorer` from an older checkout, do not
+rely on that older executable; use the `python -m sysml_explorer` command
+above so you are sure you are launching the code that is currently in this
+workspace.
 
-Relationships extracted as edges:
+## What the viewer simplifies vs. standard SysML notation
 
-- **specialization** (`:>`) — solid line, hollow triangle at the parent
-- **composition** (nested part usage) — filled diamond at the owner, edge
-  labeled with the role name
-- **typing** (usage `: Def`) — dashed line, open arrow at the definition
-- **satisfy** (`satisfy REQ-123;` inside a def) — dashed line, open arrow at
-  the requirement, «satisfy» label. The reference is resolved by element name
-  or requirement short name (`<'REQ-123'>`), including across files when
-  several models are loaded; unresolved references are dropped silently. An
-  edge only renders when both endpoints are members of the active View (see
-  Views below).
-- **association** (an actor ↔ use case link declared in a `useDiagram`
-  block) — plain purple line, no arrowhead. A `useDiagram`'s connections are
-  between local role usages (e.g. `operator : Operator`), but the
-  relationship is really between the actor/use-case *defs* they're typed by,
-  so it's resolved to those defs and surfaced as an ordinary edge — it
-  renders in the block definition diagram too, not just inside UCD mode,
-  whenever both the actor and use case happen to be in the same View. A def
-  reused across several roles/diagrams gets one edge per distinct pair, not
-  a duplicate for each connection.
+To keep diagrams readable, the viewer deliberately deviates from textbook
+SysML rendering. At a glance (all of these are **Display** toggles you can
+turn back on per View, except where noted):
 
-### Viewer (`viewer.html`)
-- drag elements to arrange them; drag the background to pan; mouse wheel zooms
-- **Click to highlight**: left-clicking an element outlines it (red) and
-  outlines every connection touching it plus the elements on the other end
-  (blue) — a quick way to trace what's wired to what. Left-clicking a
-  connection instead outlines that connection and its two endpoint elements.
-  Click the background, or press Esc, to clear the highlight. It's a
-  transient view aid, not saved to the layout file.
-- **Save layout** (or Ctrl+S) persists the active View (membership,
-  positions, pan/zoom, filters) and the global state (docs, tree panel,
-  drilldown) in one action; unsaved changes are flagged and warned on close
-- auto-layout for elements without a saved position (layered: parents above
-  children, wholes above parts); **Auto-layout** button re-runs it for all
-- **Fit view** zooms to the whole diagram
-- **Reload model** re-parses the folder's `.sysml` files without losing the
-  arrangement (positions are keyed by qualified element name)
-- **attributes** / **parts** checkboxes hide the respective compartments.
-  Attribute redefinitions nested under a part (e.g. `.length = 120.0`) follow
-  the *attributes* checkbox, and are also hidden when *parts* is off.
-- parse errors are shown in a banner instead of a broken page
-- element kind keywords («part def», «requirement», …) are **not** shown in
-  node headers by default; flip the `SHOW_KEYWORDS` constant at the top of
-  the `viewer.html` script to bring them back
-- connection labels (composition role names, «satisfy») are **not** shown by
-  default either — `SHOW_EDGE_LABELS` constant brings them back. Instead a
-  **legend** (bottom-left, `SHOW_LEGEND` constant) explains the arrow styles,
-  listing only the edge kinds currently visible in the diagram. To keep
-  satisfy distinguishable from typing without labels, satisfy edges are
-  drawn in dark yellow.
+- **Element kind keywords are hidden** — node headers show just the name,
+  not «part def» / «requirement» / etc.
+- **Edge labels are hidden** — no composition role names or «satisfy»
+  labels on the lines. A **legend** explains the arrow styles instead.
+  Connector edges always keep their label (which connection / ports).
+- **Legend wording is human-friendly, not SysML-textbook** — the edge
+  kinds are still specialization (`:>`) and typing (`: Def`) in the model;
+  the legend just says **kind of** and **is a** so non-engineers can read
+  the diagram. Mapping (and how to reverse it):
 
-### Views (`viewer.html`)
-A **View** is a curated, named presentation of model content — SysML v2's
-own term for this (`view def`/`viewpoint def`). Unlike the block definition
-diagram's element list (which is just "everything the parser found"), a
-View's membership is entirely up to you: nothing is in it until you add it,
-typically from the element tree.
+  | Model / edge kind | SysML idea | Legend text today |
+  |-------------------|------------|-------------------|
+  | `specialization` | specialization (`A :> B`) | `kind of` |
+  | `typing` | typed by (`part x : Def`) | `is a` |
 
-- The **view** dropdown switches between Views. Alongside it: **+ View**
-  (prompts for a name, creates it empty, and switches to it), **Rename**
-  (updates the name, keeps the same underlying file), **Delete** (with a
-  confirmation; if it was the last View, a fresh empty one is created so
-  there's always something to look at).
-- A brand-new folder (no `views/` yet) gets one View auto-created on first
-  launch, named "Default" and seeded with every element the parser found —
-  so the first launch isn't a blank canvas. Every View you create by hand
-  after that starts empty.
-- **Add elements** by checking them in the element tree (see below); an edge
-  between two elements renders automatically once both are members.
-  **Remove from view** (right-click an element) drops just that element —
-  its saved position goes with it, so re-adding it later re-runs auto-layout
-  for it rather than remembering the old spot.
-- **Right-click context menu** (designed to grow — new entries are added in
-  `nodeMenuItems()` in `viewer.html`):
-  - on an *element*: **Open internal block diagram** / **Open use case
-    diagram** (only offered when the element has one — see below),
-    **Remove from view**.
-  - on a *connection*: **Hide connection** (removes only the line, without
-    removing either endpoint — for decluttering a busy View).
-  - on the *background*: **Unhide connections (n)**, **Fit view**,
-    **Auto-layout**.
-  - close with Esc or by clicking elsewhere.
-- **Documentation links**: right-click an element → **Add documentation
-  link…** and enter a file path (e.g. a PDF; relative paths resolve from the
-  model folder) or an http(s) URL. Linked elements show a 📄
-  marker, and the menu gains **Open documentation (file.pdf)**, which opens
-  the file in a new browser tab (local files are served via `/api/doc`).
-  Links are global (not per-View) and stored in the layout file (`docs`) —
-  remember to **Save layout**. Enter an empty value in **Edit documentation
-  link…** to remove a link.
-- Each View's membership, positions, hidden connections, pan/zoom, and
-  attributes/parts filters are saved in its own file
-  (`<folder>/views/<id>.json`) — see Server below. The id is a filesystem-safe
-  slug derived from the name when the View is created and never changes,
-  even if you rename it afterwards.
+  Labels live in `LEGEND_LABELS` in
+  [`src/sysml_explorer/viewer.html`](src/sysml_explorer/viewer.html).
+  To restore textbook wording, set
+  `specialization: "specialization (is a)"` and `typing: "typed by"`
+  (and update the assertion in `test_legend_lists_only_visible_edge_kinds`
+  that checks the typing row text).
+- **Package paths and doc text are hidden** on nodes by default — open
+  **Display** to show them; documentation *links* still use the marker /
+  context menu.
+- **Satisfy edges are drawn dark yellow**, so they stay distinguishable
+  from typing edges (both dashed, open arrow) without labels.
+- **Actors are plain boxes** (tinted pale purple), not stick figures;
+  **use cases are plain boxes** (pale green), not ellipses — both behave
+  like any other node and can join any View.
+- **Attributes / parts compartments** can be hidden from **Display**.
+- **`useDiagram` blocks contribute no node of their own** — their content
+  attaches to the subject element, which gets a marker and a right-click
+  drilldown instead.
+- **`perform action` swimlanes** are an explorer-only activity drilldown
+  (see FEATURES.md), not standard `activity def` diagrams.
+- **Actor ↔ use case associations are lifted to the defs**: a `useDiagram`
+  connection is declared between local role usages, but the block
+  definition diagram renders it between the defs they're typed by.
+- **Only the supported subset is rendered** — statements with known
+  keywords the tool doesn't draw (`constraint`, `state`, `subject`, …) are
+  silently skipped; unknown first words trigger a validation warning.
+- **Comments (`//`, `/* */`) are stripped; `doc` bodies are kept** and can
+  be shown on the node via **Display → docs on node**.
 
-### Element tree (`viewer.html`)
-- A left-side panel lists every element in the *model* (not just the active
-  View), grouped into a collapsible tree by `packagePath` (click a package
-  header to expand/collapse its branch) — this is how you build up a View.
-  Toggle the panel itself with the **☰ Tree** toolbar button; its open/
-  closed state is saved in the layout file (`treeOpen`, default open).
-- Each element row has a checkbox reflecting whether it's a **member of the
-  active View** (and thus on the canvas right now); checking it adds the
-  element to the View, unchecking it removes it — the same add/remove
-  mechanism as the tree checkbox and right-click **Remove from view** are
-  interchangeable, both with an immediate rebuild.
-- Rows for elements not currently in the View are dimmed, with a tooltip.
-- **Package headers get a checkbox too**, for adding/removing a whole
-  package (including nested subpackages) at once: checked when every
-  element under it is a View member, unchecked when none are, and
-  indeterminate (a dash) when it's a mix. Toggling it adds or removes every
-  descendant element in one go — clicking elsewhere on the header still
-  just expands/collapses the branch.
-- Clicking an element's name (not its checkbox) selects it (same highlight
-  as clicking it on the canvas) and, if it's a View member, centers the view
-  on it — a quick way to locate an element without hunting across a large
-  diagram.
-- Each row gets a small color dot matching its kind (yellow = requirement,
-  purple = actor, green = use case, blue = any other usage; def-level
-  elements are uncolored).
-- Disabled (greyed out, non-interactive) while in IBD or UCD mode, since
-  View membership only applies to the block definition diagram.
+## Setting up the validation parsers
 
-### Internal block diagrams (viewer.html)
-- Elements that own an `ibd def`/`connect` block, or usages typed by such a
-  def, carry a 🧩 marker (top-left corner of the node, next to the 📄
-  documentation marker) and gain **Open internal block diagram** in their
-  right-click menu.
-- Opening it switches the whole canvas to **IBD mode**: the owner's parts
-  become role boxes (named after the role, e.g. `drive`, typed by whatever
-  they were declared as) connected by green ball-tipped **connector** edges
-  — the diagram's normal nodes/edges are replaced, not overlaid.
-  - a role box whose own type has an internal block diagram gets the same 🧩
-    marker and menu entry, so you can drill down (**◀ Back to parent IBD**)
-    into nested structure.
-  - the **◀ Back** toolbar button (and the same entry in the background
-    menu, worded **Close internal block diagram**) returns to the block
-    definition diagram, or to the parent IBD when nested.
-  - the **view** controls and **Unhide** are disabled while in IBD mode —
-    both concepts belong to the block definition diagram.
-  - the legend gains a **connector (IBD)** row whenever connector edges are
-    visible.
-  - the current mode and owner are saved in the layout file (`mode`,
-    `ibdOwner`); an owner that no longer resolves (e.g. after editing the
-    model) falls back to the block definition diagram.
+`sysml-explorer --check` is a fast, dependency-free sanity check built on
+this tool's own pragmatic parser — good for CI gates, **not** a grammar.
+For real validation install one (ideally both) of the following.
 
-### Use case diagrams (viewer.html)
-- Actors (`actor def`) and use cases (`use case def`) render as ordinary
-  block-definition nodes too — actors tinted pale purple, use cases pale
-  green — so they show up in the normal BDD view and can be added to any
-  View like any other element, including `satisfy` edges from a use case to
-  the requirements it addresses, and **association** edges to whichever
-  actors/use cases they're linked to in a `useDiagram` (see the association
-  bullet under Parsing above) — add both ends to a View to see it.
-- A `use case useDiagram Name for Subject { ... }` block turns `Subject`
-  into an entry point: it carries a 🎭 marker (next to any 🧩/📄 markers) and
-  gains **Open use case diagram** in its right-click menu (only offered from
-  the block definition diagram, not from inside another drilldown).
-- Opening it switches the whole canvas to **UCD mode**: the actor/use-case
-  roles declared in the `useDiagram` block become nodes (named after the
-  role, e.g. `operator`), connected by plain purple **association** edges
-  for each `connection n from a to b;` — the diagram's normal nodes/edges are
-  replaced, not overlaid. A connection without the mandatory `from` clause
-  (e.g. a bare system-level trigger with only a `to`) is ambiguous and is
-  dropped at parse time rather than guessed.
-- Shares the same drilldown chrome as IBD mode: the **◀ Back to BDD**
-  toolbar button, **Close use case diagram** in the background menu, and the
-  **view** controls/**Unhide** disabled while active.
-- The legend gains an **association (actor ↔ use case)** row whenever
-  association edges are visible — in UCD mode or in the block definition
-  diagram, wherever they end up rendering.
-- The current mode and owner are saved in the layout file (`mode`,
-  `ucdOwner`); an owner that no longer resolves falls back to the block
-  definition diagram.
-- Not yet supported: `activity def` (activity/behavior diagrams) — a
-  different diagram type from use case diagrams, still unparsed.
+### Official SysML v2 parser (preferred, spec-grade)
 
-### Server (`src/sysml_explorer/app.py`)
-- `GET /` — the viewer page
-- `GET /api/model` — the folder is re-globbed for `.sysml` files and
-  re-parsed on every request, so a file added, edited, or removed in the
-  folder shows up on refresh/**Reload model** without restarting the server
-- `GET /api/layout` / `POST /api/layout` — global state persistence, always
-  at `<folder>/layout.json`
-- `GET /api/views` — list of `{id, name}` for every View
-  (`<folder>/views/*.json`)
-- `GET /api/views/<id>` — one View's full content
-- `POST /api/views` — create a View; body `{"name": "..."}`, response
-  `{"id": "...", "name": "..."}`. The id is a slug derived from the name
-  (lowercased, non-alphanumerics collapsed to `-`; a colliding slug gets a
-  `-2`, `-3`, … suffix) and is fixed for the View's lifetime
-- `PUT /api/views/<id>` — replace a View's content (also used for renames —
-  the id/filename never changes, only the `name` field inside); an
-  idempotent create-or-replace, not update-only
-- `DELETE /api/views/<id>` — remove a View
+The OMG **pilot implementation** is the reference parser for the SysML v2
+textual notation — full grammar, semantic checks, and standard-library
+resolution. It is Java/Xtext-based and distributed as a Jupyter kernel
+(`jupyter-sysml-kernel` on conda-forge);
+`tools/sysml_explorer/official_check.py` drives that kernel headlessly so
+you get a one-command file check instead of an interactive notebook.
+
+One-time setup (needs conda; Java is bundled by the package):
+
+```
+conda create -n sysml -c conda-forge jupyter-sysml-kernel jupyter_client
+```
+
+If conda fails with `CERTIFICATE_VERIFY_FAILED` (typical behind antivirus
+HTTPS inspection — same AVG family as the loopback issue under
+Troubleshooting), tell conda to trust the Windows certificate store instead
+of its bundled CA file:
+
+```
+CONDA_SSL_VERIFY=truststore conda create -n sysml -c conda-forge jupyter-sysml-kernel jupyter_client
+```
+
+Then check a model folder (same folder semantics as `sysml-explorer`:
+every `.sysml` directly inside it, name-sorted, one kernel session so
+cross-file references resolve) — **invoke the env's python directly**:
+
+```
+%USERPROFILE%\miniconda3\envs\sysml\python.exe -u tools/sysml_explorer/official_check.py <folder>
+```
+
+(To find the env's python on any machine, a *short-lived* probe is fine:
+`conda run -n sysml python -c "import sys; print(sys.executable)"`.)
+
+**Do not run the check itself through `conda run`** — it never drains the
+kernel JVM's console output, so the pipe fills and the whole run deadlocks
+(observed as repeated 30-minute hangs); it also buffers all output until
+the end even when it does work.
+
+Every `ERROR:`/`WARNING:` line the reference parser reports is printed
+prefixed with its file name (with line/column), and the script exits
+nonzero if there were any. Notes:
+
+- **the first run is slow**: kernel startup loads the ~200-file standard
+  library, which can take 10+ minutes cold (antivirus scanning each file);
+  once the OS/antivirus caches are warm it drops to seconds. `--timeout`
+  (default 900 s) covers both startup and each file's evaluation.
+- files are fed to the kernel in name-sorted order; an `import` of a
+  package defined in a file that sorts *later* will produce resolution
+  errors the explorer (which merges everything before resolving) doesn't
+  have.
+- this tool's dialect is **not** fully standard SysML v2 and the official
+  parser will reject the non-standard parts: `use case useDiagram ... for
+  ...`, `actor def` (v2 actors are usages typed by part defs, not defs), and
+  unquoted hyphenated references like `satisfy REQ-201` (write
+  `satisfy 'REQ-201';`). See "Dialect notes" in [FEATURES.md](FEATURES.md).
+  Expect errors on those until the models are migrated to standard syntax.
+- `official_check.py` deliberately lives *outside* the `sysml_explorer`
+  package: it must run under a python that has `jupyter_client` (the conda
+  env above), while the explorer itself stays stdlib-only.
+
+### Fallback: JamieD sysml-v2-support parser (fast, community grammar)
+
+When the conda env isn't available (or for a quick check after every edit —
+this one is fast), use the parser bundled with the free VS Code / Cursor
+extension **JamieD.sysml-v2-support** (`sysml-v2-lsp`, ANTLR-based — a
+community grammar, not the reference one). Requirements: the extension
+installed (VS Code or Cursor) and Node.js on PATH.
+
+```
+python tools/validate_sysml_jamied.py <folder-or-file>
+```
+
+Exit code 0 means clean; diagnostics are printed with file/line. The script
+auto-locates the extension's bundled MCP server (override with the
+`SYSML_V2_LSP_MCP` env var). The same parser is also exposed as a Cursor
+MCP server named `sysml-v2-jamied` (see `.cursor/mcp.json`, which launches
+it via `tools/sysml_jamied_mcp.cmd`) — call its `validate` tool with
+`{ "code": "<file contents>" }`.
+
+## Using an LLM coding agent as a modeling assistant
+
+To make an agent (Cursor, Claude Code, …) a reliable SysML modeling
+assistant for a model folder, give it a **scoped rule/instructions file**.
+The working example in this repo is
+[.cursor/rules/medicaldevice-sysml.mdc](../../.cursor/rules/medicaldevice-sysml.mdc),
+scoped to `examples/MedicalDevice/**`. A good rule file states:
+
+1. **One model, many files** — every `*.sysml` directly in the folder is one
+   combined model; cross-file `import`, `satisfy`, typing, and
+   specialization must resolve across packages. Prefer sibling packages in
+   the folder root (`*_req.sysml`, `*_bdd.sysml`, …).
+2. **Dialect** — spec-compliant SysML v2 textual notation, with the
+   official parser as the arbiter. In particular: requirement short names
+   `requirement def <'REQ-123'> Name`, and **quoted** satisfy references
+   (`satisfy 'REQ-123';` — the explorer accepts unquoted, the official
+   grammar does not).
+3. **How to validate, in order of preference** — official parser via
+   `official_check.py` (run once after a batch of edits; warn the agent it
+   is slow by design and must not be killed or given a short timeout), the
+   JamieD parser via `validate_sysml_jamied.py` as a fast fallback after
+   every edit, and *never* substituting `sysml-explorer --check` for
+   either — it's a sanity check, not a grammar. Exit code must be 0 before
+   finishing.
+4. **Rules of thumb** — prefer additive edits, update all cross-references
+   when renaming, summarize files touched and remaining diagnostics.
+
+Additionally, point the agent at [FEATURES.md](FEATURES.md) so it knows
+exactly which constructs the explorer parses and renders (and which
+warnings it emits) when it edits models meant to be viewed here.
 
 ## Troubleshooting
 
@@ -319,13 +276,17 @@ python tools/sysml_explorer/test_sysml_explorer.py -v
 ```
 
 Plain `unittest`, no dependencies. Covers the parser (nodes, attributes,
-parts structure, edges, requirements/docs), the HTTP API (model serving,
-layout round-trip), and — when Microsoft Edge is available — end-to-end
-rendering: the page is loaded headless and the DOM is checked for each
-attribute/parts filter combination.
+parts structure, edges, requirements/docs, validation warnings), the HTTP
+API (model serving, layout round-trip), and — when Microsoft Edge is
+available — end-to-end rendering: the page is loaded headless and the DOM
+is checked for each attribute/parts filter combination.
+`official_check.py` has an end-to-end test too, but it's **opt-in** —
+`SYSML_OFFICIAL_CHECK_TEST=1` plus the `sysml` conda env (see "Setting up
+the validation parsers") — because official-kernel startup can take 10+
+minutes, too slow for the default suite.
 
 ## Development conventions
 
 Every new feature gets:
-1. a bullet (or section) in **Features** above, and
+1. a bullet (or section) in **[FEATURES.md](FEATURES.md)**, and
 2. a test in `test_sysml_explorer.py` proving it works.

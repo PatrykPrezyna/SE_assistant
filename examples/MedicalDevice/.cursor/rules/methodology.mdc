@@ -1,0 +1,34 @@
+---
+description: SE methodology conventions for SysML models (package naming and related checks)
+globs: "**/*.sysml"
+alwaysApply: false
+---
+
+# SE methodology
+
+These conventions are **in addition to** SysML v2 grammar. The official/JamieD
+parsers do not enforce them — `scripts/check_methodology.py` does (project-agnostic;
+works on any model directory).
+
+## Package name = file name
+
+- Each top-level `*.sysml` file declares one root `package`.
+- The package name **must equal** the file stem:
+
+```text
+PackageName.sysml  →  package PackageName { ... }
+```
+
+- When creating a new package, create `PackageName.sysml` with `package PackageName`.
+- When renaming, rename **both** the file and the package (and update imports).
+
+## After any SysML edit
+
+1. Run methodology check from this folder:
+
+```bash
+python scripts/check_methodology.py .
+```
+
+2. Run `/validate-sysml` (syntax + methodology). Exit code must be 0.
+3. Tell the user about every methodology violation; fix them or ask before finishing.

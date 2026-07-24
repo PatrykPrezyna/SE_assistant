@@ -14,7 +14,8 @@ Without installing: `python -m sysml_explorer <folder>` from
 `tools/sysml_explorer/src`. Active development area.
 
 **Rule: every new feature added to this tool must, in the same change:**
-1. be documented in `tools/sysml_explorer/README.md` (Features section), and
+1. be documented in `tools/sysml_explorer/FEATURES.md` (the feature
+   reference; `README.md` covers only setup/developer workflow), and
 2. get a test in `tools/sysml_explorer/test_sysml_explorer.py`
    (plain unittest; parser tests, HTTP tests via `ServerFixture`,
    headless-Edge DOM tests for viewer behavior — these auto-skip without Edge).

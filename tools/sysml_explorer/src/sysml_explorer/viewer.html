@@ -7,16 +7,48 @@
   html, body { margin: 0; height: 100%; overflow: hidden;
     font-family: "Segoe UI", system-ui, sans-serif; }
   #toolbar { position: fixed; top: 0; left: 0; right: 0; z-index: 10;
-    display: flex; align-items: center; gap: 10px; padding: 6px 12px;
-    background: #f7f7f9; border-bottom: 1px solid #ddd; font-size: 13px; }
-  #toolbar .title { font-weight: 600; margin-right: 8px; }
+    display: flex; align-items: center; gap: 8px; padding: 6px 12px;
+    background: #f7f7f9; border-bottom: 1px solid #ddd; font-size: 13px;
+    flex-wrap: wrap; min-height: 28px; }
+  #toolbar .title { font-weight: 600; margin-right: 4px; max-width: 220px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #toolbar .sep { width: 1px; height: 18px; background: #ddd; margin: 0 2px;
+    flex: none; }
   #toolbar button { font-size: 13px; padding: 3px 10px; cursor: pointer; }
   #toolbar label { user-select: none; cursor: pointer; }
   #toolbar select { font-size: 13px; max-width: 180px; }
-  #status { color: #2a7; min-width: 90px; }
+  #toolbar .grow { flex: 1; min-width: 8px; }
+  #status { color: #2a7; min-width: 70px; }
   #status.dirty { color: #c60; }
+  .menu-wrap { position: relative; }
+  .menu-panel { display: none; position: absolute; top: 100%; left: 0;
+    margin-top: 4px; background: #fff; border: 1px solid #ccc;
+    border-radius: 4px; padding: 6px 0; min-width: 180px; z-index: 25;
+    box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+  .menu-panel.open { display: block; }
+  .menu-panel .item { display: block; width: 100%; text-align: left;
+    border: none; background: none; padding: 5px 14px; font-size: 13px;
+    cursor: pointer; box-sizing: border-box; }
+  .menu-panel .item:hover { background: #eef4fb; }
+  .menu-panel label.item { display: flex; align-items: center; gap: 8px;
+    cursor: pointer; }
+  .menu-panel label.item input { margin: 0; }
+  .menu-panel .sep { border-top: 1px solid #e5e5e5; margin: 4px 0;
+    height: 0; width: auto; background: none; }
   #error { position: fixed; top: 40px; left: 0; right: 0; z-index: 10;
     background: #fdd; color: #900; padding: 6px 12px; display: none; }
+  #warnBtn { color: #a05a00; }
+  #warnings { position: fixed; top: 40px; left: 0; right: 0; z-index: 9;
+    background: #fff8e1; color: #7a5c00; border-bottom: 1px solid #e0c060;
+    padding: 4px 12px; display: none; max-height: 30%; overflow-y: auto;
+    font-size: 12px; }
+  #warnings div { padding: 1px 0; }
+  #emptyHint { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    z-index: 5; max-width: 320px; text-align: center; color: #666;
+    font-size: 14px; line-height: 1.45; pointer-events: none;
+    padding: 16px 20px; background: rgba(255,255,255,.92);
+    border: 1px solid #e0e0e0; border-radius: 6px; }
+  #emptyHint.hidden { display: none; }
   #canvas { width: 100%; height: 100%; background: #ffffff; display: block;
     cursor: grab; }
   #canvas.panning { cursor: grabbing; }
@@ -36,8 +68,16 @@
   .node.hl rect.body { stroke: #1a6fd4; stroke-width: 1.8; }
   .node { cursor: move; }
   .node text.docicon { font-size: 11px; }
-  .node text.ibdicon { font-size: 11px; }
   .node text.ucdicon { font-size: 11px; }
+  .node text.activityicon { font-size: 11px; }
+  .node.action rect.body { fill: #fff7e6; }
+  .node.control rect.body { fill: #eee; rx: 10; ry: 10; }
+  .node.decision polygon.body { fill: #fff; stroke: #333; stroke-width: 1.2; }
+  .lane rect { stroke: none; }
+  .lane text { fill: #888; font-size: 11px; font-weight: 600;
+    text-anchor: middle; dominant-baseline: hanging; }
+  .edge.flow line.wire { stroke: #1a6fd4; stroke-width: 1.4; }
+  .edge.flow text { fill: #1a6fd4; }
   .edge { cursor: pointer; }
   .edge line.hit { stroke: transparent; stroke-width: 14; pointer-events: stroke; }
   .edge line.wire, .edge path { stroke: #555; stroke-width: 1.2; fill: none; }
@@ -71,9 +111,20 @@
   #ctxmenu .sep { border-top: 1px solid #e5e5e5; margin: 4px 0; }
   #tree { position: fixed; top: 40px; left: 0; bottom: 0; width: 260px;
     overflow-y: auto; overflow-x: hidden; background: #fafafa;
-    border-right: 1px solid #ddd; font-size: 12px; padding: 6px 0; z-index: 8; }
+    border-right: 1px solid #ddd; font-size: 12px; padding: 0 0 6px; z-index: 8;
+    display: flex; flex-direction: column; }
   #tree.hidden { display: none; }
   #tree.disabled { opacity: .55; pointer-events: none; }
+  #treeFilters { flex: none; padding: 8px 8px 6px; border-bottom: 1px solid #e8e8e8;
+    background: #fafafa; position: sticky; top: 0; z-index: 1; }
+  #treeSearch { width: 100%; box-sizing: border-box; font-size: 12px;
+    padding: 4px 6px; margin-bottom: 6px; }
+  #treeKinds { display: flex; flex-wrap: wrap; gap: 4px; }
+  #treeKinds button { font-size: 11px; padding: 2px 7px; cursor: pointer;
+    border: 1px solid #ccc; background: #fff; border-radius: 3px; color: #555; }
+  #treeKinds button.active { background: #e8f0fa; border-color: #7aa2d4;
+    color: #1a4a7a; }
+  #treeBody { flex: 1; overflow-y: auto; padding: 6px 0; }
   #tree .pkg { display: flex; align-items: center; gap: 5px; padding: 3px 8px;
     font-weight: 600; color: #555; cursor: pointer;
     user-select: none; white-space: nowrap; }
@@ -94,30 +145,97 @@
   #tree .elem.k-actor .dot { background: #a480e0; }
   #tree .elem.k-usecase .dot { background: #6fc98a; }
   #tree .elem.k-usage .dot { background: #7fb0e0; }
+  #modalOverlay { position: fixed; inset: 0; z-index: 30;
+    background: rgba(0,0,0,.35); display: flex; align-items: center;
+    justify-content: center; }
+  #modalOverlay.hidden { display: none; }
+  #modalBox { background: #fff; border-radius: 6px;
+    box-shadow: 0 4px 20px rgba(0,0,0,.25); width: 440px; max-width: 90vw;
+    max-height: 80vh; display: flex; flex-direction: column; font-size: 13px; }
+  #modalHead { padding: 10px 14px; font-weight: 600; border-bottom: 1px solid #eee; }
+  #modalBody { padding: 12px 14px; overflow-y: auto; flex: 1; }
+  #modalBody p { margin: 0 0 8px; color: #444; }
+  #modalBody input[type=text] { width: 100%; box-sizing: border-box;
+    padding: 5px 6px; font-size: 13px; }
+  #modalFoot { padding: 10px 14px; border-top: 1px solid #eee;
+    display: flex; justify-content: flex-end; gap: 8px; }
+  #modalFoot button, #modalBody button { font-size: 13px; padding: 4px 10px;
+    cursor: pointer; }
+  #browsePath { color: #666; font-size: 12px; margin: 10px 0 4px;
+    word-break: break-all; }
+  #browseList { border: 1px solid #ddd; border-radius: 4px; max-height: 260px;
+    overflow-y: auto; }
+  #browseList .row { padding: 4px 8px; cursor: pointer; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; }
+  #browseList .row:hover { background: #eef4fb; }
+  #browseList .row.empty { cursor: default; color: #999; }
+  #browseList .row.empty:hover { background: none; }
 </style>
 </head>
 <body>
 <div id="toolbar">
-  <button id="treeBtn" title="Show/hide the element tree">☰ Tree</button>
+  <button id="treeBtn" title="Show/hide the element tree">Tree</button>
   <span class="title" id="title">SysML Explorer</span>
-  <button id="saveBtn" title="Ctrl+S">Save layout</button>
-  <button id="ibdBackBtn" style="display:none">◀ Back</button>
-  <button id="fitBtn">Fit view</button>
-  <button id="autoBtn" title="Discard positions and re-run auto-layout">Auto-layout</button>
-  <button id="reloadBtn" title="Re-parse the .sysml files, keep positions">Reload model</button>
+  <span class="sep"></span>
   <label>view <select id="viewSel"></select></label>
-  <button id="newViewBtn" title="Create a new view">+ View</button>
-  <button id="renameViewBtn" title="Rename the current view">Rename</button>
-  <button id="deleteViewBtn" title="Delete the current view">Delete</button>
-  <button id="unhideBtn" title="Show connections hidden via right-click">Unhide</button>
-  <label><input type="checkbox" id="attrsCb" checked> attributes</label>
-  <label><input type="checkbox" id="partsCb" checked> parts</label>
+  <button id="newViewBtn" title="Create a new view">+</button>
+  <span class="sep"></span>
+  <button id="saveBtn" title="Ctrl+S">Save</button>
+  <button id="drilldownBackBtn" style="display:none">◀ Back</button>
+  <button id="fitBtn">Fit</button>
+  <span class="sep"></span>
+  <div class="menu-wrap">
+    <button id="displayBtn" title="What to show on nodes and edges">Display ▾</button>
+    <div id="displayMenu" class="menu-panel" role="menu">
+      <label class="item"><input type="checkbox" id="attrsCb" checked> attributes</label>
+      <label class="item"><input type="checkbox" id="partsCb" checked> parts</label>
+      <label class="item"><input type="checkbox" id="keywordsCb"> keywords («part def»…)</label>
+      <label class="item"><input type="checkbox" id="edgeLabelsCb"> edge labels</label>
+      <label class="item"><input type="checkbox" id="packagesCb"> package paths</label>
+      <label class="item"><input type="checkbox" id="docsOnNodeCb"> docs on node</label>
+    </div>
+  </div>
+  <div class="menu-wrap">
+    <button id="moreBtn" title="More actions">More ▾</button>
+    <div id="moreMenu" class="menu-panel" role="menu">
+      <button type="button" class="item" id="autoBtn" title="Discard positions and re-run auto-layout">Auto-layout</button>
+      <button type="button" class="item" id="reloadBtn" title="Re-parse the .sysml files, keep positions">Reload model</button>
+      <div class="sep"></div>
+      <button type="button" class="item" id="renameViewBtn" title="Rename the current view">Rename view</button>
+      <button type="button" class="item" id="deleteViewBtn" title="Delete the current view">Delete view</button>
+      <div class="sep"></div>
+      <button type="button" class="item" id="unhideBtn" title="Show connections hidden via right-click">Unhide connections</button>
+    </div>
+  </div>
+  <span class="grow"></span>
+  <button id="warnBtn" style="display:none" title="Model validation warnings — click to show/hide"></button>
   <span id="status"></span>
 </div>
 <div id="error"></div>
+<div id="warnings"></div>
+<div id="emptyHint" class="hidden">This view is empty. Check elements in the tree to add them.</div>
 <div id="ctxmenu"></div>
+<div id="modalOverlay" class="hidden">
+  <div id="modalBox">
+    <div id="modalHead"></div>
+    <div id="modalBody"></div>
+    <div id="modalFoot"></div>
+  </div>
+</div>
 <div id="legend"></div>
-<div id="tree"></div>
+<div id="tree">
+  <div id="treeFilters">
+    <input id="treeSearch" type="search" placeholder="Search elements…" autocomplete="off">
+    <div id="treeKinds">
+      <button type="button" data-kind="all" class="active">All</button>
+      <button type="button" data-kind="req">Req</button>
+      <button type="button" data-kind="part">Part</button>
+      <button type="button" data-kind="actor">Actor</button>
+      <button type="button" data-kind="usecase">Use case</button>
+    </div>
+  </div>
+  <div id="treeBody"></div>
+</div>
 <svg id="canvas">
   <defs>
     <marker id="mTriangle" markerUnits="userSpaceOnUse" markerWidth="16" markerHeight="14"
@@ -142,6 +260,7 @@
     </marker>
   </defs>
   <g id="world">
+    <g id="laneLayer"></g>
     <g id="edgeLayer"></g>
     <g id="nodeLayer"></g>
   </g>
@@ -150,15 +269,43 @@
 "use strict";
 
 // display parameters -------------------------------------------------
-// SHOW_KEYWORDS: render the element kind keyword («part def»,
-// «requirement», …) as the first line of each node header.
-const SHOW_KEYWORDS = false;
-// SHOW_EDGE_LABELS: render text on connections (composition role names,
-// the satisfy marker text). The legend explains the arrow styles instead.
-const SHOW_EDGE_LABELS = false;
-// SHOW_LEGEND: bottom-left box explaining the arrow styles currently
-// visible in the diagram.
+// Per-View display options (attrs, parts, keywords, edgeLabels, packages,
+// docsOnNode) live in the View JSON and are controlled from the Display
+// menu. SHOW_LEGEND stays a constant — the legend only appears when edge
+// kinds are present.
 const SHOW_LEGEND = true;
+const LAYOUT_VERSION = 1;
+const VIEW_VERSION = 1;
+
+const DISPLAY_DEFAULTS = {
+  attrs: true,
+  parts: true,
+  keywords: false,
+  edgeLabels: false,
+  packages: false,
+  docsOnNode: false,
+};
+
+function displayOpts() {
+  return {
+    attrs: document.getElementById("attrsCb").checked,
+    parts: document.getElementById("partsCb").checked,
+    keywords: document.getElementById("keywordsCb").checked,
+    edgeLabels: document.getElementById("edgeLabelsCb").checked,
+    packages: document.getElementById("packagesCb").checked,
+    docsOnNode: document.getElementById("docsOnNodeCb").checked,
+  };
+}
+
+function applyDisplayOpts(opts) {
+  const o = Object.assign({}, DISPLAY_DEFAULTS, opts || {});
+  document.getElementById("attrsCb").checked = !!o.attrs;
+  document.getElementById("partsCb").checked = !!o.parts;
+  document.getElementById("keywordsCb").checked = !!o.keywords;
+  document.getElementById("edgeLabelsCb").checked = !!o.edgeLabels;
+  document.getElementById("packagesCb").checked = !!o.packages;
+  document.getElementById("docsOnNodeCb").checked = !!o.docsOnNode;
+}
 
 // layout constants for reserving screen space around the canvas — must
 // match the CSS (#toolbar height, #tree width)
@@ -167,6 +314,7 @@ const TREE_WIDTH = 260;
 
 const svg = document.getElementById("canvas");
 const world = document.getElementById("world");
+const laneLayer = document.getElementById("laneLayer");
 const edgeLayer = document.getElementById("edgeLayer");
 const nodeLayer = document.getElementById("nodeLayer");
 const statusEl = document.getElementById("status");
@@ -174,7 +322,7 @@ const unhideBtn = document.getElementById("unhideBtn");
 const treeEl = document.getElementById("tree");
 
 let model = null;                 // parsed model from the server
-let layout = {};                  // global state: docs, treeOpen, activeView, mode, ibdOwner,
+let layout = {};                  // global state: docs, treeOpen, activeView, mode,
                                    // ucdOwner, drilldownNodes/drilldownHiddenEdges/drilldownView
 let nodes = {};                   // id -> {data, x, y, w, h, el} (visible only)
 let edges = [];                   // visible edges
@@ -184,28 +332,28 @@ let dirty = false;
 // Views (SysML v2's term for a curated presentation of model content): the
 // user creates as many as they like, each with its own membership set,
 // positions, hidden connections, filters, and pan/zoom — persisted as its
-// own file (see /api/views). Membership/positions for the IBD/UCD drilldown
-// modes are NOT part of a View — they're global, since a drilldown is a
-// fixed rendering of the model's own ibd def/useDiagram, not a user-curated
-// diagram.
+// own file (see /api/views). Membership/positions for the UCD drilldown
+// mode are NOT part of a View — they're global, since a drilldown is a
+// fixed rendering of the model's own useDiagram, not a user-curated diagram.
 let views = [];                   // [{id, name}, ...] from /api/views
 let activeViewId = null;
 let activeView = null;            // {name, elements, nodes, hiddenEdges, view, options}
-let drilldownNodes = {};          // synthetic IBD/UCD role-box positions (global)
+let drilldownNodes = {};          // synthetic UCD role-box positions (global)
 let drilldownHiddenEdges = new Set();
 let drilldownView = null;
 
 let hiddenEdges = new Set();      // *current* working set: activeView.hiddenEdges when
                                    // mode is "bdd", drilldownHiddenEdges otherwise
-let mode = "bdd";                 // "bdd" | "ibd" | "ucd"
-let ibdOwner = null;               // id of the part def whose IBD is shown
-let ibdStack = [];                 // ownerIds, for nested "back" navigation
+let mode = "bdd";                 // "bdd" | "ucd" | "activity"
 let ucdOwner = null;               // id of the subject whose use case diagram is shown
+let activityOwner = null;          // id of the part def whose activity diagram is shown
 let selection = null;              // {type:"node", id} | {type:"edge", key}
 let treeOpen = true;               // element tree panel shown/hidden
+let treeQuery = "";                // filter text for the element tree
+let treeKind = "all";              // "all" | "req" | "part" | "actor" | "usecase"
 
 // the position store currently in effect: a View's own positions in bdd
-// mode, or the shared drilldown positions in ibd/ucd mode. A function, not
+// mode, or the shared drilldown positions in ucd mode. A function, not
 // a variable, so mutations always land on the real object (activeView.nodes
 // or drilldownNodes), never a stale copy left behind by a mode switch.
 function posMap() { return mode === "bdd" ? activeView.nodes : drilldownNodes; }
@@ -273,27 +421,29 @@ function wrapText(text, maxChars) {
 }
 
 function buildNodeContent(d) {
-  const showAttrs = document.getElementById("attrsCb").checked;
-  const showParts = document.getElementById("partsCb").checked;
+  const opts = displayOpts();
   const header = [];
-  if (SHOW_KEYWORDS)
+  if (opts.keywords)
     header.push({ text: "«" + d.kind + "»", cls: "stereo" });
-  header.push({ text: (d.shortName ? d.shortName + " " : "") + d.name,
+  // a usage node carries its declared type in the header, SysML style
+  // (`inputTempSensor : Thermistor`), since its own name is only a role
+  header.push({ text: (d.shortName ? d.shortName + " " : "") + d.name
+                      + (d.usageType ? " : " + d.usageType : ""),
                 cls: "name", italic: d.abstract });
-  if (d.package) header.push({ text: d.package, cls: "pkg" });
+  if (opts.packages && d.package) header.push({ text: d.package, cls: "pkg" });
   const compartments = [];
-  if (showAttrs && d.attributes.length)
+  if (opts.attrs && d.attributes.length)
     compartments.push(d.attributes.map(t => ({ text: t, cls: "" })));
-  if (showParts && d.parts.length) {
+  if (opts.parts && d.parts.length) {
     const lines = [];
     for (const p of d.parts) {
       lines.push({ text: p.text, cls: "" });
-      if (showAttrs)
+      if (opts.attrs)
         for (const a of p.attrs) lines.push({ text: "    ." + a, cls: "" });
     }
     compartments.push(lines);
   }
-  if (d.doc)
+  if (opts.docsOnNode && d.doc)
     compartments.push(wrapText(d.doc, 40).map(t => ({ text: t, cls: "doc" })));
   return { header, compartments };
 }
@@ -323,8 +473,26 @@ function createNodeEl(n) {
   if (d.kind.startsWith("requirement")) g.classList.add("req");
   if (d.kind === "actor def" || d.kind === "actor") g.classList.add("actor");
   if (d.kind === "use case def" || d.kind === "use case") g.classList.add("usecase");
+  if (d.kind === "action") g.classList.add("action");
+  if (d.kind === "control") g.classList.add("control");
+  if (d.kind === "decision") g.classList.add("decision");
   if (!d.kind.endsWith("def")) g.classList.add("usage");
   g.dataset.id = d.id;
+
+  // decision nodes are empty diamonds (UML/SysML activity control node)
+  if (d.kind === "decision") {
+    const size = 40;
+    const poly = document.createElementNS(svg.namespaceURI, "polygon");
+    poly.setAttribute("class", "body");
+    poly.setAttribute(
+      "points",
+      `${size / 2},0 ${size},${size / 2} ${size / 2},${size} 0,${size / 2}`
+    );
+    g.appendChild(poly);
+    n.w = size; n.h = size; n.el = g;
+    g.setAttribute("transform", `translate(${n.x},${n.y})`);
+    return g;
+  }
 
   const rect = document.createElementNS(svg.namespaceURI, "rect");
   rect.setAttribute("class", "body");
@@ -368,24 +536,22 @@ function createNodeEl(n) {
     t.textContent = "📄";
     g.appendChild(t);
   }
-  let leftIconX = 4;
-  if (ibdTargetFor(d.id)) {
-    const t = document.createElementNS(svg.namespaceURI, "text");
-    t.setAttribute("class", "ibdicon");
-    t.setAttribute("x", leftIconX);
-    t.setAttribute("y", 13);
-    t.setAttribute("text-anchor", "start");
-    t.textContent = "🧩";
-    g.appendChild(t);
-    leftIconX += 14;
-  }
   if (ucdTargetFor(d.id)) {
     const t = document.createElementNS(svg.namespaceURI, "text");
     t.setAttribute("class", "ucdicon");
-    t.setAttribute("x", leftIconX);
+    t.setAttribute("x", 4);
     t.setAttribute("y", 13);
     t.setAttribute("text-anchor", "start");
     t.textContent = "🎭";
+    g.appendChild(t);
+  }
+  if (activityTargetFor(d.id)) {
+    const t = document.createElementNS(svg.namespaceURI, "text");
+    t.setAttribute("class", "activityicon");
+    t.setAttribute("x", ucdTargetFor(d.id) ? 20 : 4);
+    t.setAttribute("y", 13);
+    t.setAttribute("text-anchor", "start");
+    t.textContent = "🎬";
     g.appendChild(t);
   }
   n.w = w; n.h = h; n.el = g;
@@ -449,7 +615,14 @@ function createEdgeEl(data) {
   }
   g.appendChild(line);
   let label = null;
-  if (data.label && SHOW_EDGE_LABELS) {
+  // connector labels (a connection's name and/or the two port names) are
+  // the edge's actual content — unlike composition/typing/satisfy, whose
+  // relationship is already conveyed by arrow style, a connector without
+  // its label is just an unlabeled line between two boxes. So connectors
+  // stay exempt from the edge-labels Display toggle below. Flow guards
+  // (yes/no after a decide) are also always shown.
+  if (data.label && (displayOpts().edgeLabels || data.kind === "connector"
+      || data.kind === "flow")) {
     label = document.createElementNS(svg.namespaceURI, "text");
     label.textContent = data.label;
     g.appendChild(label);
@@ -463,11 +636,11 @@ function updateAllEdges() { for (const e of edges) updateEdge(e); }
 
 const LEGEND_ORDER = ["specialization", "composition", "typing", "satisfy", "connector", "association"];
 const LEGEND_LABELS = {
-  specialization: "specialization (is a)",
+  specialization: "kind of",
   composition: "composition (has part)",
-  typing: "typed by",
+  typing: "is a",
   satisfy: "satisfies requirement",
-  connector: "connector (IBD)",
+  connector: "connector",
   association: "association (actor ↔ use case)",
 };
 
@@ -581,125 +754,28 @@ function restoreViewTransform() {
   else fitView();
 }
 
-// ---------------------------------------------------------------- IBD (internal block diagram)
+// ------------------------------------------------------- drilldown chrome
 
-// connections grouped by owning part def id
-function connectionsByOwner() {
-  const map = {};
-  for (const c of (model.connections || []))
-    (map[c.owner] = map[c.owner] || []).push(c);
-  return map;
-}
-
-function ibdRoleId(ownerId, role) { return ownerId + "::ibd::" + role; }
-
-// map a (possibly qualified) type/short name to a node id; mirrors the
-// server-side Model.resolve, needed client-side to find a role box's own
-// type (for nested IBD detection) since /api/model returns plain JSON
-function resolveTypeId(name) {
-  if (!name) return null;
-  const simple = name.split("::").pop();
-  const n = model.nodes.find(x => x.name === simple || x.shortName === simple);
-  return n ? n.id : null;
-}
-
-// the part def (or usage's type) whose internal block diagram can be opened
-// from element `id`, or null if it has none
-function ibdTargetFor(id) {
-  const byOwner = connectionsByOwner();
-  if (byOwner[id]) return id;
-  if (mode === "ibd") {
-    // a part box inside an IBD: open the IBD of its own type, if it has one
-    const n = nodes[id];
-    const typeId = n && resolveTypeId(n.data.package || "");
-    if (typeId && byOwner[typeId]) return typeId;
-  } else {
-    const t = model.edges.find(e => e.kind === "typing" && e.from === id);
-    if (t && byOwner[t.to]) return t.to;
-  }
-  return null;
-}
-
-async function openIbd(ownerId) {
-  await saveIfDirty();
-  if (mode === "ibd") ibdStack.push(ibdOwner);
-  mode = "ibd";
-  ibdOwner = ownerId;
-  hiddenEdges = drilldownHiddenEdges;
-  rebuild();
-  restoreViewTransform();
-  updateTitle();
-  updateIbdToolbar();
-}
-
-async function closeIbd() {
-  await saveIfDirty();
-  if (ibdStack.length) {
-    ibdOwner = ibdStack.pop();
-  } else {
-    mode = "bdd";
-    ibdOwner = null;
-    hiddenEdges = new Set(activeView.hiddenEdges || []);
-  }
-  rebuild();
-  restoreViewTransform();
-  updateTitle();
-  updateIbdToolbar();
-}
-
-function updateIbdToolbar() {
-  const back = document.getElementById("ibdBackBtn");
-  const inDrilldown = mode === "ibd" || mode === "ucd";
+function updateDrilldownToolbar() {
+  const back = document.getElementById("drilldownBackBtn");
+  const inDrilldown = mode === "ucd" || mode === "activity";
   back.style.display = inDrilldown ? "" : "none";
-  back.textContent = mode === "ibd" && ibdStack.length
-    ? "◀ Back to parent IBD" : "◀ Back to BDD";
+  back.textContent = "◀ Back to BDD";
   for (const id of ["viewSel", "newViewBtn", "renameViewBtn", "deleteViewBtn"])
     document.getElementById(id).disabled = inDrilldown;
   unhideBtn.disabled = inDrilldown || !hiddenEdges.size;
 }
 
 async function closeDrilldown() {
-  if (mode === "ibd") await closeIbd();
-  else if (mode === "ucd") await closeUcd();
+  if (mode === "ucd") await closeUcd();
+  else if (mode === "activity") await closeActivity();
 }
 
 // persist the outgoing mode/View's state before switching away from it —
-// called at the top of every function that changes mode/ibdOwner/ucdOwner/
+// called at the top of every function that changes mode/ucdOwner/
 // activeView, so unsaved edits survive navigation instead of being discarded
 async function saveIfDirty() {
   if (dirty) await save();
-}
-
-// role boxes (from the owner's part list) and connectors between them
-function buildIbdNodesEdges() {
-  const owner = model.nodes.find(n => n.id === ibdOwner);
-  if (!owner) return;
-  const roleIndex = {};
-  for (const p of owner.parts) {
-    const m = p.text.match(/^(\w+)(?:\s*:\s*(.+))?$/);
-    if (!m) continue;
-    const [, role, type] = m;
-    const id = ibdRoleId(ibdOwner, role);
-    roleIndex[role] = id;
-    const d = { id, name: role, kind: "part", shortName: null, abstract: false,
-                package: type || "", attributes: [], parts: [], doc: null };
-    const saved = posMap()[id];
-    const n = { data: d, x: saved ? saved.x : 0, y: saved ? saved.y : 0, w: 0, h: 0 };
-    nodes[id] = n;
-    nodeLayer.appendChild(createNodeEl(n));
-  }
-  const conns = connectionsByOwner()[ibdOwner] || [];
-  for (const c of conns) {
-    const [fromRole, ...fromRest] = c.from.split(".");
-    const [toRole, ...toRest] = c.to.split(".");
-    const fromId = roleIndex[fromRole], toId = roleIndex[toRole];
-    if (!fromId || !toId) continue; // endpoint not a direct part of this IBD
-    const label = [c.name, fromRest.join("."), toRest.join(".")]
-      .filter(Boolean).join(" · ");
-    const e = createEdgeEl({ kind: "connector", from: fromId, to: toId, label });
-    edges.push(e);
-    edgeLayer.appendChild(e.el);
-  }
 }
 
 // ------------------------------------------------------- use case diagram
@@ -724,7 +800,7 @@ async function openUcd(ownerId) {
   rebuild();
   restoreViewTransform();
   updateTitle();
-  updateIbdToolbar();
+  updateDrilldownToolbar();
 }
 
 async function closeUcd() {
@@ -735,7 +811,7 @@ async function closeUcd() {
   rebuild();
   restoreViewTransform();
   updateTitle();
-  updateIbdToolbar();
+  updateDrilldownToolbar();
 }
 
 // role boxes (actors and use cases declared in the useDiagram block) and
@@ -763,6 +839,224 @@ function buildUcdNodesEdges() {
   }
 }
 
+// ------------------------------------------------------- activity diagram
+//
+// A swimlane rendering of a `perform action <name> { ... }` block (see
+// app.py's dialect notes): one box per nested action plus two control
+// nodes ("start"/"done"), laid out top-to-bottom in succession order and
+// grouped into vertical lanes (columns) by which participant part /
+// actor / subject `perform`s each action. Dragging an action only moves
+// it vertically — its lane (x) is fixed. Not a standard SysML v2 diagram
+// type — this tool's own reading of the pattern used in
+// examples/MedicalDevice.
+
+function activityFor(ownerId) {
+  return (model.activities || []).find(a => a.owner === ownerId) || null;
+}
+
+// the def whose activity diagram can be opened from element `id`, or null
+function activityTargetFor(id) {
+  return activityFor(id) ? id : null;
+}
+
+function activityNodeId(ownerId, name) { return ownerId + "::act::" + name; }
+
+function activityLaneInfo(act) {
+  const laneOfAction = {};
+  const laneOrder = [];
+  for (const l of act.lanes) {
+    if (!laneOrder.includes(l.role)) laneOrder.push(l.role);
+    laneOfAction[l.action] = l.role;
+  }
+  if (act.actions.some(a => !(a.name in laneOfAction))) laneOrder.push("");
+  return { laneOfAction, laneOrder };
+}
+
+async function openActivity(ownerId) {
+  await saveIfDirty();
+  mode = "activity";
+  activityOwner = ownerId;
+  hiddenEdges = drilldownHiddenEdges;
+  rebuild();
+  restoreViewTransform();
+  updateTitle();
+  updateDrilldownToolbar();
+}
+
+async function closeActivity() {
+  await saveIfDirty();
+  mode = "bdd";
+  activityOwner = null;
+  hiddenEdges = new Set(activeView.hiddenEdges || []);
+  rebuild();
+  restoreViewTransform();
+  updateTitle();
+  updateDrilldownToolbar();
+}
+
+// vertical swimlanes: each role is a column; succession advances downward
+const ACT_COL_W = 200, ACT_ROW_H = 110, ACT_MARGIN = 20;
+const ACT_LANE_HEADER = 28, ACT_NODE_INSET = 20;
+
+function activityLaneX(col) {
+  return ACT_MARGIN + col * ACT_COL_W + ACT_NODE_INSET;
+}
+
+function activityDecisions(act) {
+  return new Set(act.decisions || []);
+}
+
+function activityNodeKind(name, actionNames, decisions) {
+  if (actionNames.has(name)) return "action";
+  if (decisions.has(name)) return "decision";
+  return "control";
+}
+
+// longest-path depth from start (for top-to-bottom placement with branches)
+function activityDepths(act) {
+  const outs = {};
+  for (const e of act.edges || []) {
+    (outs[e.from] || (outs[e.from] = [])).push(e.to);
+  }
+  const depths = {};
+  const visit = (n, d) => {
+    if (depths[n] != null && depths[n] >= d) return;
+    depths[n] = d;
+    for (const t of outs[n] || []) visit(t, d + 1);
+  };
+  if ((act.flow || []).includes("start")) visit("start", 0);
+  for (const n of act.flow || []) {
+    if (depths[n] == null) depths[n] = 0;
+  }
+  return depths;
+}
+
+function activityFlowEdges(act) {
+  if (act.edges && act.edges.length) return act.edges;
+  // legacy linear flow fallback
+  const edges = [];
+  for (let i = 0; i < (act.flow || []).length - 1; i++) {
+    edges.push({ from: act.flow[i], to: act.flow[i + 1], label: "" });
+  }
+  return edges;
+}
+
+// action boxes + control/decision nodes, and succession edges
+function buildActivityNodesEdges() {
+  const act = activityFor(activityOwner);
+  if (!act) return;
+  const actionNames = new Set(act.actions.map(a => a.name));
+  const decisions = activityDecisions(act);
+  const { laneOfAction } = activityLaneInfo(act);
+
+  const docByName = {};
+  for (const a of act.actions) docByName[a.name] = a.doc;
+
+  for (const name of act.flow) {
+    const id = activityNodeId(activityOwner, name);
+    const kind = activityNodeKind(name, actionNames, decisions);
+    const d = {
+      id,
+      name: kind === "action" ? name
+        : kind === "decision" ? name
+        : (name === "start" ? "▶ start" : "⏹ " + name),
+      kind, shortName: null, abstract: false,
+      package: kind === "action" ? (laneOfAction[name] || "") : "",
+      attributes: [], parts: [],
+      doc: kind === "action" ? docByName[name] : null,
+    };
+    const saved = posMap()[id];
+    const n = { data: d, x: saved ? saved.x : 0, y: saved ? saved.y : 0, w: 0, h: 0,
+                laneX: null };
+    nodes[id] = n;
+    nodeLayer.appendChild(createNodeEl(n));
+  }
+  for (const fe of activityFlowEdges(act)) {
+    const from = activityNodeId(activityOwner, fe.from);
+    const to = activityNodeId(activityOwner, fe.to);
+    const e = createEdgeEl({ kind: "flow", from, to, label: fe.label || "" });
+    edges.push(e);
+    edgeLayer.appendChild(e.el);
+  }
+  autoPlaceActivity(false);
+}
+
+// grid layout: columns are swimlanes, rows follow succession depth —
+// only fills in y positions that aren't already saved, unless force.
+// Lane (x) is always snapped so actions cannot sit in the wrong column.
+// Decision nodes sit in the same lane as their unique predecessor action
+// when possible. Also (re)draws the lane backgrounds.
+function autoPlaceActivity(force) {
+  const act = activityFor(activityOwner);
+  if (!act) return;
+  const actionNames = new Set(act.actions.map(a => a.name));
+  const decisions = activityDecisions(act);
+  const { laneOfAction, laneOrder } = activityLaneInfo(act);
+  const colOf = {};
+  laneOrder.forEach((role, i) => { colOf[role] = i; });
+  const controlCol = laneOrder.length ? (laneOrder.length - 1) / 2 : 0;
+  const depths = activityDepths(act);
+  const preds = {};
+  for (const e of activityFlowEdges(act)) {
+    (preds[e.to] || (preds[e.to] = [])).push(e.from);
+  }
+
+  const colFor = (name) => {
+    const kind = activityNodeKind(name, actionNames, decisions);
+    if (kind === "action") return colOf[laneOfAction[name] || ""] ?? 0;
+    if (kind === "decision") {
+      const ps = preds[name] || [];
+      if (ps.length === 1 && actionNames.has(ps[0])) {
+        return colOf[laneOfAction[ps[0]] || ""] ?? controlCol;
+      }
+      return controlCol;
+    }
+    return controlCol;
+  };
+
+  let maxDepth = 0;
+  for (const name of act.flow) {
+    const id = activityNodeId(activityOwner, name);
+    const n = nodes[id];
+    if (!n) continue;
+    const depth = depths[name] || 0;
+    maxDepth = Math.max(maxDepth, depth);
+    const laneX = activityLaneX(colFor(name));
+    n.laneX = laneX;
+    n.el.dataset.laneX = String(laneX);
+    n.x = laneX;
+    if (force || !(id in posMap())) {
+      n.y = ACT_MARGIN + ACT_LANE_HEADER + depth * ACT_ROW_H;
+    } else {
+      n.y = posMap()[id].y;
+    }
+    n.el.setAttribute("transform", `translate(${n.x},${n.y})`);
+    posMap()[id] = { x: n.x, y: n.y };
+  }
+
+  laneLayer.innerHTML = "";
+  if (!laneOrder.length) return;
+  const height = ACT_MARGIN + ACT_LANE_HEADER
+    + Math.max(1, maxDepth + 1) * ACT_ROW_H;
+  laneOrder.forEach((role, i) => {
+    const g = document.createElementNS(svg.namespaceURI, "g");
+    g.setAttribute("class", "lane");
+    const rect = document.createElementNS(svg.namespaceURI, "rect");
+    rect.setAttribute("x", ACT_MARGIN + i * ACT_COL_W - 8);
+    rect.setAttribute("y", ACT_MARGIN - 8);
+    rect.setAttribute("width", ACT_COL_W);
+    rect.setAttribute("height", height);
+    rect.setAttribute("fill", i % 2 === 0 ? "#f7f9fc" : "#eef2f7");
+    g.appendChild(rect);
+    const label = document.createElementNS(svg.namespaceURI, "text");
+    label.setAttribute("x", ACT_MARGIN + i * ACT_COL_W + ACT_COL_W / 2 - 8);
+    label.setAttribute("y", ACT_MARGIN);
+    label.textContent = role || "(unassigned)";
+    g.appendChild(label);
+    laneLayer.appendChild(g);
+  });
+}
+
 // ---------------------------------------------------------------- build
 
 function buildBddNodesEdges() {
@@ -774,9 +1068,14 @@ function buildBddNodesEdges() {
     nodes[d.id] = n;
     nodeLayer.appendChild(createNodeEl(n));
   }
-  // offset parallel edges between the same pair of nodes
+  // a type-level edge is redundant once the usage node it stands for is on
+  // the diagram: `FluidReservoir ◆── Thermistor (inputTempSensor)` says the
+  // same thing as `FluidReservoir ◆── inputTempSensor ▷ Thermistor`, and a
+  // connector between two types duplicates the one between their usages
   const shown = model.edges.filter(d =>
-    d.from in nodes && d.to in nodes && !hiddenEdges.has(edgeKey(d)));
+    d.from in nodes && d.to in nodes && !hiddenEdges.has(edgeKey(d))
+    && !(d.usageId && d.usageId in nodes)
+    && !(d.fromUsage && d.fromUsage in nodes && d.toUsage in nodes));
   const pairCount = {};
   for (const d of shown) {
     const key = [d.from, d.to].sort().join("|");
@@ -817,6 +1116,30 @@ function treeDotClass(kind) {
   if (kind === "use case def" || kind === "use case") return "k-usecase";
   if (!kind.endsWith("def")) return "k-usage";
   return "";
+}
+
+function treeKindMatch(kind, filter) {
+  if (filter === "all") return true;
+  if (filter === "req") return kind.startsWith("requirement");
+  if (filter === "actor") return kind === "actor def" || kind === "actor";
+  if (filter === "usecase") return kind === "use case def" || kind === "use case";
+  if (filter === "part")
+    return kind === "part def" || kind === "part"
+      || kind === "item def" || kind === "item"
+      || kind === "port def" || kind === "port"
+      || kind === "action def" || kind === "action";
+  return true;
+}
+
+function filterTreeNodes(nodeList) {
+  const q = treeQuery.trim().toLowerCase();
+  return nodeList.filter(n => {
+    if (!treeKindMatch(n.kind, treeKind)) return false;
+    if (!q) return true;
+    return n.name.toLowerCase().includes(q)
+      || (n.shortName && n.shortName.toLowerCase().includes(q))
+      || (n.id && n.id.toLowerCase().includes(q));
+  });
 }
 
 function renderTreeElem(n, container) {
@@ -866,7 +1189,7 @@ function allElemsUnder(node) {
   return out;
 }
 
-function renderTreePkg(name, node, container) {
+function renderTreePkg(name, node, container, forceOpen) {
   const descendants = allElemsUnder(node);
   const visibleCount = descendants.filter(n => n.id in nodes).length;
   const allVisible = descendants.length > 0 && visibleCount === descendants.length;
@@ -909,21 +1232,34 @@ function renderTreePkg(name, node, container) {
   });
   container.appendChild(hdr);
   container.appendChild(body);
-  renderTreeNode(node, body);
+  renderTreeNode(node, body, forceOpen);
 }
 
-function renderTreeNode(node, container) {
+function renderTreeNode(node, container, forceOpen) {
   for (const [name, child] of [...node.children.entries()].sort((a, b) => a[0].localeCompare(b[0])))
-    renderTreePkg(name, child, container);
+    renderTreePkg(name, child, container, forceOpen);
   for (const n of [...node.elems].sort((a, b) => a.name.localeCompare(b.name)))
     renderTreeElem(n, container);
 }
 
 function renderTree() {
-  treeEl.innerHTML = "";
+  const body = document.getElementById("treeBody");
+  body.innerHTML = "";
   treeEl.classList.toggle("disabled", mode !== "bdd");
   if (!model) return;
-  renderTreeNode(packageTree(model.nodes), treeEl);
+  const filtered = filterTreeNodes(model.nodes);
+  if (!filtered.length) {
+    const empty = document.createElement("div");
+    empty.className = "elem dimmed";
+    empty.style.padding = "8px 12px";
+    empty.textContent = treeQuery || treeKind !== "all"
+      ? "No matching elements" : "No elements in model";
+    body.appendChild(empty);
+    return;
+  }
+  // while filtering, keep packages expanded so matches are visible
+  const forceOpen = !!(treeQuery.trim() || treeKind !== "all");
+  renderTreeNode(packageTree(filtered), body, forceOpen);
 }
 
 function setTreeOpen(open) {
@@ -933,20 +1269,30 @@ function setTreeOpen(open) {
   document.getElementById("legend").style.left = (open ? TREE_WIDTH + 12 : 12) + "px";
 }
 
+function updateEmptyHint() {
+  const hint = document.getElementById("emptyHint");
+  const empty = mode === "bdd" && model && activeView
+    && !(activeView.elements || []).some(id => model.nodes.some(n => n.id === id));
+  hint.classList.toggle("hidden", !empty);
+}
+
 function rebuild() {
   nodeLayer.innerHTML = "";
   edgeLayer.innerHTML = "";
   nodes = {}; edges = [];
-  if (mode === "ibd") buildIbdNodesEdges();
-  else if (mode === "ucd") buildUcdNodesEdges();
+  laneLayer.innerHTML = "";
+  if (mode === "ucd") buildUcdNodesEdges();
+  else if (mode === "activity") buildActivityNodesEdges();
   else buildBddNodesEdges();
-  unhideBtn.textContent = hiddenEdges.size ? `Unhide (${hiddenEdges.size})` : "Unhide";
+  unhideBtn.textContent = hiddenEdges.size
+    ? `Unhide connections (${hiddenEdges.size})` : "Unhide connections";
   unhideBtn.disabled = mode !== "bdd" || !hiddenEdges.size;
   updateLegend();
   autoPlace(false);
   updateAllEdges();
   applySelection();
   renderTree();
+  updateEmptyHint();
 }
 
 // ---------------------------------------------------------------- selection / highlight
@@ -1034,8 +1380,14 @@ window.addEventListener("mousemove", evt => {
       drag.moved = true;
     }
     const p = toWorld(evt);
-    drag.n.x = Math.round(p.x - drag.dx);
-    drag.n.y = Math.round(p.y - drag.dy);
+    // activity actions/controls stay in their swimlane column; only y moves
+    if (mode === "activity" && drag.n.laneX != null) {
+      drag.n.x = drag.n.laneX;
+      drag.n.y = Math.round(p.y - drag.dy);
+    } else {
+      drag.n.x = Math.round(p.x - drag.dx);
+      drag.n.y = Math.round(p.y - drag.dy);
+    }
     drag.n.el.setAttribute("transform", `translate(${drag.n.x},${drag.n.y})`);
     posMap()[drag.n.data.id] = { x: drag.n.x, y: drag.n.y };
     updateAllEdges();
@@ -1089,21 +1441,217 @@ window.addEventListener("keydown", evt => {
   if (evt.key === "Escape") { hideMenu(); clearSelection(); }
 });
 
+// ---- generic modal dialog (used by the documentation-link file browser) ----
+const modalOverlay = document.getElementById("modalOverlay");
+const modalHead = document.getElementById("modalHead");
+const modalBody = document.getElementById("modalBody");
+const modalFoot = document.getElementById("modalFoot");
+
+function closeModal() {
+  modalOverlay.classList.add("hidden");
+  modalBody.innerHTML = "";
+  modalFoot.innerHTML = "";
+}
+modalOverlay.addEventListener("mousedown", evt => {
+  if (evt.target === modalOverlay) closeModal();
+});
+window.addEventListener("keydown", evt => {
+  if (evt.key === "Escape" && !modalOverlay.classList.contains("hidden")) closeModal();
+});
+
+function escapeHtml(s) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+// Opens the "Add/Edit documentation link" dialog for element `id`, with
+// `initial` pre-filled in the path/URL field (the existing link, or a path
+// just picked via the folder browser).
+function openDocDialog(id, initial) {
+  modalHead.textContent = initial ? "Edit documentation link" : "Add documentation link";
+  modalBody.innerHTML = `
+    <p>Path or URL of the documentation (e.g. a PDF). Relative paths are
+    resolved from the model file's folder. Leave empty to remove the link.</p>
+    <input type="text" id="docPathInput" value="${escapeHtml(initial || "")}">
+    <div style="margin-top:8px"><button type="button" id="browseBtn">Browse folder…</button></div>
+  `;
+  modalFoot.innerHTML = `
+    <button type="button" id="docCancelBtn">Cancel</button>
+    <button type="button" id="docOkBtn">OK</button>
+  `;
+  const input = document.getElementById("docPathInput");
+  const submit = () => {
+    const v = input.value.trim();
+    if (v) layout.docs[id] = v; else delete layout.docs[id];
+    rebuild();
+    setDirty(true);
+    closeModal();
+  };
+  input.addEventListener("keydown", evt => { if (evt.key === "Enter") submit(); });
+  document.getElementById("docCancelBtn").onclick = closeModal;
+  document.getElementById("docOkBtn").onclick = submit;
+  document.getElementById("browseBtn").onclick = () => {
+    const current = input.value.trim();
+    openFileBrowser(
+      picked => openDocDialog(id, picked),
+      () => openDocDialog(id, current),
+    );
+  };
+  modalOverlay.classList.remove("hidden");
+  input.focus();
+}
+
+// Folder-tree browser rooted at the model's working folder (served by
+// /api/browse, which refuses to list anything outside it). `onPick(path)`
+// fires with a relative, forward-slash path when a file is clicked;
+// `onCancel()` fires on Cancel/back.
+async function openFileBrowser(onPick, onCancel) {
+  let curPath = "";
+  async function render() {
+    modalHead.textContent = "Choose a file";
+    modalBody.innerHTML = `<p>Loading…</p>`;
+    let data;
+    try {
+      const res = await fetch("/api/browse?path=" + encodeURIComponent(curPath));
+      if (!res.ok) throw new Error(String(res.status));
+      data = await res.json();
+    } catch (e) {
+      modalBody.innerHTML = `<p>Could not list folder contents.</p>`;
+      return;
+    }
+    curPath = data.path;
+    const upRow = curPath
+      ? `<div class="row" data-up="1">⬆ .. (up)</div>` : "";
+    const rows = data.entries.map(e => `
+      <div class="row" data-name="${escapeHtml(e.name)}" data-dir="${e.isDir}">
+        ${e.isDir ? "📁" : "📄"} ${escapeHtml(e.name)}
+      </div>`).join("");
+    modalBody.innerHTML = `
+      <div id="browsePath">/${escapeHtml(curPath)}</div>
+      <div id="browseList">${upRow}${rows ||
+        '<div class="row empty">(empty folder)</div>'}</div>
+    `;
+    const list = document.getElementById("browseList");
+    const upEl = list.querySelector('.row[data-up]');
+    if (upEl) upEl.onclick = () => {
+      curPath = curPath.split("/").slice(0, -1).join("/");
+      render();
+    };
+    list.querySelectorAll(".row[data-name]").forEach(row => {
+      row.onclick = () => {
+        const name = row.dataset.name;
+        const isDir = row.dataset.dir === "true";
+        const next = curPath ? curPath + "/" + name : name;
+        if (isDir) { curPath = next; render(); }
+        else onPick(next);
+      };
+    });
+  }
+  modalFoot.innerHTML = `<button type="button" id="browseCancelBtn">Cancel</button>`;
+  document.getElementById("browseCancelBtn").onclick = onCancel;
+  modalOverlay.classList.remove("hidden");
+  await render();
+}
+
+// ------------------------------------------------- related-element lookup
+
+// ids of the per-usage nodes (`Owner::role`), which sit alongside the def
+// nodes rather than replacing them
+function usageNodeIds() {
+  return new Set(model.nodes.filter(n => n.usageOwner).map(n => n.id));
+}
+
+// "Show related" walks the parsed model's own edges outward from one
+// element, transitively, so a right-click can pull the whole decomposition
+// (or specialization tree) of a block into the View in one go.
+// `dir` is "down" to follow edges from→to, "up" for to→from.
+// Usage nodes are skipped here: walking composition through them would pull
+// both levels of every part in at once. They get their own menu group.
+function relatedIds(id, kind, dir) {
+  const usageIds = usageNodeIds();
+  const out = new Set();
+  const queue = [id];
+  while (queue.length) {
+    const cur = queue.shift();
+    for (const e of model.edges) {
+      if (e.kind !== kind) continue;
+      const from = dir === "down" ? e.from : e.to;
+      const to = dir === "down" ? e.to : e.from;
+      if (from !== cur || to === id || out.has(to) || usageIds.has(to)) continue;
+      out.add(to);
+      queue.push(to);
+    }
+  }
+  return [...out];
+}
+
+// The three "show related" groups offered on an element's context menu:
+// its decomposition (composition children, all levels), its
+// specializations (subtypes, all levels) and its satisfy links
+// (requirements it satisfies, or — on a requirement — what satisfies it).
+function relatedGroups(id) {
+  const satisfied = relatedIds(id, "satisfy", "down");   // requirements of a part
+  const satisfiers = relatedIds(id, "satisfy", "up");    // parts of a requirement
+  const satisfyLabel = satisfied.length && satisfiers.length
+    ? "satisfy relations"
+    : (satisfiers.length && !satisfied.length
+        ? "satisfying elements" : "satisfied requirements");
+  return [
+    { label: "decomposition", ids: relatedIds(id, "composition", "down") },
+    { label: "usages", ids: model.nodes.filter(n => n.usageOwner === id)
+                                       .map(n => n.id) },
+    { label: "specializations", ids: relatedIds(id, "specialization", "up") },
+    { label: satisfyLabel, ids: [...new Set([...satisfied, ...satisfiers])] },
+  ];
+}
+
+// adds `ids` to the active View, keeping the ones already there untouched
+function addToView(ids) {
+  for (const nid of ids)
+    if (!activeView.elements.includes(nid)) activeView.elements.push(nid);
+  rebuild();
+  setDirty(true);
+}
+
+// the "show related" menu entries for element `id`: one per group plus a
+// combined one, each counting only what the View doesn't already show
+function relatedMenuItems(id) {
+  const inView = visibleIds();
+  const groups = relatedGroups(id)
+    .map(g => ({ ...g, missing: g.ids.filter(x => !inView.has(x)) }));
+  const all = [...new Set(groups.flatMap(g => g.missing))];
+  const items = groups.map(g => ({
+    label: `Show ${g.label} (${g.missing.length})`,
+    disabled: !g.missing.length,
+    action: () => addToView(g.missing),
+  }));
+  items.push({
+    label: `Show all related (${all.length})`,
+    disabled: !all.length,
+    action: () => addToView(all),
+  });
+  return items;
+}
+
 // future element actions (linked specification, internal diagram, ...) go here
 function nodeMenuItems(id) {
   const items = [];
-  const ibdTarget = ibdTargetFor(id);
-  if (ibdTarget)
-    items.push({
-      label: "Open internal block diagram",
-      action: () => openIbd(ibdTarget),
-    });
   const ucdTarget = mode === "bdd" && ucdTargetFor(id);
   if (ucdTarget)
     items.push({
       label: "Open use case diagram",
       action: () => openUcd(ucdTarget),
     });
+  const activityTarget = mode === "bdd" && activityTargetFor(id);
+  if (activityTarget)
+    items.push({
+      label: "Open activity diagram",
+      action: () => openActivity(activityTarget),
+    });
+  if (mode === "bdd") {
+    items.push({ sep: true });
+    items.push(...relatedMenuItems(id));
+  }
   items.push({ sep: true });
   const doc = layout.docs[id];
   if (doc)
@@ -1118,18 +1666,7 @@ function nodeMenuItems(id) {
     });
   items.push({
     label: doc ? "Edit documentation link…" : "Add documentation link…",
-    action: () => {
-      const v = prompt(
-        "Path or URL of the documentation (e.g. a PDF).\n" +
-        "Relative paths are resolved from the model file's folder.\n" +
-        "Leave empty to remove the link.",
-        doc || "");
-      if (v === null) return;
-      if (v.trim()) layout.docs[id] = v.trim();
-      else delete layout.docs[id];
-      rebuild();
-      setDirty(true);
-    },
+    action: () => openDocDialog(id, doc),
   });
   if (mode === "bdd") {
     items.push({ sep: true });
@@ -1159,15 +1696,12 @@ function edgeMenuItems(key) {
 
 function backgroundMenuItems() {
   const items = [];
-  if (mode === "ibd") {
-    items.push({
-      label: ibdStack.length ? "Close internal block diagram (back to parent IBD)"
-                              : "Close internal block diagram",
-      action: closeIbd,
-    });
-    items.push({ sep: true });
-  } else if (mode === "ucd") {
+  if (mode === "ucd") {
     items.push({ label: "Close use case diagram", action: closeUcd });
+    items.push({ sep: true });
+  }
+  if (mode === "activity") {
+    items.push({ label: "Close activity diagram", action: closeActivity });
     items.push({ sep: true });
   }
   items.push(
@@ -1186,7 +1720,7 @@ function backgroundMenuItems() {
       label: "Auto-layout",
       action: () => {
         for (const id of Object.keys(posMap())) delete posMap()[id];
-        autoPlace(true);
+        if (mode === "activity") autoPlaceActivity(true); else autoPlace(true);
         updateAllEdges();
         fitView();
         setDirty(true);
@@ -1232,20 +1766,21 @@ async function save() {
   } else {
     drilldownView = { ...view };
   }
-  activeView.options = {
-    attrs: document.getElementById("attrsCb").checked,
-    parts: document.getElementById("partsCb").checked,
-  };
+  activeView.version = VIEW_VERSION;
+  activeView.options = displayOpts();
 
+  layout.version = LAYOUT_VERSION;
   layout.docs = layout.docs || {};
   layout.treeOpen = treeOpen;
   layout.activeView = activeViewId;
   layout.mode = mode;
-  layout.ibdOwner = ibdOwner;
   layout.ucdOwner = ucdOwner;
+  layout.activityOwner = activityOwner;
   layout.drilldownNodes = drilldownNodes;
   layout.drilldownHiddenEdges = [...drilldownHiddenEdges];
   layout.drilldownView = drilldownView;
+  // drop stale keys from older layout schemas
+  delete layout.ibdOwner;
 
   const requests = [
     fetch("/api/layout", {
@@ -1282,17 +1817,12 @@ async function switchToView(id) {
   activeViewId = id;
   activeView = await (await fetch(`/api/views/${id}`)).json();
   hiddenEdges = new Set(activeView.hiddenEdges || []);
-  if (activeView.options) {
-    if ("attrs" in activeView.options)
-      document.getElementById("attrsCb").checked = activeView.options.attrs;
-    if ("parts" in activeView.options)
-      document.getElementById("partsCb").checked = activeView.options.parts;
-  }
-  mode = "bdd"; ibdOwner = null; ucdOwner = null; ibdStack = [];
+  applyDisplayOpts(activeView.options);
+  mode = "bdd"; ucdOwner = null; activityOwner = null;
   rebuild();
   restoreViewTransform();
   updateTitle();
-  updateIbdToolbar();
+  updateDrilldownToolbar();
   fillViewSel();
 }
 
@@ -1347,22 +1877,48 @@ async function deleteActiveView() {
 }
 
 function updateTitle() {
-  if (mode === "ibd") {
-    const owner = model.nodes.find(n => n.id === ibdOwner);
-    const name = owner ? owner.name : ibdOwner;
-    document.getElementById("title").textContent = "Internal Block Diagram — " + name;
-    document.title = "IBD: " + name;
-  } else if (mode === "ucd") {
+  if (mode === "ucd") {
     const owner = model.nodes.find(n => n.id === ucdOwner);
     const name = owner ? owner.name : ucdOwner;
     document.getElementById("title").textContent = "Use Case Diagram — " + name;
     document.title = "UCD: " + name;
+  } else if (mode === "activity") {
+    const owner = model.nodes.find(n => n.id === activityOwner);
+    const name = owner ? owner.name : activityOwner;
+    document.getElementById("title").textContent = "Activity Diagram — " + name;
+    document.title = "Activity: " + name;
   } else {
-    const name = activeView ? activeView.name : model.package || "SysML";
-    document.getElementById("title").textContent = name + " — " + model.file;
+    const name = activeView ? activeView.name : model.package || "SysML Explorer";
+    document.getElementById("title").textContent = name;
     document.title = name || "SysML Explorer";
   }
 }
+
+// validation warnings from the parser (unbalanced braces, unrecognized
+// statements, ambiguous names, unresolved references): a ⚠ counter in the
+// toolbar, expandable into a banner listing every message — so a curated
+// View can't silently look more complete than the model is
+function showWarnings(list) {
+  const btn = document.getElementById("warnBtn");
+  const box = document.getElementById("warnings");
+  box.textContent = "";
+  for (const w of list) {
+    const d = document.createElement("div");
+    d.textContent = "⚠ " + w;
+    box.appendChild(d);
+  }
+  if (list.length) {
+    btn.textContent = "⚠ " + list.length;
+    btn.style.display = "";
+  } else {
+    btn.style.display = "none";
+    box.style.display = "none";
+  }
+}
+document.getElementById("warnBtn").addEventListener("click", () => {
+  const box = document.getElementById("warnings");
+  box.style.display = box.style.display === "block" ? "none" : "block";
+});
 
 async function loadModel() {
   const m = await (await fetch("/api/model")).json();
@@ -1373,18 +1929,19 @@ async function loadModel() {
     return;
   }
   errEl.style.display = "none";
+  showWarnings(m.warnings || []);
   model = m;
   const ids = new Set(m.nodes.map(n => n.id));
-  if (mode === "ibd" && !ids.has(ibdOwner)) {
-    mode = "bdd"; ibdOwner = null; ibdStack = [];
-    hiddenEdges = new Set(activeView.hiddenEdges || []);
-  }
   if (mode === "ucd" && !ids.has(ucdOwner)) {
     mode = "bdd"; ucdOwner = null;
     hiddenEdges = new Set(activeView.hiddenEdges || []);
   }
+  if (mode === "activity" && !ids.has(activityOwner)) {
+    mode = "bdd"; activityOwner = null;
+    hiddenEdges = new Set(activeView.hiddenEdges || []);
+  }
   updateTitle();
-  updateIbdToolbar();
+  updateDrilldownToolbar();
   rebuild();
 }
 
@@ -1401,7 +1958,10 @@ async function bootstrapViews() {
     });
     const created = await res.json();
     const seeded = {
-      name: created.name, elements: model.nodes.map(n => n.id),
+      version: VIEW_VERSION, name: created.name,
+      // defs only — usage nodes are opt-in, and seeding both levels would
+      // put every part on the canvas twice
+      elements: model.nodes.filter(n => !n.usageOwner).map(n => n.id),
       nodes: {}, hiddenEdges: [], view: null, options: {},
     };
     await fetch(`/api/views/${created.id}`, {
@@ -1418,12 +1978,7 @@ async function bootstrapViews() {
   activeViewId = wantId;
   activeView = await (await fetch(`/api/views/${wantId}`)).json();
   hiddenEdges = new Set(activeView.hiddenEdges || []);
-  if (activeView.options) {
-    if ("attrs" in activeView.options)
-      document.getElementById("attrsCb").checked = activeView.options.attrs;
-    if ("parts" in activeView.options)
-      document.getElementById("partsCb").checked = activeView.options.parts;
-  }
+  applyDisplayOpts(activeView.options);
 }
 
 async function init() {
@@ -1432,6 +1987,9 @@ async function init() {
     if (saved && typeof saved === "object") layout = saved;
   } catch (e) { /* no layout yet */ }
   if (!layout.docs) layout.docs = {};  // nodeId -> documentation path/URL
+  // migrate older layout schemas quietly
+  if (layout.ibdOwner !== undefined) delete layout.ibdOwner;
+  if (!layout.version) layout.version = LAYOUT_VERSION;
   setTreeOpen("treeOpen" in layout ? layout.treeOpen : true);
   drilldownNodes = layout.drilldownNodes || {};
   drilldownHiddenEdges = new Set(layout.drilldownHiddenEdges || []);
@@ -1445,24 +2003,26 @@ async function init() {
     return;
   }
   errEl.style.display = "none";
+  showWarnings(m.warnings || []);
   model = m;
 
   await bootstrapViews();
 
   const ids = new Set(model.nodes.map(n => n.id));
-  if (layout.mode === "ibd" && layout.ibdOwner && ids.has(layout.ibdOwner)) {
-    mode = "ibd";
-    ibdOwner = layout.ibdOwner;
-    hiddenEdges = drilldownHiddenEdges;
-  } else if (layout.mode === "ucd" && layout.ucdOwner && ids.has(layout.ucdOwner)) {
+  if (layout.mode === "ucd" && layout.ucdOwner && ids.has(layout.ucdOwner)) {
     mode = "ucd";
     ucdOwner = layout.ucdOwner;
+    hiddenEdges = drilldownHiddenEdges;
+  } else if (layout.mode === "activity" && layout.activityOwner &&
+             ids.has(layout.activityOwner)) {
+    mode = "activity";
+    activityOwner = layout.activityOwner;
     hiddenEdges = drilldownHiddenEdges;
   }
 
   fillViewSel();
   updateTitle();
-  updateIbdToolbar();
+  updateDrilldownToolbar();
   rebuild();
   restoreViewTransform();
 }
@@ -1472,33 +2032,81 @@ document.getElementById("treeBtn").addEventListener("click", () => {
   setDirty(true);
 });
 document.getElementById("saveBtn").addEventListener("click", save);
-document.getElementById("ibdBackBtn").addEventListener("click", closeDrilldown);
+document.getElementById("drilldownBackBtn").addEventListener("click", closeDrilldown);
 document.getElementById("fitBtn").addEventListener("click", fitView);
 document.getElementById("autoBtn").addEventListener("click", () => {
+  closeMenus();
   for (const id of Object.keys(posMap())) delete posMap()[id];
   autoPlace(true);
   updateAllEdges();
   fitView();
   setDirty(true);
 });
-document.getElementById("reloadBtn").addEventListener("click", loadModel);
+document.getElementById("reloadBtn").addEventListener("click", () => {
+  closeMenus();
+  loadModel();
+});
 document.getElementById("viewSel").addEventListener("change", evt => {
   switchToView(evt.target.value);
 });
 document.getElementById("newViewBtn").addEventListener("click", createView);
-document.getElementById("renameViewBtn").addEventListener("click", renameActiveView);
-document.getElementById("deleteViewBtn").addEventListener("click", deleteActiveView);
+document.getElementById("renameViewBtn").addEventListener("click", () => {
+  closeMenus();
+  renameActiveView();
+});
+document.getElementById("deleteViewBtn").addEventListener("click", () => {
+  closeMenus();
+  deleteActiveView();
+});
 unhideBtn.addEventListener("click", () => {
+  closeMenus();
   hiddenEdges.clear();
   rebuild();
   setDirty(true);
 });
-for (const id of ["attrsCb", "partsCb"]) {
+
+function closeMenus() {
+  document.getElementById("displayMenu").classList.remove("open");
+  document.getElementById("moreMenu").classList.remove("open");
+}
+function toggleMenu(id, evt) {
+  evt.stopPropagation();
+  const panel = document.getElementById(id);
+  const wasOpen = panel.classList.contains("open");
+  closeMenus();
+  if (!wasOpen) panel.classList.add("open");
+}
+document.getElementById("displayBtn").addEventListener("click", evt => {
+  toggleMenu("displayMenu", evt);
+});
+document.getElementById("moreBtn").addEventListener("click", evt => {
+  toggleMenu("moreMenu", evt);
+});
+document.addEventListener("mousedown", evt => {
+  if (!evt.target.closest(".menu-wrap")) closeMenus();
+});
+
+for (const id of ["attrsCb", "partsCb", "keywordsCb", "edgeLabelsCb",
+                  "packagesCb", "docsOnNodeCb"]) {
   document.getElementById(id).addEventListener("change", () => {
     rebuild();
     setDirty(true);
   });
 }
+
+document.getElementById("treeSearch").addEventListener("input", evt => {
+  treeQuery = evt.target.value;
+  renderTree();
+});
+document.getElementById("treeKinds").addEventListener("click", evt => {
+  const btn = evt.target.closest("button[data-kind]");
+  if (!btn) return;
+  treeKind = btn.dataset.kind;
+  for (const b of document.querySelectorAll("#treeKinds button"))
+    b.classList.toggle("active", b === btn);
+  renderTree();
+});
+
 window.addEventListener("keydown", evt => {
   if ((evt.ctrlKey || evt.metaKey) && evt.key === "s") {
     evt.preventDefault();

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "sysml-v2-jamied": {
+      "command": "cmd",
+      "args": ["/c", ".cursor\\sysml_jamied_mcp.cmd"]
+    }
+  }
+}

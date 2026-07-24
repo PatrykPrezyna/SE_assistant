@@ -137,3 +137,7 @@ Thumbs.db
 
 # Local files
 *.tmp
+
+# Reference documents (datasheets, specs, etc.) — kept on disk for the
+# sysml_explorer documentation-link feature, not tracked in git
+*.pdf

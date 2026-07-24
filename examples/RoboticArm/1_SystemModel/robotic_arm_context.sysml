@@ -50,26 +50,13 @@ package RoboticArmContext {
         part printer : Printer;
         part robot : RobotArmSystem;
         part shelf : StorageShelf;
+
+        // robot removes the completed part from the printer's build platform
+        connection pickFromPrinter connect printer to robot;
+        // robot transfers the removed part to the storage shelf
+        connection placeOnShelf connect robot to shelf;
     }
 
     // Usage-level instance
     part armContext : RoboticArmOperationalContext;
-
-    // ------------------------------------------------------------------
-    // Internal Block Diagram — context interactions
-    // ------------------------------------------------------------------
-
-    ibd def RoboticArmContextIBD of RoboticArmOperationalContext {
-        ref printer : Printer;
-        ref robot : RobotArmSystem;
-        ref shelf : StorageShelf;
-
-        connection pickFromPrinter : printer to robot {
-            // robot removes the completed part from the printer's build platform
-        }
-
-        connection placeOnShelf : robot to shelf {
-            // robot transfers the removed part to the storage shelf
-        }
-    }
 }

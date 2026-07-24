@@ -6,7 +6,7 @@ recursive) is parsed and merged into one model, so cross-file references
 user-created Views (SysML v2's term for a curated presentation of model
 content) — each View is its own file in <folder>/views/, holding the
 element positions, pan/zoom, and filters for that View. Global state
-(documentation links, the element tree panel, IBD/UCD drilldown) lives in
+(documentation links, the element tree panel, UCD drilldown) lives in
 a single layout.json in that same folder.
 
 Usage (after `pip install -e tools/sysml_explorer`, from any repo):
@@ -40,22 +40,30 @@ def _extract_docs(text, docs):
     def repl(m):
         body = re.sub(r"\s+", " ", m.group(1)).strip()
         docs.append(body)
-        return f"doc §{len(docs) - 1}§;"
+        # trailing newlines keep line numbers stable for brace warnings
+        return f"doc §{len(docs) - 1}§;" + "\n" * m.group(1).count("\n")
 
     return re.sub(r"\bdoc\s*/\*(.*?)\*/", repl, text, flags=re.S)
 
 
 def _strip_comments(text):
-    text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
+    # newlines inside block comments are kept so brace warnings report the
+    # line numbers of the original source
+    text = re.sub(
+        r"/\*.*?\*/", lambda m: "\n" * m.group(0).count("\n"), text, flags=re.S
+    )
     return re.sub(r"//[^\n]*", "", text)
 
 
-def _parse_blocks(text):
+def _parse_blocks(text, warn=None):
     """Split source into a tree of {header, children} blocks."""
     root = []
     stack = [root]
     buf = []
+    line = 1
     for ch in text:
+        if ch == "\n":
+            line += 1
         if ch == "{":
             node = {"header": "".join(buf).strip(), "children": []}
             stack[-1].append(node)
@@ -67,6 +75,8 @@ def _parse_blocks(text):
                 stack[-1].append({"header": header, "children": None})
             if len(stack) > 1:
                 stack.pop()
+            elif warn:
+                warn(f"unbalanced braces: unexpected '}}' at line {line}")
             buf = []
         elif ch == ";":
             header = "".join(buf).strip()
@@ -75,17 +85,57 @@ def _parse_blocks(text):
             buf = []
         else:
             buf.append(ch)
+    if len(stack) > 1 and warn:
+        warn(f"unbalanced braces: {len(stack) - 1} unclosed '{{' at end of file")
     return root
+
+
+# Valid SysML v2 / KerML statement keywords, including ones the parser does
+# not render (constraints, states, calcs, ...). A skipped statement starting
+# with one of these is legitimate model content and stays silent; anything
+# else is reported as an unrecognized statement — in a pragmatic regex
+# parser that's the closest thing to a syntax check, and it catches keyword
+# typos like `atribute`.
+KNOWN_KEYWORDS = frozenset("""
+    abstract about accept action actor after alias all allocate allocation
+    analysis and as assert assign assume at attribute bind binding by calc
+    comment concern connect connection constraint decide def default
+    dependency derived do doc else end entry enum event exhibit exit expose
+    filter first flow for fork frame from if implies import in include
+    individual inout interface istype item join language locale loop merge
+    message metadata nonunique not objective occurrence of or ordered out
+    package parallel part perform port private protected public readonly
+    redefines ref references render rendering rep require requirement return
+    satisfy send snapshot specializes stakeholder standard state subject
+    subsets succession terminate then timeslice to transition until use
+    variant variation verification verify via view viewpoint when while xor
+""".split())
+
+
+def _snippet(header, n=60):
+    header = re.sub(r"\s+", " ", header)
+    return header if len(header) <= n else header[:n] + "…"
+
+
+def _warn_if_unknown(header, warn):
+    """Statements the parser skips are fine if they start with a known SysML
+    keyword; anything else is likely a typo or malformed syntax."""
+    token = header.split(None, 1)[0]
+    if token.startswith(("@", "#")) or token.lower() in KNOWN_KEYWORDS:
+        return
+    warn(f"unrecognized statement skipped: '{_snippet(header)}'")
 
 
 RE_PACKAGE = re.compile(r"^package\s+(?:<'([^']*)'>\s*)?(\w+)$")
 RE_PART_DEF = re.compile(
-    r"^(abstract\s+)?(part|requirement|item|action|port|actor|use\s+case)\s+def\s+(\w+)"
+    r"^(abstract\s+)?(part|requirement|item|action|port|actor|use\s+case)\s+def\s+"
+    r"(?:<'([^']*)'>\s*)?(\w+)"
     r"(?:\s*:>\s*(.+))?$"
 )
 RE_USAGE = re.compile(
     r"^(part|requirement|item|action|port)\s+(:>>\s*)?(?:<'([^']*)'>\s*)?(\w+)"
-    r"(?:\s*:\s*([\w][\w:]*))?$"
+    r"(?:\s*:\s*([\w][\w:]*))?"
+    r"(?:\s*(\[[^\]]+\]))?$"
 )
 RE_ATTR = re.compile(
     r"^attribute\s+(:>>\s*)?(\w+)"
@@ -93,10 +143,12 @@ RE_ATTR = re.compile(
     r"(?:\s+default\s+(.+?)|\s*=\s*(.+?))?$"
 )
 RE_DOC = re.compile(r"^doc\s+§(\d+)§$")
+# the reference may be plain (REQ-123) or quoted ('REQ-123') — the quoted
+# form is the spec-compliant spelling for names with hyphens, and the only
+# one the official SysML v2 parser accepts
 RE_SATISFY = re.compile(
-    r"^satisfy\s+(?:requirement\s+)?([\w:.\-]+)(?:\s+by\s+.+)?$"
+    r"^satisfy\s+(?:requirement\s+)?(?:'([^']+)'|([\w:.\-]+))(?:\s+by\s+.+)?$"
 )
-RE_IBD = re.compile(r"^ibd\s+def\s+(\w+)\s+of\s+([\w:]+)$")
 # connection statement forms (endpoints may be dotted part paths):
 #   connect a.b to c.d                              (standard SysML v2)
 #   connection name : a.b to c.d                    (shorthand, see examples)
@@ -109,13 +161,37 @@ RE_CONNECTION = re.compile(
 )
 
 # use case diagram: `use case useDiagram Name for Subject { ... }` contributes
-# no node of its own (like ibd def); its body declares actor/use-case role
-# usages and named associations between them, resolved after all files parse
+# no node of its own; its body declares actor/use-case role usages and
+# named associations between them, resolved after all files parse
 RE_UC_DIAGRAM = re.compile(r"^use\s+case\s+useDiagram\s+(\w+)\s+for\s+([\w:]+)$")
 RE_UC_ROLE = re.compile(r"^(actor|use\s+case)\s+(\w+)(?:\s*:\s*([\w][\w:]*))?$")
 RE_UC_CONNECTION = re.compile(
     r"^connection\s+(\w+)\s+from\s+([\w.]+)\s+to\s+([\w.]+)$"
 )
+
+# activity diagram (swimlane style): `perform action <name> { ... }` nested
+# inside a `part def` / `use case def` declares an activity — its body holds
+# nested `action` usages and a `first .. then .. then done;` succession chain.
+# Elsewhere in the same def, swimlane roles are assigned with
+# `perform <activity>.<action>;` on `part`, `actor`, or `subject` usages.
+# Not standard SysML v2 syntax (the spec has no first-class "swimlane");
+# see FEATURES.md dialect notes.
+RE_PERFORM_ACTION = re.compile(r"^perform\s+action\s+(\w+)$")
+RE_PERFORM_LANE = re.compile(r"^perform\s+(\w+)\.(\w+)$")
+# actor / subject usages (e.g. inside a use case def) — swimlane roles only;
+# not treated as nested parts / composition
+RE_ACTOR_SUBJECT_USAGE = re.compile(
+    r"^(actor|subject)\s+(?:<'([^']*)'>\s*)?(\w+)"
+    r"(?:\s*:\s*([\w][\w:]*))?"
+    r"(?:\s*(\[[^\]]+\]))?$"
+)
+RE_FIRST = re.compile(r"^first\s+(\w+)$")
+RE_THEN = re.compile(r"^then\s+(\w+)$")
+# conditional successions after a decide node (SysML v2):
+#   if <guard> then <target>;
+#   else <target>;
+RE_IF_THEN = re.compile(r"^if\s+(.+?)\s+then\s+(\w+)$")
+RE_ELSE = re.compile(r"^else\s+(\w+)$")
 
 
 def _match_connection(header):
@@ -135,22 +211,44 @@ class Model:
         self.packages = []  # top-level package names, in file order
         self.nodes = []  # {id, name, kind, ...}
         self.edges = []  # {kind, from, to, label}
-        self.connections = []  # {owner_id|owner_name, name, from, to}
+        self.connections = []  # {owner_id, name, from, to}
         self.ucds = []  # {owner_name, roles: [{name,type,kind}], connections: [{name,from,to}]}
+        self.activities = []  # {owner_id, name, actions: [{name,doc}], flow: [names], lanes: [...]}
         self.docs = []
-        self._by_name = {}
-        self._by_short = {}
+        self.warnings = []  # human-readable validation messages
+        self._by_name = {}  # simple name -> [ids], in parse order
+        self._by_short = {}  # short name -> [ids], in parse order
+        self._ids = set()
 
-    def add_node(self, node):
+    def add_node(self, node, warn=None, index=True):
+        """`index=False` registers the node (so its full id resolves and it
+        renders) without putting its simple name in the lookup registries —
+        used for usage nodes, whose role names are local to their owner and
+        would otherwise collide across defs (`controller`, `pump`, …)."""
+        if node["id"] in self._ids and warn:
+            warn(f"duplicate element '{node['id']}'")
+        self._ids.add(node["id"])
         self.nodes.append(node)
-        self._by_name.setdefault(node["name"], node["id"])
+        if not index:
+            return
+        ids = self._by_name.setdefault(node["name"], [])
+        if node["id"] not in ids:
+            ids.append(node["id"])
         if node.get("shortName"):
-            self._by_short.setdefault(node["shortName"], node["id"])
+            ids = self._by_short.setdefault(node["shortName"], [])
+            if node["id"] not in ids:
+                ids.append(node["id"])
 
     def resolve(self, name):
-        """Map a (possibly qualified) type or short name to a node id."""
+        """Map a (possibly qualified) type or short name to a node id. A
+        fully qualified name must match an id exactly; otherwise the last
+        segment is looked up and the first definition wins (ambiguous names
+        get a model-level warning, see parse_models)."""
+        if name in self._ids:
+            return name
         simple = name.split("::")[-1]
-        return self._by_name.get(simple) or self._by_short.get(simple)
+        ids = self._by_name.get(simple) or self._by_short.get(simple)
+        return ids[0] if ids else None
 
 
 def _attr_line(m):
@@ -173,14 +271,123 @@ def _collect_doc(children, model):
     return None
 
 
-def _interpret_def(block, model, pkg_path):
+def _interpret_activity(name, children, model, warn):
+    """Parse a `perform action <name> { ... }` body: nested `action` usages
+    and succession control (`first` / `then` / `decide` / `if … then` /
+    `else`). Returns
+    `{"name", "actions", "decisions", "flow", "edges"}` where:
+      - `flow` is every node name in encounter order (for layout / compat)
+      - `edges` is `[{"from","to","label"}]` (label empty, or a guard like
+        "yes" / "no")
+      - `decisions` lists decide-node names (rendered as diamonds)
+    `then` immediately after an `action` declaration is a succession *from
+    that action* (SysML v2); other `then`s continue the `first`/`then`
+    chain. `if`/`else` branch from the most recent `decide`."""
+    actions = []
+    decisions = []
+    flow = []
+    edges = []
+    seen = set()
+
+    def add_node(n):
+        if n not in seen:
+            seen.add(n)
+            flow.append(n)
+
+    def add_edge(frm, to, label=""):
+        add_node(frm)
+        add_node(to)
+        edges.append({"from": frm, "to": to, "label": label})
+
+    last_chain = None       # current end of first/then chain
+    last_action = None      # most recently declared action (for its `then`)
+    current_decide = None
+    prev_kind = None        # "action" | "chain" | "branch" | None
+
+    for child in children:
+        header = child["header"]
+        fm = RE_FIRST.match(header)
+        if fm:
+            last_chain = fm.group(1)
+            add_node(last_chain)
+            last_action = None
+            prev_kind = "chain"
+            continue
+        im = RE_IF_THEN.match(header)
+        if im:
+            guard, target = im.groups()
+            guard = guard.strip()
+            if not current_decide:
+                warn(f"activity '{name}': 'if … then' without a preceding decide")
+            else:
+                add_edge(current_decide, target, guard)
+            last_chain = target
+            last_action = None
+            prev_kind = "branch"
+            continue
+        em = RE_ELSE.match(header)
+        if em:
+            target = em.group(1)
+            if not current_decide:
+                warn(f"activity '{name}': 'else' without a preceding decide")
+            else:
+                add_edge(current_decide, target, "no")
+            last_chain = target
+            last_action = None
+            prev_kind = "branch"
+            continue
+        tm = RE_THEN.match(header)
+        if tm:
+            target = tm.group(1)
+            if prev_kind == "action" and last_action:
+                add_edge(last_action, target)
+            elif last_chain is not None:
+                add_edge(last_chain, target)
+            else:
+                add_node(target)
+            last_chain = target
+            if target == "decide":
+                current_decide = target
+                if target not in decisions:
+                    decisions.append(target)
+            last_action = None
+            prev_kind = "chain"
+            continue
+        am = RE_USAGE.match(header)
+        if am and am.group(1) == "action":
+            _, _, _short, aname, _typ, _mult = am.groups()
+            actions.append(
+                {"name": aname, "doc": _collect_doc(child["children"], model)}
+            )
+            last_action = aname
+            prev_kind = "action"
+            continue
+        _warn_if_unknown(header, warn)
+
+    # linear first/then with no explicit edges yet (shouldn't happen if
+    # first+then were seen, but keep a fallback from consecutive flow)
+    if not edges and len(flow) >= 2:
+        for a, b in zip(flow, flow[1:]):
+            edges.append({"from": a, "to": b, "label": ""})
+
+    return {
+        "name": name,
+        "actions": actions,
+        "decisions": decisions,
+        "flow": flow,
+        "edges": edges,
+    }
+
+
+def _interpret_def(block, model, pkg_path, warn):
     m = RE_PART_DEF.match(block["header"])
-    abstract, keyword, name, supers = m.groups()
+    abstract, keyword, short, name, supers = m.groups()
     keyword = re.sub(r"\s+", " ", keyword)
     node = {
         "id": "::".join(pkg_path + [name]),
         "name": name,
         "kind": f"{keyword} def",
+        "shortName": short,
         "abstract": bool(abstract),
         "package": "::".join(pkg_path[1:]),
         "packagePath": "::".join(pkg_path),
@@ -189,7 +396,23 @@ def _interpret_def(block, model, pkg_path):
         "doc": _collect_doc(block["children"], model),
     }
     super_names = [s.strip() for s in (supers or "").split(",") if s.strip()]
-    model.add_node(node)
+    model.add_node(node, warn)
+
+    # swimlane assignments (`perform <activity>.<action>;`) collected from
+    # part / actor / subject usage bodies as they're seen, keyed by activity
+    # name — attached to the activity once its `perform action <name> { ... }`
+    # block is reached. Assumes the role usages appear before the activity
+    # block in source order, as in the ClinicalCoolingInteraction pattern.
+    lanes_by_activity = {}
+
+    def _collect_lane_performs(uname, utype, children):
+        for sub in children or []:
+            lm = RE_PERFORM_LANE.match(sub["header"])
+            if lm:
+                act_name, action_name = lm.groups()
+                lanes_by_activity.setdefault(act_name, []).append(
+                    {"role": uname, "type": utype or "", "action": action_name}
+                )
 
     for child in block["children"] or []:
         header = child["header"]
@@ -197,13 +420,21 @@ def _interpret_def(block, model, pkg_path):
         if am:
             node["attributes"].append(_attr_line(am))
             continue
+        pa = RE_PERFORM_ACTION.match(header)
+        if pa:
+            activity = _interpret_activity(
+                pa.group(1), child["children"] or [], model, warn
+            )
+            activity["lanes"] = lanes_by_activity.get(activity["name"], [])
+            model.activities.append({"owner_id": node["id"], **activity})
+            continue
         sf = RE_SATISFY.match(header)
         if sf:
             model.edges.append(
                 {
                     "kind": "satisfy",
                     "from": node["id"],
-                    "to_name": sf.group(1),
+                    "to_name": sf.group(1) or sf.group(2),
                     "label": "«satisfy»",
                 }
             )
@@ -215,10 +446,17 @@ def _interpret_def(block, model, pkg_path):
                 {"owner_id": node["id"], "name": cname, "from": cfrom, "to": cto}
             )
             continue
+        asu = RE_ACTOR_SUBJECT_USAGE.match(header)
+        if asu:
+            _role_kw, _short, uname, utype, _mult = asu.groups()
+            _collect_lane_performs(uname, utype, child["children"])
+            continue
         um = RE_USAGE.match(header)
         if um:
-            _, redef, _short, uname, utype = um.groups()
-            entry = {"text": uname + (f" : {utype}" if utype else ""), "attrs": []}
+            keyword, redef, _short, uname, utype, mult = um.groups()
+            text = uname + (f" : {utype}" if utype else "") + (f" {mult}" if mult else "")
+            entry = {"text": text, "attrs": [],
+                     "isPort": keyword == "port"}
             node["parts"].append(entry)
             # attribute redefinitions inside the nested usage, e.g.
             # part :>> mechanics : MechanicalAssembly { attribute :>> length = 120; }
@@ -226,21 +464,69 @@ def _interpret_def(block, model, pkg_path):
                 sm = RE_ATTR.match(sub["header"])
                 if sm:
                     entry["attrs"].append(_attr_line(sm))
-            if utype:
+                    continue
+                lm = RE_PERFORM_LANE.match(sub["header"])
+                if lm:
+                    act_name, action_name = lm.groups()
+                    lanes_by_activity.setdefault(act_name, []).append(
+                        {"role": uname, "type": utype or "", "action": action_name}
+                    )
+            if utype and keyword == "port":
+                # a nested `port x : Iface` is interface typing, not part
+                # containment — giving it a composition (has-part) diamond
+                # made port-typed elements like a fluid/electrical interface
+                # def read as a *part* of everything that has one of its
+                # ports, rather than as a type those ports are typed by.
                 model.edges.append(
-                    {
-                        "kind": "composition",
-                        "from": node["id"],
-                        "to_name": utype,
-                        "label": uname,
-                    }
+                    {"kind": "typing", "from": node["id"],
+                     "to_name": utype, "label": ""}
                 )
+            elif utype:
+                # the usage itself is an element: two usages of the same type
+                # (inputTempSensor / outputTempSensor : Thermistor) are two
+                # distinct parts of the owner, so give each its own node in
+                # addition to the owner→type composition edge. Views pick
+                # whichever level they want; the viewer drops the type-level
+                # edge when its usage node is on the diagram.
+                usage_id = f"{node['id']}::{uname}"
+                model.add_node(
+                    {
+                        "id": usage_id,
+                        "name": uname,
+                        "kind": keyword,
+                        "shortName": None,
+                        "abstract": False,
+                        "package": node["package"],
+                        "packagePath": node["packagePath"],
+                        "attributes": list(entry["attrs"]),
+                        "parts": [],
+                        "doc": _collect_doc(child["children"], model),
+                        "usageOwner": node["id"],
+                        "usageType": utype,
+                    },
+                    warn,
+                    index=False,
+                )
+                model.edges.append(
+                    {"kind": "composition", "from": node["id"],
+                     "to_name": utype, "label": uname, "usageId": usage_id}
+                )
+                model.edges.append(
+                    {"kind": "composition", "from": node["id"],
+                     "to_name": usage_id, "label": ""}
+                )
+                model.edges.append(
+                    {"kind": "typing", "from": usage_id,
+                     "to_name": utype, "label": ""}
+                )
+            continue
+        _warn_if_unknown(header, warn)
     return node, super_names
 
 
-def _interpret_usage(header, children, model, pkg_path):
+def _interpret_usage(header, children, model, pkg_path, warn):
     m = RE_USAGE.match(header)
-    _, _, short, name, typ = m.groups()
+    _, _, short, name, typ, _mult = m.groups()
     node = {
         "id": "::".join(pkg_path + [name]),
         "name": name,
@@ -253,7 +539,7 @@ def _interpret_usage(header, children, model, pkg_path):
         "parts": [],
         "doc": _collect_doc(children, model),
     }
-    model.add_node(node)
+    model.add_node(node, warn)
     if typ:
         model.edges.append(
             {"kind": "typing", "from": node["id"], "to_name": typ, "label": ""}
@@ -261,7 +547,7 @@ def _interpret_usage(header, children, model, pkg_path):
     return node
 
 
-def _walk(children, model, pkg_path, deferred_supers):
+def _walk(children, model, pkg_path, deferred_supers, warn):
     for block in children:
         header = block["header"]
         if header.startswith(("import", "private import", "public import")):
@@ -271,30 +557,15 @@ def _walk(children, model, pkg_path, deferred_supers):
             name = pm.group(2)
             if not pkg_path:
                 model.packages.append(name)
-            _walk(block["children"] or [], model, pkg_path + [name], deferred_supers)
-            continue
-        im = RE_IBD.match(header)
-        if im:
-            # an ibd def contributes no node; its connections attach to the
-            # target part def (resolved after all files are parsed).
-            # `ref`/`part` re-declarations inside it are ignored — the target
-            # def's own part list is authoritative.
-            target = im.group(2)
-            for child in block["children"] or []:
-                conn = _match_connection(child["header"])
-                if conn:
-                    cname, cfrom, cto = conn
-                    model.connections.append(
-                        {"owner_name": target, "name": cname,
-                         "from": cfrom, "to": cto}
-                    )
+            _walk(block["children"] or [], model, pkg_path + [name],
+                  deferred_supers, warn)
             continue
         um = RE_UC_DIAGRAM.match(header)
         if um:
             # a use case diagram contributes no node; its body declares
             # actor/use-case role usages and named associations between
             # them, attached to the subject (resolved after all files
-            # parse, same as ibd def)
+            # parse)
             subject = um.group(2)
             roles, conns = [], []
             for child in block["children"] or []:
@@ -308,29 +579,55 @@ def _walk(children, model, pkg_path, deferred_supers):
                 if cm:
                     cname, cfrom, cto = cm.groups()
                     conns.append({"name": cname, "from": cfrom, "to": cto})
+                    continue
+                if child["header"].split(None, 1)[0] == "connection":
+                    warn("use case connection dropped (needs 'from ... to "
+                         f"...'): '{_snippet(child['header'])}'")
+                else:
+                    _warn_if_unknown(child["header"], warn)
             model.ucds.append(
                 {"owner_name": subject, "roles": roles, "connections": conns}
             )
             continue
         if RE_PART_DEF.match(header):
-            node, supers = _interpret_def(block, model, pkg_path)
+            node, supers = _interpret_def(block, model, pkg_path, warn)
             for s in supers:
                 deferred_supers.append((node["id"], s))
             continue
         if RE_USAGE.match(header):
-            _interpret_usage(header, block["children"], model, pkg_path)
+            _interpret_usage(header, block["children"], model, pkg_path, warn)
             continue
+        _warn_if_unknown(header, warn)
 
 
-def parse_models(texts):
+def parse_models(texts, names=None):
     """Parse and merge several .sysml sources into one model, so that
-    cross-file references (e.g. satisfy of an imported requirement) resolve."""
+    cross-file references (e.g. satisfy of an imported requirement) resolve.
+
+    Validation warnings (unbalanced braces, unrecognized statements,
+    ambiguous names, unresolved references) are collected under "warnings"
+    in the result; pass `names` (one per text) to prefix each parse-time
+    warning with its source file."""
     model = Model()
     deferred = []
-    for text in texts:
+    for i, text in enumerate(texts):
+        label = names[i] if names else None
+        def warn(msg, _label=label):
+            model.warnings.append(f"{_label}: {msg}" if _label else msg)
         text = _extract_docs(text, model.docs)
         text = _strip_comments(text)
-        _walk(_parse_blocks(text), model, [], deferred)
+        _walk(_parse_blocks(text, warn), model, [], deferred, warn)
+
+    # references are resolved by simple/short name, so a name defined in
+    # more than one place is ambiguous — resolution keeps the first
+    for registry, what in ((model._by_name, "name"),
+                           (model._by_short, "short name")):
+        for name, ids in registry.items():
+            if len(ids) > 1:
+                model.warnings.append(
+                    f"ambiguous {what} '{name}' defined in {len(ids)} places "
+                    f"({', '.join(ids)}) — references resolve to the first"
+                )
 
     edges = []
     for child_id, super_name in deferred:
@@ -339,27 +636,79 @@ def parse_models(texts):
             edges.append(
                 {"kind": "specialization", "from": child_id, "to": to_id, "label": ""}
             )
+        else:
+            model.warnings.append(
+                f"unresolved specialization target '{super_name}' "
+                f"(from {child_id})"
+            )
     for e in model.edges:
-        to_id = model.resolve(e.pop("to_name", "") or "")
+        to_name = e.pop("to_name", "") or ""
+        to_id = model.resolve(to_name)
         if to_id:
             e["to"] = to_id
             edges.append(e)
-
-    connections = []
-    for c in model.connections:
-        owner = c.get("owner_id") or model.resolve(c.get("owner_name", ""))
-        if owner:  # unresolved ibd targets are dropped silently
-            connections.append(
-                {"owner": owner, "name": c["name"],
-                 "from": c["from"], "to": c["to"]}
+        else:
+            model.warnings.append(
+                f"unresolved {e['kind']} target '{to_name}' (from {e['from']})"
             )
+
+    connections = [
+        {"owner": c["owner_id"], "name": c["name"], "from": c["from"], "to": c["to"]}
+        for c in model.connections
+    ]
+
+    # a `connect`/`connection` statement wires two *usages* together, but
+    # that's really a relationship between the part defs those usages are
+    # typed by (through a specific pair of ports) — surface it as an
+    # ordinary edge too, resolving each role to its type via the owner's
+    # own composition edges, so it renders in the block definition diagram
+    # whenever both defs happen to be members of the active View.
+    role_types_by_owner = {}
+    role_usages_by_owner = {}
+    for e in edges:
+        if e["kind"] == "composition" and e["label"]:
+            role_types_by_owner.setdefault(e["from"], {})[e["label"]] = e["to"]
+            if e.get("usageId"):
+                role_usages_by_owner.setdefault(e["from"], {})[e["label"]] = (
+                    e["usageId"]
+                )
+    for c in connections:
+        role_types = role_types_by_owner.get(c["owner"], {})
+        role_usages = role_usages_by_owner.get(c["owner"], {})
+        from_role, _, from_rest = c["from"].partition(".")
+        to_role, _, to_rest = c["to"].partition(".")
+        from_id = role_types.get(from_role)
+        to_id = role_types.get(to_role)
+        if not (from_id and to_id):
+            continue
+        label = " · ".join(filter(None, [c["name"], from_rest, to_rest]))
+        # the same wire, once between the types and once between the two
+        # usage nodes — each only renders when both of its endpoints are in
+        # the View, and the viewer drops the type-level one when the
+        # usage-level one is also on the diagram
+        from_usage = role_usages.get(from_role)
+        to_usage = role_usages.get(to_role)
+        edge = {"kind": "connector", "from": from_id, "to": to_id, "label": label}
+        if from_usage and to_usage:
+            edge["fromUsage"] = from_usage
+            edge["toUsage"] = to_usage
+            edges.append(
+                {"kind": "connector", "from": from_usage, "to": to_usage,
+                 "label": label}
+            )
+        edges.append(edge)
 
     ucds = []
     for u in model.ucds:
         owner = model.resolve(u["owner_name"])
-        if owner:  # unresolved use case diagram subjects are dropped silently
+        if owner:
             ucds.append(
                 {"owner": owner, "roles": u["roles"], "connections": u["connections"]}
+            )
+        else:
+            model.warnings.append(
+                f"unresolved use case diagram subject '{u['owner_name']}' — "
+                "the diagram was dropped"
             )
 
     # a use case diagram's associations are between role usages (e.g.
@@ -375,7 +724,15 @@ def parse_models(texts):
         for c in u["connections"]:
             from_id = model.resolve(role_types.get(c["from"], ""))
             to_id = model.resolve(role_types.get(c["to"], ""))
-            if not from_id or not to_id or from_id == to_id:
+            if not from_id or not to_id:
+                bad = c["from"] if not from_id else c["to"]
+                model.warnings.append(
+                    f"use case connection '{c['name']}': endpoint '{bad}' "
+                    "does not resolve to an actor/use case def — "
+                    "association dropped"
+                )
+                continue
+            if from_id == to_id:
                 continue
             pair = tuple(sorted((from_id, to_id)))
             if pair in seen_association_pairs:
@@ -388,7 +745,13 @@ def parse_models(texts):
 
     package = " + ".join(model.packages) if model.packages else None
     return {"package": package, "nodes": model.nodes, "edges": edges,
-            "connections": connections, "ucds": ucds}
+            "connections": connections, "ucds": ucds,
+            "activities": [{"owner": a["owner_id"], "name": a["name"],
+                             "actions": a["actions"],
+                             "decisions": a.get("decisions", []),
+                             "flow": a["flow"], "edges": a.get("edges", []),
+                             "lanes": a["lanes"]} for a in model.activities],
+            "warnings": model.warnings}
 
 
 def parse_sysml(text):
@@ -421,6 +784,97 @@ def _slugify(name, existing):
         slug = f"{base}-{n}"
         n += 1
     return slug
+
+
+# ----------------------------------------------------------------------
+# Default views (generation placeholder)
+# ----------------------------------------------------------------------
+
+# The three Views every model is expected to have. They are currently
+# hand-authored JSON (see examples/MedicalDevice/views/); the specs below
+# are the contract build_default_views() has to satisfy once it generates
+# them from the parsed model instead.
+DEFAULT_VIEW_SPECS = [
+    {
+        "id": "context",
+        "name": "1 Context",
+        "doc": "Every element of the context block (the part def whose "
+               "usages are the system, the actors and the external "
+               "systems) plus the connections between them. The context "
+               "block itself sits on top, unconnected — its composition "
+               "edges to the members are hidden, since containment is "
+               "what the diagram is about rather than information in it.",
+    },
+    {
+        "id": "decomposition",
+        "name": "2 Decomposition",
+        "doc": "The system part def and up to three levels of composition "
+               "below it (fewer if the model is shallower), laid out as a "
+               "pyramid: level 1 centred on top, level 2 spread beneath "
+               "it, level 3 under its own parent. Realization "
+               "specializations of a level-2 part (e.g. Thermistor :> "
+               "TemperatureSensor) count as level 3. Attribute and part "
+               "compartments are off, doc compartments on; connector "
+               "edges are hidden so only the tree shows.",
+    },
+    {
+        "id": "interconnections",
+        "name": "3 Interconnections",
+        "doc": "The connections declared in the system part def, between "
+               "its first-level parts only — the system block itself is "
+               "not a member, so no composition edges compete with the "
+               "connectors. (The 'internal block diagram' of the system, "
+               "named for what it shows rather than for SysML v1.)",
+    },
+]
+
+
+def build_default_views(model, folder: Path = None):
+    """PLACEHOLDER — regenerate the DEFAULT_VIEW_SPECS Views from `model`.
+
+    Returns a list of view dicts (the `<folder>/views/<id>.json` format:
+    `{"version", "name", "elements", "nodes", "hiddenEdges", "view",
+    "options"}`) with an extra `"id"` key naming the file to write, one per
+    spec it could generate. Specs that don't apply to this model (no
+    context block, no system part def) are simply omitted.
+
+    Not implemented yet: the three Views are hand-authored JSON for now, so
+    this returns nothing and sync_default_views() writes nothing. When
+    filling it in, the pieces it needs are all in the parsed model —
+    `model["nodes"]` (id, kind, doc), `model["edges"]` (composition /
+    connector / specialization) and `model["connections"]` — plus an
+    edge-key helper matching viewer.html's `edgeKey()`:
+    `kind|from|to|label`, used for `hiddenEdges`. Positions can be
+    hand-computed per spec (a pyramid for decomposition, a row under the
+    context block for context) or left out entirely, in which case the
+    viewer auto-lays-out the nodes on first open.
+    """
+    return []
+
+
+def sync_default_views(folder: Path, model):
+    """Write whatever build_default_views() generated into <folder>/views/.
+
+    Only ids listed in DEFAULT_VIEW_SPECS are ever written, so a generated
+    View can replace its own stale file but can never clobber a View the
+    user made by hand. A no-op while build_default_views() is a
+    placeholder. Returns the list of ids written.
+    """
+    written = []
+    known = {s["id"] for s in DEFAULT_VIEW_SPECS}
+    for view in build_default_views(model, folder):
+        view_id = view.get("id")
+        if view_id not in known:
+            continue
+        body = {k: v for k, v in view.items() if k != "id"}
+        body.setdefault("version", 1)
+        views_dir = folder / "views"
+        views_dir.mkdir(exist_ok=True)
+        (views_dir / f"{view_id}.json").write_text(
+            json.dumps(body, indent=2) + "\n", encoding="utf-8"
+        )
+        written.append(view_id)
+    return written
 
 
 def make_handler(folder: Path, layout_path: Path):
@@ -479,6 +933,19 @@ def make_handler(folder: Path, layout_path: Path):
                 p = folder / target
             return p if p.is_file() else None
 
+        def _browse_dir(self):
+            # folder-tree browser for the "Add documentation link" dialog:
+            # path is relative to the model folder and may not escape it
+            qs = parse_qs(urlsplit(self.path).query)
+            rel = qs.get("path", [""])[0]
+            base = folder.resolve()
+            target = (base / rel).resolve() if rel else base
+            try:
+                target.relative_to(base)
+            except ValueError:
+                return None  # path traversal outside the model folder
+            return target if target.is_dir() else None
+
         def do_GET(self):
             path = self.path.split("?")[0]
             if path == "/":
@@ -491,7 +958,8 @@ def make_handler(folder: Path, layout_path: Path):
                             {"error": f"no .sysml files found in {folder}"}))
                         return
                     model = parse_models(
-                        [p.read_text(encoding="utf-8") for p in model_paths]
+                        [p.read_text(encoding="utf-8") for p in model_paths],
+                        [p.name for p in model_paths],
                     )
                     model["file"] = ", ".join(p.name for p in model_paths)
                     self._send(json.dumps(model))
@@ -527,6 +995,23 @@ def make_handler(folder: Path, layout_path: Path):
                     self._send_file(p)
                 else:
                     self.send_error(404, "documentation file not found")
+            elif path == "/api/browse":
+                # folder-tree listing for the documentation-link file picker
+                d = self._browse_dir()
+                if d is None:
+                    self.send_error(404, "folder not found")
+                else:
+                    rel = d.relative_to(folder.resolve()).as_posix()
+                    entries = [
+                        {"name": p.name, "isDir": p.is_dir()}
+                        for p in sorted(
+                            d.iterdir(),
+                            key=lambda p: (not p.is_dir(), p.name.lower()),
+                        )
+                    ]
+                    self._send(json.dumps(
+                        {"path": "" if rel == "." else rel, "entries": entries}
+                    ))
             else:
                 self.send_error(404)
 
@@ -558,7 +1043,7 @@ def make_handler(folder: Path, layout_path: Path):
                 views_dir.mkdir(parents=True, exist_ok=True)
                 existing = {p.stem for p in views_dir.glob("*.json")}
                 view_id = _slugify(name, existing)
-                data = {"name": name, "elements": [], "nodes": {},
+                data = {"version": 1, "name": name, "elements": [], "nodes": {},
                         "hiddenEdges": [], "view": None, "options": {}}
                 (views_dir / f"{view_id}.json").write_text(
                     json.dumps(data, indent=2) + "\n", encoding="utf-8"
@@ -612,6 +1097,11 @@ def main():
     ap.add_argument(
         "--print", action="store_true", help="print parsed model JSON and exit"
     )
+    ap.add_argument(
+        "--check", action="store_true",
+        help="validate the model: print every warning and exit nonzero "
+             "if there are any (usable as a pre-commit/CI gate)",
+    )
     args = ap.parse_args()
 
     folder = Path(args.folder).resolve()
@@ -621,8 +1111,21 @@ def main():
     if not model_paths:
         sys.exit(f"no .sysml files found directly in {folder}")
 
+    texts = [p.read_text(encoding="utf-8") for p in model_paths]
+    file_names = [p.name for p in model_paths]
+
+    if args.check:
+        model = parse_models(texts, file_names)
+        for w in model["warnings"]:
+            print(f"warning: {w}")
+        n = len(model["warnings"])
+        if n:
+            sys.exit(f"{n} warning(s) in {len(model_paths)} file(s)")
+        print(f"OK — {len(model['nodes'])} elements, no warnings")
+        return
+
     if args.print:
-        model = parse_models([p.read_text(encoding="utf-8") for p in model_paths])
+        model = parse_models(texts, file_names)
         print(json.dumps(model, indent=2))
         return
 
@@ -635,6 +1138,12 @@ def main():
     url = f"http://127.0.0.1:{args.port}/"
     print(f"Serving {len(model_paths)} .sysml file(s) from {folder} at {url}")
     print(f"  ({', '.join(p.name for p in model_paths)})")
+    startup_model = parse_models(texts, file_names)
+    for w in startup_model["warnings"]:
+        print(f"warning: {w}")
+    # no-op while build_default_views() is a placeholder
+    for view_id in sync_default_views(folder, startup_model):
+        print(f"regenerated default view: {view_id}")
     print(f"Views will be saved to {folder / 'views'}")
     print(f"Global state will be saved to {layout_path}")
     print("Press Ctrl+C to stop.")

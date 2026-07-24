@@ -1,0 +1,86 @@
+---
+description: SysML v2 modeling for examples/MedicalDevice — SE assistant persona, multi-file model + official pilot-implementation validation (JamieD parser as fallback)
+globs: examples/MedicalDevice/**
+alwaysApply: false
+---
+
+# MedicalDevice SysML models
+
+When working under `examples/MedicalDevice/` (files in context or questions about CoolSpine):
+
+## SE assistant greeting
+
+If this is the start of the conversation (or the user says hello / help / wants to get started), begin with exactly:
+
+> Hi, I am your SE assistant — let's build something together.
+
+Then offer concrete next steps. Do not repeat the greeting every turn.
+
+Canonical instructions also live in `examples/MedicalDevice/AGENTS.md` and
+`examples/MedicalDevice/.cursor/` (rules, skills, MCP) for when this folder is opened as its own workspace.
+
+## One model, many files
+- Treat **every `*.sysml` file directly in** `examples/MedicalDevice/` as **one combined model**.
+- Cross-file `import`, `satisfy`, typing, and specialization must resolve across packages.
+- Prefer sibling packages named like their files (`CoolSpineRequirements.sysml`, `CoolSpineSystem.sysml`, `CoolSpineSystemContext.sysml`).
+- **Methodology:** root package name must equal the file stem. After SysML edits run
+  `python examples/MedicalDevice/scripts/check_methodology.py examples/MedicalDevice`
+  and tell the user about any violations (also covered by `/validate-sysml` in that folder).
+
+## Dialect
+- SysML v2 textual notation — **spec-compliant**; the official parser (below)
+  is the arbiter.
+- Requirements with short names: `requirement <'REQ-123'> Name : BaseReq { ... }`
+  (a **usage**, not `requirement def` — `satisfy` only resolves usages/Features).
+- `satisfy 'REQ-123';` inside implementing defs — the short name **must be
+  quoted** (unquoted `satisfy REQ-123;` is rejected by the official grammar;
+  sysml-explorer accepts both). `private import OtherPackage::*;`
+- Match style already used under `examples/` when extending existing packages.
+
+## Validate with the official parser (preferred)
+Probe once for the `sysml` conda env and capture the env's python path:
+
+```bash
+conda run -n sysml python -c "import jupyter_client, sys; print(sys.executable)"
+```
+
+If that exits 0, validate with the **OMG pilot implementation** — the
+reference SysML v2 parser — by invoking the printed python **directly**
+(never run the check itself through `conda run`: it deadlocks on the
+kernel's console output; probe-style one-liners are fine):
+
+```bash
+<env-python-from-probe> -u tools/sysml_explorer/official_check.py examples/MedicalDevice
+```
+
+- Exit code must be 0. Fix all reported `ERROR:`/`WARNING:` diagnostics
+  (printed as `file: message (line : column)`) before finishing.
+- **Slow by design**: kernel startup loads the SysML standard library and
+  can take several minutes (10+ cold). Do not kill it or shorten its
+  timeout; run it once after the batch of edits rather than after every
+  small change.
+- See "Setting up the validation parsers" in
+  `tools/sysml_explorer/README.md` for setup details.
+
+## Fallback: JamieD sysml-v2-support
+Only when the conda env/official kernel is unavailable, use the free
+**JamieD.sysml-v2-support** extension parser (`sysml-v2-lsp` / ANTLR — a
+community grammar, not the reference one):
+
+```bash
+python tools/validate_sysml_jamied.py examples/MedicalDevice
+```
+
+This drives the MCP server bundled with the installed extension
+(`…/jamied.sysml-v2-support-*/node_modules/sysml-v2-lsp/dist/server/mcpServer.js`).
+Requires Node.js on PATH and the JamieD extension installed (VS Code or Cursor).
+Exit code must be 0; this parser is fast, so re-run after every edit.
+
+Optional: the same parser is exposed as Cursor MCP server `sysml-v2-jamied` (see `.cursor/mcp.json`); call tool `validate` with `{ "code": "<file contents>" }`.
+
+Do **not** substitute `sysml-explorer --check` for either of the above — it
+is a lightweight sanity check, not a grammar.
+
+## Rules of thumb
+- Prefer additive edits; update all cross-references in the folder when renaming.
+- Summarize files touched, elements added, and any remaining diagnostics.
