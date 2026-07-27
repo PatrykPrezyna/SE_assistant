@@ -4,17 +4,13 @@ A lightweight local tool that renders an interactive diagram from a folder of
 SysML v2 text files (`.sysml`) and lets you arrange the elements manually by
 dragging. You curate as many named **Views** as you like — SysML v2's term
 for a purpose-built presentation of model content — each holding its own
-element membership, positions, and pan/zoom. Every View is its own plain
+elements, positions, and pan/zoom. Every View is its own plain
 JSON file next to the model source, so it's versionable in git independently
 of every other View.
 
 Built as an alternative to auto-layout-only viewers (SysML v2 pilot Jupyter
 implementation, SysIDE) and heavyweight commercial modelers (Cameo/MagicDraw).
 
-This file covers **setup and developer workflow**. The complete feature
-reference (parsing dialect, validation rules, viewer behavior, HTTP API) is
-in **[FEATURES.md](FEATURES.md)** — written so it can also be loaded as
-context by an LLM coding agent (see "Using an LLM coding agent" below).
 
 ## Installation
 
@@ -25,10 +21,7 @@ repository — it doesn't need to live next to the model.
 ```
 pip install -e tools/sysml_explorer
 ```
-
-installs the `sysml-explorer` command on PATH for the current environment.
-To use it from a different repo/machine without a local checkout of this
-one, install straight from git:
+To use it without a local checkout of this repo:
 
 ```
 pip install "git+https://github.com/PatrykPrezyna/SE_assistant.git#subdirectory=tools/sysml_explorer"
@@ -45,19 +38,11 @@ saved to `<folder>/views/<id>.json`; everything else (documentation links,
 the element tree panel, UCD drilldown state) is saved to
 `<folder>/layout.json`.
 
-Every `.sysml` file directly inside `<folder>` (not recursive — subfolders are
-ignored) is merged into one model, so cross-file references resolve — e.g.
-point it at a folder holding both the architecture and the requirements
-package to see `satisfy` connections:
+Every `.sysml` file directly inside `<folder>` (subfolders are
+ignored) is merged into one model
 
 ```
-sysml-explorer examples/RoboticArm/1_SystemModel
-```
-
-Debugging aid — dump the parsed model as JSON without starting the server:
-
-```
-sysml-explorer <folder> --print
+sysml-explorer examples/MedicalDevice
 ```
 
 Validate without starting the server — prints every validation warning (see
@@ -69,18 +54,11 @@ sysml-explorer <folder> --check
 ```
 
 When developing this tool, always start the version from the current checkout
-in this workspace rather than any older package you may have installed in the
-past. From the package source directory of this checkout, run:
 
 ```
 cd tools/sysml_explorer/src
 python -m sysml_explorer C:\sources\SE_assistant\examples\MedicalDevice
 ```
-
-If you previously installed `sysml-explorer` from an older checkout, do not
-rely on that older executable; use the `python -m sysml_explorer` command
-above so you are sure you are launching the code that is currently in this
-workspace.
 
 ## What the viewer simplifies vs. standard SysML notation
 
