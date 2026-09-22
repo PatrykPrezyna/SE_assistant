@@ -20,3 +20,8 @@ Alternativ sysml tools i found usefull:
 [@liuMAS4SysMLMultiAgentFramework2026]
 5. System modleing: 
 
+
+This may be similar to what I am doing: 
+1. https://github.com/Open-MBEE/sysmod-sysmlv2-api
+2. Johnsep 
+3. https://sysmodeler.ai

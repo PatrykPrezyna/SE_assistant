@@ -1,7 +1,10 @@
 ## next steps
+0. explain to me wht the lauout is doing - dowe realy need it
 1. add legend
 0.sysml v2 and consise list what we do differently
 2. make the activity diagram useull
+- how to document decision racionale 
+- 
 
 
 In tis tool: the system model should be 100% compatible tiwh sysmv2 model, any additioanl infromation like the link to a documentation or a picture should be saved outside the model, every simplification (like not showing the <part def>), the views with its meta data are saved independently of the model but should be validated and the ai agent in my coding ide should be instucted to validate all the viesw and ask if thait should be updated too, 
