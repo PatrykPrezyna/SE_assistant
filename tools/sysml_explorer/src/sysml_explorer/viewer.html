@@ -20,6 +20,14 @@
   #toolbar label { user-select: none; cursor: pointer; }
   #toolbar select { font-size: 13px; max-width: 180px; }
   #toolbar .grow { flex: 1; min-width: 8px; }
+  /* Expert-only controls (custom-diagram building) are hidden until the
+     expert toggle is on — see setExpertMode() */
+  body:not(.expert) .expert-only { display: none !important; }
+  #expertBtn { font-size: 13px; line-height: 1; padding: 3px 6px;
+    border: 1px solid transparent; background: none; color: #888;
+    border-radius: 4px; }
+  #expertBtn:hover { background: #ececf0; color: #444; }
+  #expertBtn.on { color: #1a6bbf; border-color: #b9d4ee; background: #eaf3fc; }
   #status { color: #2a7; min-width: 70px; }
   #status.dirty { color: #c60; }
   .menu-wrap { position: relative; }
@@ -176,18 +184,18 @@
 </head>
 <body>
 <div id="toolbar">
-  <button id="treeBtn" title="Show/hide the element tree">Tree</button>
+  <button id="treeBtn" class="expert-only" title="Show/hide the element tree">Tree</button>
   <span class="title" id="title">SysML Explorer</span>
   <span class="ver" id="appVersion" title="sysml-explorer version">v{{EXPLORER_VERSION}}</span>
   <span class="sep"></span>
   <label>view <select id="viewSel"></select></label>
-  <button id="newViewBtn" title="Create a new view">+</button>
+  <button id="newViewBtn" class="expert-only" title="Create a new view">+</button>
   <span class="sep"></span>
   <button id="saveBtn" title="Ctrl+S">Save</button>
   <button id="drilldownBackBtn" style="display:none">◀ Back</button>
   <button id="fitBtn">Fit</button>
   <span class="sep"></span>
-  <div class="menu-wrap">
+  <div class="menu-wrap expert-only">
     <button id="displayBtn" title="What to show on nodes and edges">Display ▾</button>
     <div id="displayMenu" class="menu-panel" role="menu">
       <label class="item"><input type="checkbox" id="attrsCb" checked> attributes</label>
@@ -203,14 +211,15 @@
     <div id="moreMenu" class="menu-panel" role="menu">
       <button type="button" class="item" id="autoBtn" title="Discard positions and re-run auto-layout">Auto-layout</button>
       <button type="button" class="item" id="reloadBtn" title="Re-parse the .sysml files, keep positions">Reload model</button>
-      <div class="sep"></div>
-      <button type="button" class="item" id="renameViewBtn" title="Rename the current view">Rename view</button>
-      <button type="button" class="item" id="deleteViewBtn" title="Delete the current view">Delete view</button>
-      <div class="sep"></div>
-      <button type="button" class="item" id="unhideBtn" title="Show connections hidden via right-click">Unhide connections</button>
+      <div class="sep expert-only"></div>
+      <button type="button" class="item expert-only" id="renameViewBtn" title="Rename the current view">Rename view</button>
+      <button type="button" class="item expert-only" id="deleteViewBtn" title="Delete the current view">Delete view</button>
+      <div class="sep expert-only"></div>
+      <button type="button" class="item expert-only" id="unhideBtn" title="Show connections hidden via right-click">Unhide connections</button>
     </div>
   </div>
   <span class="grow"></span>
+  <button id="expertBtn" aria-pressed="false" title="Expert mode — build your own diagrams">⚙</button>
   <button id="warnBtn" style="display:none" title="Model validation warnings — click to show/hide"></button>
   <span id="status"></span>
 </div>
@@ -351,7 +360,8 @@ let mode = "bdd";                 // "bdd" | "ucd" | "activity"
 let ucdOwner = null;               // id of the subject whose use case diagram is shown
 let activityOwner = null;          // id of the part def whose activity diagram is shown
 let selection = null;              // {type:"node", id} | {type:"edge", key}
-let treeOpen = true;               // element tree panel shown/hidden
+let treeOpen = true;               // element tree panel shown/hidden (preference)
+let expertMode = false;            // custom-diagram building unlocked (⚙ toggle)
 let treeQuery = "";                // filter text for the element tree
 let treeKind = "all";              // "all" | "req" | "part" | "actor" | "usecase"
 
@@ -727,7 +737,7 @@ function fitView() {
     maxX = Math.max(maxX, n.x + n.w); maxY = Math.max(maxY, n.y + n.h);
   }
   if (minX === Infinity) return;
-  const treeW = treeOpen ? TREE_WIDTH : 0;
+  const treeW = treeVisible() ? TREE_WIDTH : 0;
   const cw = svg.clientWidth - treeW, ch = svg.clientHeight - TOOLBAR_H;
   const s = Math.min(1.5, 0.9 * Math.min(cw / (maxX - minX + 1), ch / (maxY - minY + 1)));
   view.s = s;
@@ -739,7 +749,7 @@ function fitView() {
 function centerOn(id) {
   const n = nodes[id];
   if (!n) return;
-  const treeW = treeOpen ? TREE_WIDTH : 0;
+  const treeW = treeVisible() ? TREE_WIDTH : 0;
   const cw = svg.clientWidth - treeW, ch = svg.clientHeight - TOOLBAR_H;
   view.tx = treeW + cw / 2 - view.s * (n.x + n.w / 2);
   view.ty = TOOLBAR_H + ch / 2 - view.s * (n.y + n.h / 2);
@@ -1271,17 +1281,47 @@ function renderTree() {
   renderTreeNode(packageTree(filtered), body, forceOpen);
 }
 
+// The element tree is a custom-diagram building control, so it is only on
+// screen when the tree is open AND expert mode is on. treeOpen stays the
+// user's preference either way, so unlocking expert mode restores it.
+function treeVisible() { return expertMode && treeOpen; }
+
+function applyTreePanel() {
+  const shown = treeVisible();
+  treeEl.classList.toggle("hidden", !shown);
+  // keep the legend from sitting under the tree panel's bottom-left corner
+  document.getElementById("legend").style.left = (shown ? TREE_WIDTH + 12 : 12) + "px";
+}
+
 function setTreeOpen(open) {
   treeOpen = open;
-  treeEl.classList.toggle("hidden", !open);
-  // keep the legend from sitting under the tree panel's bottom-left corner
-  document.getElementById("legend").style.left = (open ? TREE_WIDTH + 12 : 12) + "px";
+  applyTreePanel();
+}
+
+// Expert mode gates every control that builds a custom diagram by hand:
+// the element tree, view create/rename/delete, the Display menu and
+// Unhide connections. Everything else — the predefined views, moving
+// elements, Save, Fit — stays available to everyone.
+function setExpertMode(on) {
+  expertMode = !!on;
+  document.body.classList.toggle("expert", expertMode);
+  const btn = document.getElementById("expertBtn");
+  btn.classList.toggle("on", expertMode);
+  btn.setAttribute("aria-pressed", expertMode ? "true" : "false");
+  btn.title = expertMode
+    ? "Expert mode on — click to hide the custom-diagram controls"
+    : "Expert mode — build your own diagrams";
+  applyTreePanel();
+  updateEmptyHint();
 }
 
 function updateEmptyHint() {
   const hint = document.getElementById("emptyHint");
   const empty = mode === "bdd" && model && activeView
     && !(activeView.elements || []).some(id => model.nodes.some(n => n.id === id));
+  hint.textContent = expertMode
+    ? "This view is empty. Check elements in the tree to add them."
+    : "This view is empty. Turn on expert mode (⚙) to add elements.";
   hint.classList.toggle("hidden", !empty);
 }
 
@@ -1828,6 +1868,7 @@ async function save() {
   layout.version = LAYOUT_VERSION;
   layout.docs = layout.docs || {};
   layout.treeOpen = treeOpen;
+  layout.expertMode = expertMode;
   layout.activeView = activeViewId;
   layout.mode = mode;
   layout.ucdOwner = ucdOwner;
@@ -2046,6 +2087,7 @@ async function init() {
   // migrate older layout schemas quietly
   if (layout.ibdOwner !== undefined) delete layout.ibdOwner;
   if (!layout.version) layout.version = LAYOUT_VERSION;
+  setExpertMode("expertMode" in layout ? layout.expertMode : false);
   setTreeOpen("treeOpen" in layout ? layout.treeOpen : true);
   drilldownNodes = layout.drilldownNodes || {};
   drilldownHiddenEdges = new Set(layout.drilldownHiddenEdges || []);
@@ -2083,6 +2125,11 @@ async function init() {
   restoreViewTransform();
 }
 
+document.getElementById("expertBtn").addEventListener("click", () => {
+  setExpertMode(!expertMode);
+  rebuild();
+  setDirty(true);
+});
 document.getElementById("treeBtn").addEventListener("click", () => {
   setTreeOpen(!treeOpen);
   setDirty(true);

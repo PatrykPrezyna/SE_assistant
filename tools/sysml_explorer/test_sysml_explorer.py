@@ -1822,7 +1822,9 @@ class ElementTreeRenderingTests(unittest.TestCase):
         return dump_dom(self.srv.url)
 
     def test_tree_open_and_enabled_by_default(self):
-        classes = tree_classes(self.render())
+        # "open" is the default preference, but the panel only reaches the
+        # screen in expert mode — see ExpertModeRenderingTests
+        classes = tree_classes(self.render({"expertMode": True}))
         self.assertNotIn("hidden", classes)
         self.assertNotIn("disabled", classes)
 
@@ -1906,6 +1908,83 @@ class ElementTreeRenderingTests(unittest.TestCase):
             dom = dump_dom(srv.url)
             self.assertIn("checked", pkg_row(dom, "Reqs"))
             self.assertNotIn("checked", pkg_row(dom, "TestPkg"))
+
+
+@unittest.skipUnless(EDGE, "Microsoft Edge not found; skipping rendering tests")
+class ExpertModeRenderingTests(unittest.TestCase):
+    """Expert mode (the toolbar gear) gates the custom-diagram building
+    controls. Off by default, so a first-time reader sees the predefined
+    views and nothing to build with."""
+
+    EXPERT_ONLY_IDS = ["treeBtn", "newViewBtn", "renameViewBtn",
+                       "deleteViewBtn", "unhideBtn"]
+
+    @classmethod
+    def setUpClass(cls):
+        cls.srv = ServerFixture()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.srv.close()
+
+    def render(self, layout=None):
+        if layout is None:
+            self.srv.layout_path.unlink(missing_ok=True)
+        else:
+            self.srv.layout_path.write_text(json.dumps(layout), encoding="utf-8")
+        return dump_dom(self.srv.url)
+
+    def body_classes(self, dom):
+        m = re.search(r'<body(?: class="([^"]*)")?', dom)
+        assert m, "body tag not found"
+        return (m.group(1) or "").split()
+
+    def test_expert_mode_off_by_default_and_hides_the_tree(self):
+        dom = self.render()
+        self.assertNotIn("expert", self.body_classes(dom))
+        # the tree is a building control, so it is off screen even though
+        # treeOpen (the user's preference) is still true
+        self.assertIn("hidden", tree_classes(dom))
+
+    def test_saved_expert_mode_shows_the_tree_again(self):
+        dom = self.render({"expertMode": True})
+        self.assertIn("expert", self.body_classes(dom))
+        self.assertNotIn("hidden", tree_classes(dom))
+
+    def test_expert_mode_respects_the_tree_open_preference(self):
+        dom = self.render({"expertMode": True, "treeOpen": False})
+        self.assertIn("hidden", tree_classes(dom))
+
+    def test_building_controls_are_marked_expert_only(self):
+        dom = self.render()
+        for el_id in self.EXPERT_ONLY_IDS:
+            m = re.search(r'<button[^>]*id="%s"[^>]*>' % el_id, dom) or                 re.search(r'<button[^>]*class="[^"]*"[^>]*id="%s"' % el_id, dom)
+            self.assertIsNotNone(m, f"{el_id} not found")
+            self.assertIn("expert-only", m.group(0), el_id)
+        # the Display menu's wrapper carries the class, not the button
+        self.assertIn('class="menu-wrap expert-only"', dom)
+
+    def test_always_available_controls_are_not_gated(self):
+        dom = self.render()
+        for el_id in ["saveBtn", "fitBtn", "viewSel", "autoBtn", "reloadBtn"]:
+            m = re.search(r'<(?:button|select)[^>]*id="%s"[^>]*>' % el_id, dom)
+            self.assertIsNotNone(m, f"{el_id} not found")
+            self.assertNotIn("expert-only", m.group(0), el_id)
+
+    def test_toggle_button_present_and_reflects_state(self):
+        off = self.render()
+        self.assertIn('id="expertBtn"', off)
+        self.assertIn('aria-pressed="false"', off)
+        on = self.render({"expertMode": True})
+        self.assertIn('aria-pressed="true"', on)
+
+    def test_empty_view_hint_points_at_expert_mode(self):
+        views = {"v": {"name": "V", "elements": [], "nodes": {},
+                       "hiddenEdges": [], "view": None, "options": {}}}
+        with ServerFixture(views=views) as srv:
+            srv.layout_path.write_text(json.dumps({"activeView": "v"}),
+                                       encoding="utf-8")
+            self.assertIn("expert mode", dump_dom(srv.url))
 
 
 @unittest.skipUnless(EDGE, "Microsoft Edge not found; skipping rendering tests")

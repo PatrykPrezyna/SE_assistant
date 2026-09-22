@@ -273,6 +273,32 @@ README.
 (A reader-friendly summary of how these defaults deviate from standard
 SysML notation is in the README, "What the viewer simplifies".)
 
+## Expert mode (`viewer.html`)
+
+Building a diagram by hand — picking elements out of the tree, creating
+Views, hiding connections, changing what nodes show — is a power-user
+activity. It lives behind the **⚙ toggle** at the right of the toolbar
+so the main screen stays the predefined Views.
+
+- **Off by default.** A folder with no `layout.json`, or one saved before
+  this existed, opens with expert mode off.
+- **What the toggle gates** (everything marked `expert-only` in the
+  toolbar markup, hidden by `body:not(.expert) .expert-only`):
+  **Tree**, the **+** new-View button, **Display ▾**, and **Rename
+  view** / **Delete view** / **Unhide connections** under **More ▾**.
+- **What stays available to everyone**: the view switcher, **Save**,
+  **Fit**, **Auto-layout**, **Reload model**, dragging elements, pan/zoom,
+  click-to-highlight, the right-click element menu (including **Remove
+  from view**) and the drilldowns.
+- The element tree is on screen only when expert mode is on *and* the
+  tree is open. `treeOpen` stays the user's own preference while expert
+  mode is off, so unlocking it restores the panel as it was
+  (`treeVisible()` in `viewer.html`).
+- The empty-View hint adapts: it says to check elements in the tree in
+  expert mode, and to turn expert mode on otherwise.
+- The state is saved in the layout file as `expertMode` (toggling it
+  marks the layout dirty, like the Tree button does).
+
 ## Views (`viewer.html`)
 
 A **View** is a curated, named presentation of model content — SysML v2's
