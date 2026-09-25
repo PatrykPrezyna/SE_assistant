@@ -10,9 +10,9 @@ package CoolSpineSystemContext {
 
     part def Patient {
         doc /*
-        Person receiving cooling. The CoolSpine catheter is the heat-exchange
-        path in the patient. A separate CSF drain may be used for pressure /
-        drainage monitoring (not part of the CoolSpine fluid loop).
+        Person undergoing a aorta replacement surgery.
+        Up to 10% of this people are paralise as a side affect of the procedure.
+        Similarly to Robot sapported knie replacement sergury she/he might have some influence on the use of CoolSpine device by asking the Surgeon if he has access to it but is not the decision maker.
         */
     }
 
@@ -20,7 +20,7 @@ package CoolSpineSystemContext {
         doc /*
         Lead clinician for the procedure. Decides whether to use CoolSpine and
         may ask for changes to cooling or flow; does not usually drive the
-        device UI (that is the anesthesiologist).
+        device UI.
         */
     }
 
@@ -28,6 +28,14 @@ package CoolSpineSystemContext {
         doc /*
         Clinician who watches patient physiology and is the main operator of
         CoolSpine (power on, setpoints, stop) during the case.
+        */
+    }
+
+    part def Nurse {
+        doc /*
+        Circulating / scrub nurse who prepares CoolSpine for the case (brings
+        it in, connects power, primes and connects the disposable catheter
+        set), watches alarms during therapy, does not decide or enter therapy setpoints.
         */
     }
 
@@ -130,19 +138,14 @@ package CoolSpineSystemContext {
 
     part def Context {
         doc /*
-        One operating-room snapshot: CoolSpine device, patient, surgeon,
-        anesthesiologist, and optionally a CSF drain.
-
-        CoolSpine's saline stays inside the device loop
-        (reservoir → catheter → pump → reservoir). The catheter is the only
-        part of that loop inside the patient. The CSF drain is separate
-        hospital gear for monitoring, not CoolSpine plumbing.
+        All elements that are relevant to the Porject but outside of the system.
         */
 
         part coolSpine : CoolSpineDevice;
         part patient : Patient;
         part surgeon : Surgeon;
         part anesthesiologist : Anesthesiologist;
+        part nurse : Nurse;
         part csfDrain : CsfDrain [0..1];
 
         connection drainPatientCsf
@@ -157,9 +160,11 @@ package CoolSpineSystemContext {
 
     part def ClinicalCoolingInteraction {
         doc /*
-        Step-by-step clinical flow while CoolSpine is used: surgeon asks for
-        cooling, anesthesiologist configures the device, CoolSpine delivers
-        therapy, setpoints may change mid-case, then everyone shuts down.
+        Step-by-step clinical flow while CoolSpine is used: the nurse sets
+        the device up, the surgeon asks for cooling, the anesthesiologist
+        configures the device, CoolSpine delivers therapy, setpoints may
+        change mid-case, then everyone shuts down and the nurse breaks the
+        device down.
         Same people and device as in the OR context — this is the workflow,
         not a second copy of the hardware.
         */
@@ -176,6 +181,12 @@ package CoolSpineSystemContext {
             perform operateTherapy.stopTherapy;
         }
 
+        ref part nurse : Nurse {
+            perform operateTherapy.prepareDevice;
+            perform operateTherapy.monitorAlarms;
+            perform operateTherapy.breakDownDevice;
+        }
+
         ref part coolSpine : CoolSpineDevice {
             perform operateTherapy.deliverTherapy;
             perform operateTherapy.applyAdjustment;
@@ -185,12 +196,20 @@ package CoolSpineSystemContext {
         perform action operateTherapy {
             doc /*
             Typical order of work:
-            1) surgeon requests cooling
-            2) anesthesiologist sets flow / temperature
-            3) CoolSpine runs
-            4) surgeon may ask for a change → anesthesiologist updates → device applies
-            5) case ends → stop → device standby
+            1) nurse prepares and primes the device
+            2) surgeon requests cooling
+            3) anesthesiologist sets flow / temperature
+            4) CoolSpine runs while the nurse watches alarms
+            5) surgeon may ask for a change → anesthesiologist updates → device applies
+            6) case ends → stop → device standby → nurse breaks the device down
             */
+
+            action prepareDevice {
+                doc /*
+                Nurse brings CoolSpine in, connects power, and primes /
+                connects the disposable catheter set.
+                */
+            }
 
             action requestCooling {
                 doc /* Surgeon asks for therapeutic cooling for this patient. */
@@ -202,6 +221,13 @@ package CoolSpineSystemContext {
 
             action deliverTherapy {
                 doc /* CoolSpine runs the saline loop and cools. */
+            }
+
+            action monitorAlarms {
+                doc /*
+                Nurse watches CoolSpine alarms and line integrity while
+                therapy runs and escalates to the anesthesiologist.
+                */
             }
 
             action requestChange {
@@ -228,16 +254,26 @@ package CoolSpineSystemContext {
                 doc /* CoolSpine stops the loop and goes to standby. */
             }
 
+            action breakDownDevice {
+                doc /*
+                Nurse disconnects and discards the disposable set and clears
+                CoolSpine from the room.
+                */
+            }
+
             first start;
+            then prepareDevice;
             then requestCooling;
             then setSetpoints;
             then deliverTherapy;
+            then monitorAlarms;
             then requestChange;
             then adjustSetpoints;
             then applyAdjustment;
             then endProcedure;
             then stopTherapy;
             then shutdown;
+            then breakDownDevice;
             then done;
         }
     }

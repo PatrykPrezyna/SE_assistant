@@ -3,6 +3,7 @@
   "elements": [
     "CoolSpineSystem::CoolSpineDevice",
     "CoolSpineSystemContext::Anesthesiologist",
+    "CoolSpineSystemContext::Nurse",
     "CoolSpineSystemContext::Surgeon",
     "CoolSpineSystemContext::Patient",
     "CoolSpineUseCases::DeliverTherapeuticCooling",
@@ -72,6 +73,10 @@
     "CoolSpineRequirements::SafetyMonitoringAndFailSafes": {
       "x": 864.5,
       "y": 120
+    },
+    "CoolSpineSystemContext::Nurse": {
+      "x": -420,
+      "y": -40
     }
   },
   "hiddenEdges": [],
@@ -81,7 +86,7 @@
     "s": 0.85
   },
   "options": {
-    "attrs": true,
+    "attrs": false,
     "parts": false,
     "keywords": false,
     "edgeLabels": false,

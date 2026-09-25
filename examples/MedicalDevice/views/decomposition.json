@@ -20,7 +20,9 @@
     "CoolSpineSystem::PressureSensor",
     "CoolSpineSystem::FluidReservoir::inputTempSensor",
     "CoolSpineSystem::FluidReservoir::outputTempSensor",
-    "CoolSpineSystem::TemperatureSensor"
+    "CoolSpineSystem::TemperatureSensor",
+    "CoolSpineRequirements::PortableFormFactor",
+    "CoolSpineRequirements::SafetyMonitoringAndFailSafes"
   ],
   "nodes": {
     "CoolSpineSystem::CoolSpineDevice": {
@@ -28,8 +30,8 @@
       "y": -582
     },
     "CoolSpineSystem::Battery": {
-      "x": -380,
-      "y": -122
+      "x": -407,
+      "y": -139
     },
     "CoolSpineSystem::Catheter": {
       "x": 670,
@@ -52,8 +54,8 @@
       "y": -120
     },
     "CoolSpineSystem::UPS": {
-      "x": -654,
-      "y": -127
+      "x": -701,
+      "y": -136
     },
     "CoolSpineSystem::AdafruitAnalogInput": {
       "x": -347,
@@ -98,6 +100,14 @@
     "CoolSpineSystem::TemperatureSensor": {
       "x": 216,
       "y": 471
+    },
+    "CoolSpineRequirements::SafetyMonitoringAndFailSafes": {
+      "x": 436,
+      "y": -540
+    },
+    "CoolSpineRequirements::PortableFormFactor": {
+      "x": -310,
+      "y": -600
     }
   },
   "hiddenEdges": [
@@ -124,9 +134,9 @@
     "connector|CoolSpineSystem::PeristalticPump|CoolSpineSystem::FluidReservoir|warmSalineToReservoir"
   ],
   "view": {
-    "tx": 560.9592196549107,
-    "ty": 37.74022291722085,
-    "s": 0.9038878065897913
+    "tx": 695.3297723208188,
+    "ty": 441.27356254164397,
+    "s": 0.617367534041248
   },
   "options": {
     "attrs": false,

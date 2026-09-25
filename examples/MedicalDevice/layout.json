@@ -2,11 +2,12 @@
   "docs": {
     "CoolSpineSystem::PeristalticPump": "Spec/Pump+StepperDrive/400 ST RXMD pump.pdf",
     "CoolSpineSystem::Battery": "Spec/UPS & Battery/Data_Sheet_K2B24V11EB_BATTERY.pdf",
-    "CoolSpineSystem::UPS": "Spec/UPS & Battery/UPS_db_en_trio_ups_2g_1ac_24dc_20_108984_en_00.pdf"
+    "CoolSpineSystem::UPS": "Spec/UPS & Battery/UPS_db_en_trio_ups_2g_1ac_24dc_20_108984_en_00.pdf",
+    "CoolSpineSystem::CoolSpineDevice": "Spec/ads1115/ads1115.pdf"
   },
   "treeOpen": true,
-  "activeView": "usecases",
-  "mode": "activity",
+  "activeView": "test",
+  "mode": "bdd",
   "ucdOwner": null,
   "drilldownNodes": {
     "System::CoolSpineSystem::ibd::operatorControl": {
@@ -115,7 +116,7 @@
     },
     "CoolSpineUseCases::DeliverTherapeuticCooling::act::start": {
       "x": 240,
-      "y": 60
+      "y": 77
     },
     "CoolSpineUseCases::DeliverTherapeuticCooling::act::decideWhetherToUse": {
       "x": 40,
@@ -155,10 +156,11 @@
     "connector|System::CoolSpineSystem::ibd::psu|System::CoolSpineSystem::ibd::ui|dcOutput \u00b7 power"
   ],
   "drilldownView": {
-    "tx": 636.09252862742,
-    "ty": 140.9100458199842,
-    "s": 0.8271660372490482
+    "tx": 595.3568442067458,
+    "ty": 163.19095074544012,
+    "s": 0.7519691247718621
   },
   "version": 1,
-  "activityOwner": "CoolSpineUseCases::DeliverTherapeuticCooling"
+  "activityOwner": null,
+  "expertMode": true
 }

@@ -13,9 +13,10 @@ package CoolSpineUseCases {
     use case def DeliverTherapeuticCooling {
         doc /*
         Main clinical scenario: during spinal / neurosurgery the surgeon
-        decides whether to use CoolSpine. If yes, the anesthesiologist powers
-        it on, setpoints are agreed and entered, and CoolSpine cools until
-        someone stops it. The patient benefits from the heat exchange.
+        decides whether to use CoolSpine. If yes, the nurse sets the device
+        up, the anesthesiologist powers it on, setpoints are agreed and
+        entered, and CoolSpine cools until someone stops it. The patient
+        benefits from the heat exchange.
         */
 
         actor surgeon : Surgeon {
@@ -26,6 +27,10 @@ package CoolSpineUseCases {
         actor anesthesiologist : Anesthesiologist {
             perform deliverCooling.switchDeviceOn;
             perform deliverCooling.enterSetpoint;
+        }
+
+        actor nurse : Nurse {
+            perform deliverCooling.setUpDevice;
         }
 
         subject coolSpine : CoolSpineDevice {
@@ -51,9 +56,9 @@ package CoolSpineUseCases {
 
         perform action deliverCooling {
             doc /*
-            Happy path: decide to use → power on → self-check → setpoints →
-            cool until stop. If the surgeon decides not to use CoolSpine,
-            the flow ends immediately.
+            Happy path: decide to use → nurse sets up → power on →
+            self-check → setpoints → cool until stop. If the surgeon decides
+            not to use CoolSpine, the flow ends immediately.
             */
 
             action decideWhetherToUse {
@@ -61,6 +66,14 @@ package CoolSpineUseCases {
                 Surgeon decides if CoolSpine will be used for this case.
                 */
             }
+
+            action setUpDevice {
+                doc /*
+                Nurse brings CoolSpine to the table, connects power, and
+                primes / connects the disposable catheter set.
+                */
+            }
+            then switchDeviceOn;
 
             action switchDeviceOn {
                 doc /* Anesthesiologist powers CoolSpine on. */
@@ -95,7 +108,7 @@ package CoolSpineUseCases {
             first start;
             then decideWhetherToUse;
             then decide;
-              if yes then switchDeviceOn;
+              if yes then setUpDevice;
               else done;
         }
     }
@@ -110,6 +123,8 @@ package CoolSpineUseCases {
         subject coolSpine : CoolSpineDevice;
 
         actor anesthesiologist : Anesthesiologist;
+
+        actor nurse : Nurse;
 
         objective {
             doc /*

@@ -16,8 +16,8 @@
       "y": 194
     },
     "CoolSpineSystem::Catheter": {
-      "x": 250,
-      "y": 0
+      "x": -151,
+      "y": 244
     },
     "CoolSpineSystem::Controller": {
       "x": -950,
@@ -28,12 +28,12 @@
       "y": 462
     },
     "CoolSpineSystem::FluidReservoir": {
-      "x": -209,
-      "y": 4
+      "x": -563,
+      "y": 134
     },
     "CoolSpineSystem::PeristalticPump": {
-      "x": -221,
-      "y": 328
+      "x": -534,
+      "y": 517
     },
     "CoolSpineSystem::UPS": {
       "x": -949,
@@ -42,8 +42,8 @@
   },
   "hiddenEdges": [],
   "view": {
-    "tx": 1368.8873758036236,
-    "ty": 148.277235534775,
+    "tx": 1135.8873758036236,
+    "ty": 117.277235534775,
     "s": 0.8372472238457044
   },
   "options": {

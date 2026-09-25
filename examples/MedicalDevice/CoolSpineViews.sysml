@@ -23,6 +23,7 @@ package CoolSpineViews {
         subject coolSpine : CoolSpineDevice;
         stakeholder anesthesiologist : Anesthesiologist;
         stakeholder surgeon : Surgeon;
+        stakeholder nurse : Nurse;
     }
 
     concern def TraceabilityConcern {
@@ -39,6 +40,7 @@ package CoolSpineViews {
         subject;
         stakeholder anesthesiologist;
         stakeholder surgeon;
+        stakeholder nurse;
     }
 
     concern requirementsTrace : TraceabilityConcern {
@@ -64,9 +66,9 @@ package CoolSpineViews {
 
     view clinicalUseCases : GeneralView {
         doc /*
-        Clinical story only: CoolSpine, surgeon, anesthesiologist, patient,
-        and the two use cases. Leave requirements and internal parts out so
-        the interaction stays readable.
+        Clinical story only: CoolSpine, surgeon, anesthesiologist, nurse,
+        patient, and the two use cases. Leave requirements and internal
+        parts out so the interaction stays readable.
         */
 
         viewpoint vp : ClinicalUserViewpoint;
@@ -75,6 +77,7 @@ package CoolSpineViews {
         expose CoolSpineSystem::CoolSpineDevice;
         expose CoolSpineSystemContext::Anesthesiologist;
         expose CoolSpineSystemContext::Surgeon;
+        expose CoolSpineSystemContext::Nurse;
         expose CoolSpineSystemContext::Patient;
 
         render asTreeDiagram;
