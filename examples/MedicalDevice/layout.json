@@ -2,11 +2,10 @@
   "docs": {
     "CoolSpineSystem::PeristalticPump": "Spec/Pump+StepperDrive/400 ST RXMD pump.pdf",
     "CoolSpineSystem::Battery": "Spec/UPS & Battery/Data_Sheet_K2B24V11EB_BATTERY.pdf",
-    "CoolSpineSystem::UPS": "Spec/UPS & Battery/UPS_db_en_trio_ups_2g_1ac_24dc_20_108984_en_00.pdf",
-    "CoolSpineSystem::CoolSpineDevice": "Spec/ads1115/ads1115.pdf"
+    "CoolSpineSystem::UPS": "Spec/UPS & Battery/UPS_db_en_trio_ups_2g_1ac_24dc_20_108984_en_00.pdf"
   },
   "treeOpen": true,
-  "activeView": "test",
+  "activeView": "decomposition",
   "mode": "bdd",
   "ucdOwner": null,
   "drilldownNodes": {
@@ -162,5 +161,6 @@
   },
   "version": 1,
   "activityOwner": null,
-  "expertMode": true
+  "expertMode": false,
+  "home": false
 }

@@ -1,5 +1,6 @@
 {
   "name": "Clinical use cases",
+  "description": "What the device is used for clinically, and which actor takes part in each use case.",
   "elements": [
     "CoolSpineSystem::CoolSpineDevice",
     "CoolSpineSystemContext::Anesthesiologist",

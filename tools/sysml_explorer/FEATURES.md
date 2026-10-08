@@ -239,9 +239,19 @@ README.
 - **Save** (or Ctrl+S) persists the active View (membership, positions,
   pan/zoom, display options) and the global state (docs, tree panel,
   drilldown) in one action; unsaved changes are flagged and warned on close
+- **Revert** goes back to the last saved version: it discards every unsaved
+  edit and re-reads `layout.json` and `views/*.json` from disk (by re-running
+  the viewer's normal boot path), so the canvas, the active View, the
+  drilldown state and the display options all return to what **Save** last
+  wrote. The button is **disabled while there is nothing to go back to**
+  (`setDirty` drives it), and asks for confirmation before throwing work
+  away. Deliberately not an undo stack — Save is the single commit point,
+  so one step back to it covers the "I made a mess, start over" case.
 - auto-layout for elements without a saved position (layered: parents above
-  children, wholes above parts); **Auto-layout** (under **More**) re-runs it
-  for all
+  children, wholes above parts). There is no manual "re-layout everything"
+  command: once a View is arranged by hand, the saved positions are the
+  authored content, and a single click that throws them all away is a
+  bigger foot-gun than it is a convenience
 - **Fit** zooms to the whole diagram
 - **Reload model** (under **More**) re-parses the folder's `.sysml` files
   without losing the arrangement (positions are keyed by qualified element
@@ -257,11 +267,11 @@ README.
   - **package paths** — show the package line under the name (off by default)
   - **docs on node** — show `doc` body text in a compartment (off by default;
     documentation *links* still use the 📄 marker / context menu)
-- Toolbar is split into primary controls (Tree, view switcher, Save, Fit)
-  and overflow (**Display ▾**, **More ▾**). The title shows the active View
-  name only (or the drilldown diagram name) — not the source file list.
-  A muted **v0.0.1**-style label next to the title shows the explorer
-  package version.
+- Toolbar is split into primary controls (⌂ Home, Tree, view switcher,
+  Save, Revert, Fit) and overflow (**Display ▾**, **More ▾**). It carries no app title and no
+  version label — the view switcher already names what is on screen, so the
+  left edge stays free of chrome that repeats it. The *browser tab* title
+  still tracks the active View (or the drilldown diagram name).
 - An empty View shows a centered hint: check elements in the tree to add them.
 - parse errors are shown in a banner instead of a broken page
 - A **legend** (bottom-left) explains the arrow styles for edge kinds
@@ -286,8 +296,9 @@ so the main screen stays the predefined Views.
   toolbar markup, hidden by `body:not(.expert) .expert-only`):
   **Tree**, the **+** new-View button, **Display ▾**, and **Rename
   view** / **Delete view** / **Unhide connections** under **More ▾**.
-- **What stays available to everyone**: the view switcher, **Save**,
-  **Fit**, **Auto-layout**, **Reload model**, dragging elements, pan/zoom,
+- **What stays available to everyone**: the home page and its **⌂ Home**
+  button, the view switcher, **Save**,
+  **Revert**, **Fit**, **Reload model**, dragging elements, pan/zoom,
   click-to-highlight, the right-click element menu (including **Remove
   from view**) and the drilldowns.
 - The element tree is on screen only when expert mode is on *and* the
@@ -298,6 +309,36 @@ so the main screen stays the predefined Views.
   expert mode, and to turn expert mode on otherwise.
 - The state is saved in the layout file as `expertMode` (toggling it
   marks the layout dirty, like the Tree button does).
+
+## Home page (`viewer.html`)
+
+The landing screen: a short introduction to what the assistant is for, and a
+card per View to start from. Someone who opens the model for the first time
+gets an orientation instead of a diagram with no context, and someone who
+comes back gets a table of contents.
+
+- **What's on it**: the heading **Systems Engineering Assistant**, a
+  one-line subtitle (model package · elements · relationships · views), the
+  welcome copy — what Systems Engineering is for, that the assistant offers
+  a set of artifacts to tailor to an organization's needs and maturity, that
+  artifacts are revisited throughout the lifecycle, and that the point is to
+  involve the whole development team — then the **Views** grid.
+- **View cards** show the View's name, its `description` (see below) and its
+  element count. Clicking one switches to that View and leaves the home
+  page. With no Views at all the grid says so and points at expert mode.
+- **`⌂ Home`** (first button in the toolbar, always available — not
+  expert-only) toggles the page back on. It is an *overlay* over the canvas,
+  not a separate screen: going Home and back never disturbs the diagram
+  underneath or its pan/zoom.
+- **Optional `description`** in a View file (`views/<id>.json`) is the card's
+  blurb — one sentence on what the View is for. There is no UI to edit it
+  (it is authored content, like the element arrangement); a View without one
+  shows a muted *No description.* The field round-trips through **Save**
+  untouched.
+- **When it shows**: on first launch, and afterwards whenever the last
+  **Save** happened with the home page open (`home` in `layout.json`). So a
+  fresh folder opens on the introduction, while someone working inside a
+  View goes straight back to that View.
 
 ## Views (`viewer.html`)
 
@@ -330,8 +371,7 @@ typically from the element tree.
     related-element actions (see below), **Remove from view**.
   - on a *connection*: **Hide connection** (removes only the line, without
     removing either endpoint — for decluttering a busy View).
-  - on the *background*: **Unhide connections (n)**, **Fit view**,
-    **Auto-layout**.
+  - on the *background*: **Unhide connections (n)**, **Fit view**.
   - close with Esc or by clicking elsewhere.
 - **Show related elements**: right-click an element (in a View, not in a
   drilldown) to pull everything the model associates with it into the
@@ -372,9 +412,10 @@ typically from the element tree.
   served via `/api/doc`). Links are global (not per-View) and stored in the
   layout file (`docs`) — remember to **Save**. Enter an empty value in
   **Edit documentation link…** to remove a link.
-- Each View's membership, positions, hidden connections, pan/zoom, and
-  display options are saved in its own file (`<folder>/views/<id>.json`)
-  with `"version": 1` — see Server below. The id is a filesystem-safe
+- Each View's membership, positions, hidden connections, pan/zoom,
+  display options, and optional `description` (the home page blurb) are
+  saved in its own file (`<folder>/views/<id>.json`) with `"version": 1`
+  — see Server below. The id is a filesystem-safe
   slug derived from the name when the View is created and never changes,
   even if you rename it afterwards.
 
@@ -498,14 +539,12 @@ for the reference set. Generating them from the parsed model is stubbed:
 ## Version
 
 Package version lives in `src/sysml_explorer/version.py` (`__version__`,
-currently **0.0.1**) and must match `pyproject.toml`. The viewer toolbar
-shows `v…` next to the title (injected when `GET /` serves `viewer.html`).
-`GET /api/model` also includes `explorerVersion`.
+currently **0.0.1**) and must match `pyproject.toml`. It is not shown in the
+viewer UI; `GET /api/model` reports it as `explorerVersion`.
 
 ## Server (`src/sysml_explorer/app.py`)
 
-- `GET /` — the viewer page (version placeholder `{{EXPLORER_VERSION}}`
-  substituted from `__version__`)
+- `GET /` — the viewer page, served verbatim
 - `GET /api/model` — the folder is re-globbed for `.sysml` files and
   re-parsed on every request, so a file added, edited, or removed in the
   folder shows up on refresh/**Reload model** without restarting the server;
@@ -513,11 +552,13 @@ shows `v…` next to the title (injected when `GET /` serves `viewer.html`).
   and `explorerVersion`
 - `GET /api/layout` / `POST /api/layout` — global state persistence, always
   at `<folder>/layout.json`
-- `GET /api/views` — list of `{id, name}` for every View
-  (`<folder>/views/*.json`)
+- `GET /api/views` — list of `{id, name, description, elementCount}` for
+  every View (`<folder>/views/*.json`); the extra fields are what the home
+  page's cards need, so it renders from this one request
 - `GET /api/views/<id>` — one View's full content
 - `POST /api/views` — create a View; body `{"name": "..."}`, response
-  `{"id": "...", "name": "..."}`. The id is a slug derived from the name
+  `{"id": "...", "name": "...", "description": "", "elementCount": 0}`
+  (same shape as a listing entry). The id is a slug derived from the name
   (lowercased, non-alphanumerics collapsed to `-`; a colliding slug gets a
   `-2`, `-3`, … suffix) and is fixed for the View's lifetime
 - `PUT /api/views/<id>` — replace a View's content (also used for renames —

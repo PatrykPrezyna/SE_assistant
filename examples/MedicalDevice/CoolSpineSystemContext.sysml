@@ -40,6 +40,20 @@ package CoolSpineSystemContext {
     }
 
     // ------------------------------------------------------------------
+    // Service / maintenance
+    // ------------------------------------------------------------------
+
+    part def Operator {
+        doc /*
+        Hospital biomedical / service technician who keeps CoolSpine
+        working: responds when the device is broken, diagnoses the fault,
+        repairs or replaces the failed part, and releases the device back
+        into service. Not in the room during a case — the Anesthesiologist
+        is the clinical user of the device.
+        */
+    }
+
+    // ------------------------------------------------------------------
     // Optional CSF drain (hospital equipment next to CoolSpine)
     // ------------------------------------------------------------------
 
@@ -146,11 +160,20 @@ package CoolSpineSystemContext {
         part surgeon : Surgeon;
         part anesthesiologist : Anesthesiologist;
         part nurse : Nurse;
+        part operator : Operator;
         part csfDrain : CsfDrain [0..1];
 
         connection drainPatientCsf
             connect patient to csfDrain {
             doc /* Patient CSF line into the optional drain set. */
+        }
+
+        connection repairDevice
+            connect operator to coolSpine {
+            doc /*
+            Operator is called in when CoolSpine is broken, and fixes it
+            before the device goes back into clinical use.
+            */
         }
     }
 

@@ -1,6 +1,7 @@
 {
   "version": 1,
   "name": "3 Interconnections",
+  "description": "How the components are wired and plumbed together \u2014 power, control, and coolant paths.",
   "elements": [
     "CoolSpineSystem::Battery",
     "CoolSpineSystem::Catheter",

@@ -10,10 +10,6 @@
     display: flex; align-items: center; gap: 8px; padding: 6px 12px;
     background: #f7f7f9; border-bottom: 1px solid #ddd; font-size: 13px;
     flex-wrap: wrap; min-height: 28px; }
-  #toolbar .title { font-weight: 600; margin-right: 4px; max-width: 220px;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #toolbar .ver { color: #888; font-size: 12px; margin-right: 4px;
-    user-select: none; white-space: nowrap; }
   #toolbar .sep { width: 1px; height: 18px; background: #ddd; margin: 0 2px;
     flex: none; }
   #toolbar button { font-size: 13px; padding: 3px 10px; cursor: pointer; }
@@ -28,6 +24,7 @@
     border-radius: 4px; }
   #expertBtn:hover { background: #ececf0; color: #444; }
   #expertBtn.on { color: #1a6bbf; border-color: #b9d4ee; background: #eaf3fc; }
+  #homeBtn.on { border-color: #b9d4ee; background: #eaf3fc; color: #1a6bbf; }
   #status { color: #2a7; min-width: 70px; }
   #status.dirty { color: #c60; }
   .menu-wrap { position: relative; }
@@ -59,6 +56,33 @@
     padding: 16px 20px; background: rgba(255,255,255,.92);
     border: 1px solid #e0e0e0; border-radius: 6px; }
   #emptyHint.hidden { display: none; }
+  /* home page: the landing screen — what this is, and which View to open */
+  #home { position: fixed; top: 40px; left: 0; right: 0; bottom: 0; z-index: 12;
+    background: #fff; overflow-y: auto; padding: 32px 24px 48px; }
+  #home.hidden { display: none; }
+  #homeInner { max-width: 880px; margin: 0 auto; }
+  #home h1 { font-size: 22px; margin: 0 0 2px; }
+  #home .sub { color: #888; font-size: 12px; margin-bottom: 18px; }
+  #home .intro { font-size: 14px; line-height: 1.55; color: #444;
+    max-width: 660px; }
+  #home .intro p { margin: 0 0 10px; }
+  #home .intro code { background: #f3f3f6; border-radius: 3px;
+    padding: 0 3px; font-size: 13px; }
+  #home .viewsHint { font-size: 13px; color: #666; margin: 0 0 12px;
+    max-width: 660px; line-height: 1.5; }
+  #home h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em;
+    color: #888; margin: 26px 0 10px; font-weight: 600; }
+  #homeViews { display: grid; gap: 12px;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+  #homeViews .card { text-align: left; font: inherit; cursor: pointer;
+    background: #fff; border: 1px solid #ddd; border-radius: 6px;
+    padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
+  #homeViews .card:hover { border-color: #1a6bbf; background: #f7fbff; }
+  #homeViews .card .name { font-weight: 600; font-size: 14px; color: #1a3d5c; }
+  #homeViews .card .desc { font-size: 12.5px; color: #555; line-height: 1.4; }
+  #homeViews .card .desc.none { color: #aaa; font-style: italic; }
+  #homeViews .card .count { font-size: 11px; color: #999; margin-top: 2px; }
+  #homeViews .empty { color: #888; font-size: 13px; }
   #canvas { width: 100%; height: 100%; background: #ffffff; display: block;
     cursor: grab; }
   #canvas.panning { cursor: grabbing; }
@@ -184,14 +208,14 @@
 </head>
 <body>
 <div id="toolbar">
+  <button id="homeBtn" title="Back to the home page">⌂ Home</button>
   <button id="treeBtn" class="expert-only" title="Show/hide the element tree">Tree</button>
-  <span class="title" id="title">SysML Explorer</span>
-  <span class="ver" id="appVersion" title="sysml-explorer version">v{{EXPLORER_VERSION}}</span>
-  <span class="sep"></span>
   <label>view <select id="viewSel"></select></label>
   <button id="newViewBtn" class="expert-only" title="Create a new view">+</button>
   <span class="sep"></span>
   <button id="saveBtn" title="Ctrl+S">Save</button>
+  <button id="revertBtn" disabled
+          title="Discard unsaved changes and go back to the last saved version">Revert</button>
   <button id="drilldownBackBtn" style="display:none">◀ Back</button>
   <button id="fitBtn">Fit</button>
   <span class="sep"></span>
@@ -209,7 +233,6 @@
   <div class="menu-wrap">
     <button id="moreBtn" title="More actions">More ▾</button>
     <div id="moreMenu" class="menu-panel" role="menu">
-      <button type="button" class="item" id="autoBtn" title="Discard positions and re-run auto-layout">Auto-layout</button>
       <button type="button" class="item" id="reloadBtn" title="Re-parse the .sysml files, keep positions">Reload model</button>
       <div class="sep expert-only"></div>
       <button type="button" class="item expert-only" id="renameViewBtn" title="Rename the current view">Rename view</button>
@@ -226,6 +249,36 @@
 <div id="error"></div>
 <div id="warnings"></div>
 <div id="emptyHint" class="hidden">This view is empty. Check elements in the tree to add them.</div>
+<div id="home" class="hidden">
+  <div id="homeInner">
+    <h1 id="homeTitle">Systems Engineering Assistant</h1>
+    <div class="sub" id="homeSub"></div>
+    <div class="intro">
+      <p>Systems Engineering helps teams develop successful products by
+      balancing competing stakeholder needs, business objectives and project
+      risks.</p>
+      <p>This assistant provides a practical set of Systems Engineering
+      artifacts and models that can be tailored to your organization's needs.
+      For each category, which may be viewed as a stage in the Product
+      Development Process, users can select an implementation approach that
+      best matches their desired level of formality and organizational
+      maturity.</p>
+      <p>Artifacts may be created, refined, and revisited multiple times
+      throughout the development lifecycle, often in parallel. The framework
+      is designed to be flexible and scalable for small and mid-sized
+      organizations.</p>
+      <p>A key objective is to engage the entire development team in Systems
+      Engineering activities, fostering collaboration across disciplines and
+      reducing organizational silos.</p>
+    </div>
+    <h2>Views</h2>
+    <p class="viewsHint">Each view is a curated slice of the model. Pick one
+    to open it; the <b>view</b> switcher in the toolbar moves between them,
+    and <span aria-hidden="true">&#8962;</span> <b>Home</b> comes back
+    here.</p>
+    <div id="homeViews"></div>
+  </div>
+</div>
 <div id="ctxmenu"></div>
 <div id="modalOverlay" class="hidden">
   <div id="modalBox">
@@ -360,6 +413,7 @@ let mode = "bdd";                 // "bdd" | "ucd" | "activity"
 let ucdOwner = null;               // id of the subject whose use case diagram is shown
 let activityOwner = null;          // id of the part def whose activity diagram is shown
 let selection = null;              // {type:"node", id} | {type:"edge", key}
+let homeOpen = false;             // home page (landing screen) on top of the canvas
 let treeOpen = true;               // element tree panel shown/hidden (preference)
 let expertMode = false;            // custom-diagram building unlocked (⚙ toggle)
 let treeQuery = "";                // filter text for the element tree
@@ -381,6 +435,9 @@ function setDirty(d) {
   dirty = d;
   statusEl.textContent = d ? "unsaved changes" : statusEl.textContent;
   statusEl.className = d ? "dirty" : "";
+  // nothing to go back to while the canvas matches what's on disk
+  const rb = document.getElementById("revertBtn");
+  if (rb) rb.disabled = !d;
 }
 
 function flash(msg) {
@@ -1812,16 +1869,6 @@ function backgroundMenuItems() {
     },
     { sep: true },
     { label: "Fit view", action: fitView },
-    {
-      label: "Auto-layout",
-      action: () => {
-        for (const id of Object.keys(posMap())) delete posMap()[id];
-        if (mode === "activity") autoPlaceActivity(true); else autoPlace(true);
-        updateAllEdges();
-        fitView();
-        setDirty(true);
-      },
-    },
   );
   return items;
 }
@@ -1868,6 +1915,7 @@ async function save() {
   layout.version = LAYOUT_VERSION;
   layout.docs = layout.docs || {};
   layout.treeOpen = treeOpen;
+  layout.home = homeOpen;
   layout.expertMode = expertMode;
   layout.activeView = activeViewId;
   layout.mode = mode;
@@ -1897,6 +1945,25 @@ async function save() {
   else flash("save failed!");
 }
 
+// "Go back to the last saved version": drop every unsaved edit and re-read
+// layout.json / views/*.json from disk by re-running the normal boot path.
+// Save is already the single explicit commit point, so reloading the last
+// commit is both cheaper and more predictable than an undo stack.
+async function revert() {
+  if (dirty && !confirm(
+        "Discard unsaved changes and go back to the last saved version?"))
+    return;
+  layout = {};
+  mode = "bdd";
+  ucdOwner = null;
+  activityOwner = null;
+  hiddenEdges = new Set();
+  homeOpen = false;
+  await init();
+  setDirty(false);
+  flash("reverted ✓");
+}
+
 function fillViewSel() {
   const sel = document.getElementById("viewSel");
   sel.innerHTML = "";
@@ -1921,6 +1988,78 @@ async function switchToView(id) {
   updateTitle();
   updateDrilldownToolbar();
   fillViewSel();
+}
+
+// ------------------------------------------------------------- home page
+
+// The landing screen: what the explorer is, plus a card per View. It sits
+// on top of the canvas rather than replacing it, so switching Home on and
+// off never disturbs the diagram underneath (or its pan/zoom).
+function renderHome() {
+  const bits = [];
+  if (model) {
+    if (model.package) bits.push(model.package);
+    bits.push(`${model.nodes.length} element${model.nodes.length === 1 ? "" : "s"}`);
+    bits.push(`${model.edges.length} relationship${model.edges.length === 1 ? "" : "s"}`);
+  }
+  bits.push(`${views.length} view${views.length === 1 ? "" : "s"}`);
+  document.getElementById("homeSub").textContent = bits.join(" · ");
+
+  const box = document.getElementById("homeViews");
+  box.innerHTML = "";
+  if (!views.length) {
+    const p = document.createElement("div");
+    p.className = "empty";
+    p.textContent = "No views yet — turn on expert mode (⚙) and use + to create one.";
+    box.appendChild(p);
+    return;
+  }
+  for (const v of views) {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "card";
+    card.dataset.viewId = v.id;
+
+    const name = document.createElement("div");
+    name.className = "name";
+    name.textContent = v.name;
+    card.appendChild(name);
+
+    const desc = document.createElement("div");
+    const text = (v.description || "").trim();
+    desc.className = text ? "desc" : "desc none";
+    // a View file may carry an optional "description"; without one the card
+    // says so rather than pretending the View has no purpose
+    desc.textContent = text || "No description.";
+    card.appendChild(desc);
+
+    if (typeof v.elementCount === "number") {
+      const count = document.createElement("div");
+      count.className = "count";
+      count.textContent =
+        `${v.elementCount} element${v.elementCount === 1 ? "" : "s"}`;
+      card.appendChild(count);
+    }
+
+    card.addEventListener("click", () => openViewFromHome(v.id));
+    box.appendChild(card);
+  }
+}
+
+function applyHome() {
+  document.getElementById("home").classList.toggle("hidden", !homeOpen);
+  document.getElementById("homeBtn").classList.toggle("on", homeOpen);
+  if (homeOpen) renderHome();
+}
+
+function setHomeOpen(open) {
+  homeOpen = open;
+  applyHome();
+}
+
+async function openViewFromHome(id) {
+  if (id !== activeViewId) await switchToView(id);
+  setHomeOpen(false);
 }
 
 async function createView() {
@@ -1973,20 +2112,17 @@ async function deleteActiveView() {
   await switchToView(views[0].id);
 }
 
+// the toolbar shows the active View in the view switcher, so the only
+// title left to keep in sync is the browser tab's
 function updateTitle() {
   if (mode === "ucd") {
     const owner = model.nodes.find(n => n.id === ucdOwner);
-    const name = owner ? owner.name : ucdOwner;
-    document.getElementById("title").textContent = "Use Case Diagram — " + name;
-    document.title = "UCD: " + name;
+    document.title = "UCD: " + (owner ? owner.name : ucdOwner);
   } else if (mode === "activity") {
     const owner = model.nodes.find(n => n.id === activityOwner);
-    const name = owner ? owner.name : activityOwner;
-    document.getElementById("title").textContent = "Activity Diagram — " + name;
-    document.title = "Activity: " + name;
+    document.title = "Activity: " + (owner ? owner.name : activityOwner);
   } else {
-    const name = activeView ? activeView.name : model.package || "SysML Explorer";
-    document.getElementById("title").textContent = name;
+    const name = activeView ? activeView.name : model.package;
     document.title = name || "SysML Explorer";
   }
 }
@@ -2088,6 +2224,9 @@ async function init() {
   if (layout.ibdOwner !== undefined) delete layout.ibdOwner;
   if (!layout.version) layout.version = LAYOUT_VERSION;
   setExpertMode("expertMode" in layout ? layout.expertMode : false);
+  // first launch (or a saved session that ended on Home) lands on the home
+  // page; once someone saves from inside a View they go straight back to it
+  homeOpen = "home" in layout ? !!layout.home : true;  // applyHome() below
   setTreeOpen("treeOpen" in layout ? layout.treeOpen : true);
   drilldownNodes = layout.drilldownNodes || {};
   drilldownHiddenEdges = new Set(layout.drilldownHiddenEdges || []);
@@ -2123,6 +2262,7 @@ async function init() {
   updateDrilldownToolbar();
   rebuild();
   restoreViewTransform();
+  applyHome();
 }
 
 document.getElementById("expertBtn").addEventListener("click", () => {
@@ -2134,17 +2274,14 @@ document.getElementById("treeBtn").addEventListener("click", () => {
   setTreeOpen(!treeOpen);
   setDirty(true);
 });
+document.getElementById("homeBtn").addEventListener("click", () => {
+  closeMenus();
+  setHomeOpen(!homeOpen);
+});
 document.getElementById("saveBtn").addEventListener("click", save);
+document.getElementById("revertBtn").addEventListener("click", revert);
 document.getElementById("drilldownBackBtn").addEventListener("click", closeDrilldown);
 document.getElementById("fitBtn").addEventListener("click", fitView);
-document.getElementById("autoBtn").addEventListener("click", () => {
-  closeMenus();
-  for (const id of Object.keys(posMap())) delete posMap()[id];
-  autoPlace(true);
-  updateAllEdges();
-  fitView();
-  setDirty(true);
-});
 document.getElementById("reloadBtn").addEventListener("click", () => {
   closeMenus();
   loadModel();

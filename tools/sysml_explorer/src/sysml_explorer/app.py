@@ -972,10 +972,7 @@ def make_handler(folder: Path, layout_path: Path):
         def do_GET(self):
             path = self.path.split("?")[0]
             if path == "/":
-                html = VIEWER.read_text(encoding="utf-8").replace(
-                    "{{EXPLORER_VERSION}}", __version__
-                )
-                self._send(html, "text/html")
+                self._send(VIEWER.read_text(encoding="utf-8"), "text/html")
             elif path == "/api/model":
                 try:
                     model_paths = _sysml_files(folder)
@@ -1007,7 +1004,17 @@ def make_handler(folder: Path, layout_path: Path):
                             data = json.loads(p.read_text(encoding="utf-8"))
                         except (OSError, ValueError):
                             continue
-                        views.append({"id": p.stem, "name": data.get("name", p.stem)})
+                        # the home page shows a card per view, so the
+                        # listing carries what a card needs (blurb + size)
+                        # and callers stay at one request
+                        elements = data.get("elements")
+                        views.append({
+                            "id": p.stem,
+                            "name": data.get("name", p.stem),
+                            "description": data.get("description", ""),
+                            "elementCount":
+                                len(elements) if isinstance(elements, list) else 0,
+                        })
                 self._send(json.dumps(views))
             elif path.startswith("/api/views/"):
                 p = view_path(path[len("/api/views/"):])
@@ -1077,7 +1084,8 @@ def make_handler(folder: Path, layout_path: Path):
                 (views_dir / f"{view_id}.json").write_text(
                     json.dumps(data, indent=2) + "\n", encoding="utf-8"
                 )
-                self._send(json.dumps({"id": view_id, "name": name}))
+                self._send(json.dumps({"id": view_id, "name": name,
+                                       "description": "", "elementCount": 0}))
             else:
                 self.send_error(404)
 

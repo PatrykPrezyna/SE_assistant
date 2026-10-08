@@ -1,6 +1,7 @@
 {
   "version": 1,
   "name": "Test",
+  "description": "Scratch view \u2014 empty, kept for trying things out.",
   "elements": [],
   "nodes": {},
   "hiddenEdges": [],

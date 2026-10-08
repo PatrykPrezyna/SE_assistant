@@ -1,6 +1,7 @@
 {
   "version": 1,
   "name": "2 Decomposition",
+  "description": "The physical breakdown of the CoolSpine device, from the system down to its components.",
   "elements": [
     "CoolSpineSystem::CoolSpineDevice",
     "CoolSpineSystem::Battery",
@@ -50,8 +51,8 @@
       "y": -124
     },
     "CoolSpineSystem::PeristalticPump": {
-      "x": 955,
-      "y": -120
+      "x": 986,
+      "y": -126
     },
     "CoolSpineSystem::UPS": {
       "x": -701,
@@ -82,8 +83,8 @@
       "y": 93
     },
     "CoolSpineSystem::Thermocouple": {
-      "x": 222,
-      "y": 263
+      "x": 292,
+      "y": 276
     },
     "CoolSpineSystem::PressureSensor": {
       "x": 932,
@@ -98,16 +99,16 @@
       "y": 234
     },
     "CoolSpineSystem::TemperatureSensor": {
-      "x": 216,
-      "y": 471
+      "x": 418,
+      "y": 482
     },
     "CoolSpineRequirements::SafetyMonitoringAndFailSafes": {
       "x": 436,
       "y": -540
     },
     "CoolSpineRequirements::PortableFormFactor": {
-      "x": -310,
-      "y": -600
+      "x": -348,
+      "y": -538
     }
   },
   "hiddenEdges": [
@@ -134,9 +135,9 @@
     "connector|CoolSpineSystem::PeristalticPump|CoolSpineSystem::FluidReservoir|warmSalineToReservoir"
   ],
   "view": {
-    "tx": 695.3297723208188,
-    "ty": 441.27356254164397,
-    "s": 0.617367534041248
+    "tx": 617.8999396355454,
+    "ty": 476.1645551594447,
+    "s": 0.6791042874453729
   },
   "options": {
     "attrs": false,

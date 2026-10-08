@@ -36,6 +36,16 @@ package CoolSpineViews {
         stakeholder anesthesiologist : Anesthesiologist;
     }
 
+    concern def ServiceabilityConcern {
+        doc /*
+        For the operator: how a broken CoolSpine is diagnosed, which parts
+        can be repaired or swapped, and what has to be checked before the
+        device goes back into clinical use.
+        */
+        subject coolSpine : CoolSpineDevice;
+        stakeholder operator : Operator;
+    }
+
     concern clinicalOperation : ClinicalOperationConcern {
         subject;
         stakeholder anesthesiologist;
@@ -46,6 +56,11 @@ package CoolSpineViews {
     concern requirementsTrace : TraceabilityConcern {
         subject;
         stakeholder anesthesiologist;
+    }
+
+    concern serviceability : ServiceabilityConcern {
+        subject;
+        stakeholder operator;
     }
 
     // ------------------------------------------------------------------

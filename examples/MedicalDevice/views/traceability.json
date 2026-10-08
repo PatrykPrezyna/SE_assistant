@@ -1,5 +1,6 @@
 {
   "name": "UC\u2013REQ traceability",
+  "description": "Which requirement each use case depends on, so a change to one shows what it puts at risk.",
   "elements": [
     "CoolSpineUseCases::DeliverTherapeuticCooling",
     "CoolSpineUseCases::OperateWithoutGroundPower",
