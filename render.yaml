@@ -1,0 +1,35 @@
+# Render blueprint for the hosted SysML explorer (see "Hosted mode" in
+# tools/sysml_explorer/FEATURES.md). Secrets marked `sync: false` are
+# entered in the Render dashboard, never committed.
+services:
+  - type: web
+    name: sysml-explorer
+    runtime: docker
+    dockerfilePath: ./tools/sysml_explorer/Dockerfile
+    dockerContext: ./tools/sysml_explorer
+    plan: free
+    healthCheckPath: /healthz
+    # the container clones the model repo itself, so a code push only needs
+    # a redeploy when the explorer changes, not when the model does
+    buildFilter:
+      paths:
+        - tools/sysml_explorer/**
+    envVars:
+      - key: GITHUB_REPO
+        value: PatrykPrezyna/SE_assistant
+      - key: GITHUB_BRANCH
+        value: main
+      - key: MODEL_PATH
+        value: examples/MedicalDevice
+      - key: PUBLIC_URL
+        sync: false
+      - key: GITHUB_TOKEN
+        sync: false
+      - key: GITHUB_CLIENT_ID
+        sync: false
+      - key: GITHUB_CLIENT_SECRET
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: ALLOWED_USERS
+        sync: false

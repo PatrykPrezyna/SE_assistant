@@ -900,7 +900,16 @@ def sync_default_views(folder: Path, model):
     return written
 
 
-def make_handler(folder: Path, layout_path: Path):
+def make_handler(folder: Path, layout_path: Path, cloud=None):
+    """Build the request handler class for `folder`.
+
+    `cloud` is None for the local tool. When the server is hosted (see
+    cloud.py) it is a CloudContext: requests must carry a signed-in session
+    (`cloud.auth`, None = anonymous access), reads first pull the git
+    checkout the folder lives in and every write is committed and pushed
+    (`cloud.sync`), and linked documentation may not leave the checkout
+    (`cloud.repo_root`).
+    """
     views_dir = folder / "views"
 
     def view_path(view_id):
@@ -911,6 +920,43 @@ def make_handler(folder: Path, layout_path: Path):
 
 
     class Handler(BaseHTTPRequestHandler):
+        user = None  # signed-in user dict in cloud mode (see _gate)
+
+        def _gate(self):
+            """Cloud mode front door; True when the request was answered here.
+
+            /healthz is public (hosting platforms probe it), /auth/* is the
+            sign-in flow, everything else needs a session — the page gets
+            redirected to sign-in, the API gets a 401.
+            """
+            if cloud is None:
+                return False
+            path = self.path.split("?")[0]
+            if path == "/healthz":
+                self._send('{"ok": true}')
+                return True
+            if cloud.auth is not None:
+                if path.startswith("/auth/"):
+                    cloud.auth.handle(self, path)
+                    return True
+                self.user = cloud.auth.session_user(self.headers.get("Cookie"))
+                if self.user is None:
+                    if self.command == "GET" and path == "/":
+                        self.send_response(302)
+                        self.send_header("Location", "/auth/login")
+                        self.end_headers()
+                    else:
+                        self.send_error(401, "sign in required")
+                    return True
+            if self.command in ("GET", "HEAD"):
+                cloud.sync.pull()  # throttled: picks up teammates' pushes
+            return False
+
+        def _saved(self, paths, message):
+            # cloud mode: every change to views/layout becomes a git commit
+            if cloud is not None:
+                cloud.sync.commit_and_push(paths, message, self.user)
+
         def _write_all(self, data):
             # Paced chunked writes: antivirus loopback filters (verified with
             # AVG Web Shield on this machine — even stock http.server is hit)
@@ -954,6 +1000,13 @@ def make_handler(folder: Path, layout_path: Path):
             p = Path(target)
             if not p.is_absolute():
                 p = folder / target
+            if cloud is not None:
+                # hosted: only files inside the git checkout, never the
+                # server's own filesystem
+                try:
+                    p.resolve().relative_to(cloud.repo_root.resolve())
+                except ValueError:
+                    return None
             return p if p.is_file() else None
 
         def _browse_dir(self):
@@ -970,6 +1023,8 @@ def make_handler(folder: Path, layout_path: Path):
             return target if target.is_dir() else None
 
         def do_GET(self):
+            if self._gate():
+                return
             path = self.path.split("?")[0]
             if path == "/":
                 self._send(VIEWER.read_text(encoding="utf-8"), "text/html")
@@ -1054,6 +1109,8 @@ def make_handler(folder: Path, layout_path: Path):
         def do_HEAD(self):
             # PDF viewer extensions and download managers probe with HEAD;
             # answering 501 can make them fall back to downloading
+            if self._gate():
+                return
             if self.path.split("?")[0] == "/api/doc":
                 p = self._doc_path()
                 if p:
@@ -1066,12 +1123,15 @@ def make_handler(folder: Path, layout_path: Path):
             return json.loads(self.rfile.read(length).decode("utf-8"))
 
         def do_POST(self):
+            if self._gate():
+                return
             path = self.path.split("?")[0]
             if path == "/api/layout":
                 data = self._read_json_body()  # validate before writing
                 layout_path.write_text(
                     json.dumps(data, indent=2) + "\n", encoding="utf-8"
                 )
+                self._saved([layout_path], "Update explorer layout")
                 self._send('{"ok": true}')
             elif path == "/api/views":
                 body = self._read_json_body()
@@ -1084,12 +1144,16 @@ def make_handler(folder: Path, layout_path: Path):
                 (views_dir / f"{view_id}.json").write_text(
                     json.dumps(data, indent=2) + "\n", encoding="utf-8"
                 )
+                self._saved([views_dir / f"{view_id}.json"],
+                            f"Create view '{name}'")
                 self._send(json.dumps({"id": view_id, "name": name,
                                        "description": "", "elementCount": 0}))
             else:
                 self.send_error(404)
 
         def do_PUT(self):
+            if self._gate():
+                return
             path = self.path.split("?")[0]
             if not path.startswith("/api/views/"):
                 self.send_error(404)
@@ -1101,9 +1165,13 @@ def make_handler(folder: Path, layout_path: Path):
             data = self._read_json_body()  # validate before writing
             views_dir.mkdir(parents=True, exist_ok=True)
             p.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+            name = data.get("name", p.stem) if isinstance(data, dict) else p.stem
+            self._saved([p], f"Update view '{name}'")
             self._send('{"ok": true}')
 
         def do_DELETE(self):
+            if self._gate():
+                return
             path = self.path.split("?")[0]
             if not path.startswith("/api/views/"):
                 self.send_error(404)
@@ -1111,6 +1179,7 @@ def make_handler(folder: Path, layout_path: Path):
             p = view_path(path[len("/api/views/"):])
             if p and p.is_file():
                 p.unlink()
+                self._saved([p], f"Delete view '{p.stem}'")
                 self._send('{"ok": true}')
             else:
                 self.send_error(404, "view not found")

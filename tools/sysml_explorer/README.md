@@ -60,6 +60,84 @@ cd tools/sysml_explorer/src
 python -m sysml_explorer C:\sources\SE_assistant\examples\MedicalDevice
 ```
 
+## Hosting for a team
+
+The same explorer can run in the cloud, so teammates just open a URL and
+sign in with GitHub. Nothing has to be installed on their machines. The
+container clones the repo, pulls teammates' pushes about every 30 s, and
+turns every View save into a commit on `main` authored by whoever saved
+it. How it behaves is described under *Hosted mode* in
+[FEATURES.md](FEATURES.md). The setup below uses [Render](https://render.com)
+via the blueprint in `render.yaml` at the repo root. Any platform that runs
+a Dockerfile works the same way (Fly.io, Azure Container Apps, Cloud Run):
+you set the same environment variables.
+
+1. **Push the code.** Render builds from GitHub, so `Dockerfile`,
+   `render.yaml`, and `cloud.py` must be on `main`.
+2. **Create a token the server uses to pull and push.** GitHub → Settings →
+   Developer settings → Personal access tokens → *Fine-grained tokens* →
+   Generate. Repository access: *Only select repositories* → this repo.
+   Permissions → Repository → **Contents: Read and write** (Metadata: read
+   is added automatically). Copy the token. Note its expiry date, because
+   the server stops syncing when the token expires.
+3. **Create the sign-in app.** GitHub → Settings → Developer settings →
+   *OAuth Apps* → New OAuth App:
+   - Homepage URL: `https://sysml-explorer.onrender.com`
+   - Authorization callback URL: `https://sysml-explorer.onrender.com/auth/callback`
+
+   Register it, then *Generate a new client secret*. Copy the Client ID and
+   the secret. (If Render gives the service a different URL in step 4,
+   come back and change both URLs.)
+4. **Create the service.** Sign in to Render with GitHub → **New →
+   Blueprint** → pick this repo → Render reads `render.yaml` and asks for
+   the secret values:
+   - `PUBLIC_URL`: `https://sysml-explorer.onrender.com`, the same URL as
+     in step 3, with no trailing slash
+   - `GITHUB_TOKEN`: the token from step 2
+   - `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`: from step 3
+   - `ALLOWED_USERS`: leave empty to let in every collaborator on the repo,
+     or list GitHub logins (`alice,bob`)
+
+   `SESSION_SECRET` is generated for you. `MODEL_PATH` (default
+   `examples/MedicalDevice`) and `GITHUB_BRANCH` can be changed under the
+   service's *Environment* tab. Click **Apply**.
+5. **Check it.** The deploy log ends with `Serving
+   PatrykPrezyna/SE_assistant:examples/MedicalDevice on port 8080`. Open the
+   URL. You are sent to GitHub to sign in and land on the explorer's home page.
+6. **Invite teammates.** Repo → Settings → Collaborators → *Add people*.
+   Once they accept, they can sign in. If you set `ALLOWED_USERS`, add
+   their logins there instead.
+
+Living with it:
+
+- **Pull before editing Views locally.** Saves in the hosted explorer are
+  pushed to `main`, so run `git pull` before you edit Views on your own
+  machine.
+- **Changing the model needs no redeploy.** Push `.sysml` edits as usual,
+  and the hosted explorer picks them up on the next refresh. Only changes
+  under `tools/sysml_explorer/` trigger a rebuild.
+- **Concurrent edits.** If two people edit the same View at the same time,
+  the last save wins.
+- **Free plan.** The service sleeps after 15 min idle, and the next
+  visitor waits about a minute for it to wake. Render's *Starter* plan
+  keeps it awake. Nothing is lost while it sleeps, because every save is
+  already in git.
+- **Several models.** Create one service per model folder, each with its
+  own `MODEL_PATH`, URL, and OAuth app.
+
+Try the container locally before deploying:
+
+```
+docker build -t sysml-explorer tools/sysml_explorer
+docker run --rm -p 8080:8080 -e GITHUB_REPO=PatrykPrezyna/SE_assistant \
+  -e MODEL_PATH=examples/MedicalDevice -e GITHUB_TOKEN=<token> \
+  -e ALLOW_ANONYMOUS=1 sysml-explorer
+```
+
+`ALLOW_ANONYMOUS=1` turns sign-in off for this local test. Saves still go
+to the real `main` branch, so set `GITHUB_BRANCH` to a scratch branch if
+you want to experiment.
+
 ## What the viewer simplifies vs. standard SysML notation
 
 To keep diagrams readable, the viewer deliberately deviates from textbook
@@ -281,6 +359,8 @@ parts structure, edges, requirements/docs, validation warnings), the HTTP
 API (model serving, layout round-trip), and — when Microsoft Edge is
 available — end-to-end rendering: the page is loaded headless and the DOM
 is checked for each attribute/parts filter combination.
+Hosted mode is covered with a local bare git repo standing in for GitHub
+and stubbed OAuth calls (skipped when `git` isn't on PATH).
 `official_check.py` has an end-to-end test too, but it's **opt-in** —
 `SYSML_OFFICIAL_CHECK_TEST=1` plus the `sysml` conda env (see "Setting up
 the validation parsers") — because official-kernel startup can take 10+

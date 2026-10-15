@@ -8,6 +8,7 @@ dependencies = []
 
 [project.scripts]
 sysml-explorer = "sysml_explorer.app:main"
+sysml-explorer-cloud = "sysml_explorer.cloud:cloud_main"
 
 [build-system]
 requires = ["setuptools>=64"]

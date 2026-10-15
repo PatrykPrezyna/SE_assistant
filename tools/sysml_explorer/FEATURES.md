@@ -565,3 +565,59 @@ viewer UI; `GET /api/model` reports it as `explorerVersion`.
   the id/filename never changes, only the `name` field inside); an
   idempotent create-or-replace, not update-only
 - `DELETE /api/views/<id>` — remove a View
+
+## Hosted mode (`src/sysml_explorer/cloud.py`)
+
+`sysml-explorer-cloud` serves one model folder of a GitHub repo to a whole
+team from a container (`Dockerfile` in this folder; `render.yaml` at the
+repo root is a ready-made Render blueprint). Step-by-step setup is in
+README.md → *Hosting for a team*. The git repo stays the single source of
+truth — the container holds only a disposable clone:
+
+- **Startup** — clones `GITHUB_BRANCH` of `GITHUB_REPO` into `WORK_DIR` and
+  serves `MODEL_PATH` (a folder inside the repo; it may not escape it, and
+  it must contain `.sysml` files, or the server refuses to start).
+- **Reads pull** — every signed-in GET first runs `git pull --rebase`, at
+  most once per `PULL_INTERVAL` seconds (default 30), so `.sysml` edits and
+  Views pushed from teammates' IDEs show up on refresh. A failed pull is
+  aborted and logged, and the server keeps serving what it has.
+- **Writes commit and push** — creating, saving, renaming, or deleting a
+  View and saving `layout.json` each make one commit, authored as the
+  signed-in GitHub user (via their `<id>+<login>@users.noreply.github.com`
+  address, so GitHub links it to their account), with messages like
+  `Update view 'Context'`. A save that changes nothing makes no commit.
+  Pushes run in the background, so a burst of saves goes out as one push about
+  1 s later. A push rejected because someone else pushed first is retried
+  once after a rebase. Concurrent edits to the *same* View are not merged:
+  the last save wins.
+- **Sign-in** — every page and API request needs a session; signed out, `/`
+  redirects to `/auth/login` (GitHub OAuth) and the API returns 401. Only
+  collaborators on `GITHUB_REPO` get in, unless `ALLOWED_USERS` (a comma-separated
+  list of GitHub logins, case-insensitive) is set, in which case only those
+  users can sign in. The session is a stateless HMAC-signed cookie (`HttpOnly`,
+  `SameSite=Lax`, `Secure` when `PUBLIC_URL` is https) that lasts 7 days;
+  rotating `SESSION_SECRET` signs everyone out. `/auth/logout` signs out,
+  and `/auth/me` returns `{login, name}`.
+- **`/healthz`** — public, `{"ok": true}`, for the platform's health check.
+- **Documentation links** — `/api/doc` serves only files inside the clone,
+  never absolute paths or `../` escapes onto the server's filesystem.
+- **Token hygiene** — `GITHUB_TOKEN` goes into each git command as an HTTP
+  header, so it never ends up in `.git/config`, the remote URL, or error output.
+
+Environment variables:
+
+| Variable | Required | Meaning |
+|---|---|---|
+| `GITHUB_REPO` | yes | `owner/name` of the repo holding the model |
+| `MODEL_PATH` | yes | model folder inside the repo, e.g. `examples/MedicalDevice` |
+| `GITHUB_TOKEN` | yes | fine-grained PAT for that repo: *Contents* read/write (+ *Metadata* read, granted by default) |
+| `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | yes* | the GitHub OAuth app used for sign-in |
+| `SESSION_SECRET` | yes* | long random string that signs session cookies |
+| `PUBLIC_URL` | yes* | the URL people open, e.g. `https://sysml-explorer.onrender.com` |
+| `ALLOWED_USERS` | no | comma-separated logins; replaces the collaborator check |
+| `GITHUB_BRANCH` | no | default `main` |
+| `PULL_INTERVAL` | no | seconds between pulls, default `30` |
+| `PORT` | no | default `8080` (most platforms set it) |
+| `WORK_DIR` | no | where the clone lives, default `/tmp/sysml-explorer/repo` |
+| `GIT_REMOTE` | no | clone URL override (non-GitHub host, or a local path for testing) |
+| `ALLOW_ANONYMOUS` | no | `1` turns sign-in off (*not needed then). Local testing only |

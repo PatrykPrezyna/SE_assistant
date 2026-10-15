@@ -2939,5 +2939,322 @@ class MedicalDeviceDefaultViewTests(unittest.TestCase):
         self.assertEqual(self.view("interconnections")["hiddenEdges"], [])
 
 
+# ----------------------------------------------------------------------
+# Hosted (cloud) mode
+# ----------------------------------------------------------------------
+
+from sysml_explorer import cloud as cloud_mod  # noqa: E402
+
+
+def _git(cwd, *args):
+    return subprocess.run(
+        ["git", "-c", "user.name=Seed", "-c", "user.email=seed@example.com",
+         *args],
+        cwd=cwd, capture_output=True, text=True, check=True,
+    ).stdout
+
+
+class StubAuth(cloud_mod.GitHubAuth):
+    """GitHubAuth with the three GitHub calls stubbed: the OAuth code *is*
+    the login, and only "mallory" isn't a collaborator."""
+
+    def exchange_code(self, code):
+        return "token-for-" + code
+
+    def fetch_user(self, access_token):
+        login = access_token[len("token-for-"):]
+        return {"login": login, "name": login.title(), "id": 42}
+
+    def is_allowed(self, login):
+        return login != "mallory"
+
+
+def _stub_auth():
+    return StubAuth("cid", "csecret", "session-secret",
+                    "https://explorer.example.com", "team/model")
+
+
+class CloudSessionTests(unittest.TestCase):
+    def setUp(self):
+        self.auth = _stub_auth()
+
+    def test_session_round_trip(self):
+        cookie = self.auth.make_session({"login": "alice", "name": "Alice",
+                                         "id": 7})
+        user = self.auth.session_user(f"{cloud_mod.SESSION_COOKIE}={cookie}")
+        self.assertEqual(user["login"], "alice")
+        self.assertEqual(user["id"], 7)
+
+    def test_tampered_session_is_rejected(self):
+        cookie = self.auth.make_session({"login": "alice"})
+        body, mac = cookie.rsplit(".", 1)
+        forged = self.auth.sign({"login": "mallory", "exp": 2**40})
+        self.assertIsNone(self.auth.verify(forged.split(".")[0] + "." + mac))
+        self.assertIsNone(self.auth.verify(body + "." + "0" * len(mac)))
+
+    def test_session_signed_with_another_secret_is_rejected(self):
+        other = cloud_mod.GitHubAuth("c", "s", "other-secret",
+                                     "https://x", "team/model")
+        cookie = other.make_session({"login": "alice"})
+        self.assertIsNone(self.auth.verify(cookie))
+
+    def test_expired_session_is_rejected(self):
+        cookie = self.auth.sign({"login": "alice", "exp": 1})
+        self.assertIsNone(self.auth.verify(cookie))
+
+    def test_no_or_garbage_cookie_means_signed_out(self):
+        self.assertIsNone(self.auth.session_user(None))
+        self.assertIsNone(self.auth.session_user("other=1"))
+        self.assertIsNone(self.auth.session_user(
+            f"{cloud_mod.SESSION_COOKIE}=not-a-session"))
+
+    def test_https_public_url_makes_cookies_secure(self):
+        self.assertIn("Secure", self.auth._cookie("a", "b", 1))
+        local = cloud_mod.GitHubAuth("c", "s", "k", "http://localhost:8080",
+                                     "team/model")
+        self.assertNotIn("Secure", local._cookie("a", "b", 1))
+
+    def test_allowed_users_list_overrides_collaborator_check(self):
+        auth = cloud_mod.GitHubAuth("c", "s", "k", "https://x", "team/model",
+                                    allowed_users=["Alice", " bob ", ""])
+        self.assertTrue(auth.is_allowed("alice"))
+        self.assertTrue(auth.is_allowed("BOB"))
+        self.assertFalse(auth.is_allowed("carol"))
+
+
+class CloudFixture:
+    """A bare git repo standing in for GitHub, with a model folder pushed
+    to it, and the hosted server serving a fresh clone of it."""
+
+    def __init__(self, auth="stub"):
+        self.dir = tempfile.TemporaryDirectory()
+        root = Path(self.dir.name)
+        self.bare = root / "remote.git"
+        _git(root, "init", "-q", "--bare", "-b", "main", str(self.bare))
+        self.seed = root / "seed"
+        _git(root, "clone", "-q", str(self.bare), str(self.seed))
+        model_dir = self.seed / "model"
+        (model_dir / "views").mkdir(parents=True)
+        (model_dir / "model.sysml").write_text(SAMPLE, encoding="utf-8")
+        (model_dir / "views" / "default.json").write_text(json.dumps(
+            {"name": "Default", "elements": [], "nodes": {},
+             "hiddenEdges": [], "view": None, "options": {}}), encoding="utf-8")
+        (model_dir / "spec.txt").write_text("spec", encoding="utf-8")
+        (root / "secret.txt").write_text("outside the repo", encoding="utf-8")
+        _git(self.seed, "add", "-A")
+        _git(self.seed, "commit", "-q", "-m", "seed")
+        _git(self.seed, "push", "-q", "origin", "HEAD:main")
+
+        self.work = root / "work"
+        self.sync = cloud_mod.GitSync(str(self.bare), self.work, "main",
+                                      pull_interval=0, async_push=False)
+        self.sync.clone_or_update()
+        self.folder = self.work / "model"
+        self.auth = _stub_auth() if auth == "stub" else auth
+        ctx = cloud_mod.CloudContext(self.sync, self.auth, self.work)
+        self.server = ThreadingHTTPServer(
+            ("127.0.0.1", 0),
+            make_handler(self.folder, self.folder / "layout.json", ctx))
+        self.port = self.server.server_address[1]
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def session(self, login="alice"):
+        cookie = self.auth.make_session({"login": login, "name": "Alice",
+                                         "id": 42})
+        return f"{cloud_mod.SESSION_COOKIE}={cookie}"
+
+    def request(self, method, path, body=None, cookie=None):
+        """No redirect following, so 302s can be asserted."""
+        import http.client
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        headers = {"Cookie": cookie} if cookie else {}
+        data = None
+        if body is not None:
+            data = json.dumps(body).encode("utf-8")
+            headers["Content-Type"] = "application/json"
+        conn.request(method, path, body=data, headers=headers)
+        r = conn.getresponse()
+        result = (r.status, r.headers, r.read().decode("utf-8", "replace"))
+        conn.close()
+        return result
+
+    def remote_log(self):
+        return _git(self.bare, "log", "--format=%an <%ae>|%s", "main")
+
+    def close(self):
+        self.server.shutdown()
+        self.server.server_close()
+        try:
+            self.dir.cleanup()
+        except OSError:
+            pass  # Windows: git may still hold a handle for a moment
+
+
+@unittest.skipUnless(shutil.which("git"), "git not found; skipping cloud tests")
+class CloudServerTests(unittest.TestCase):
+    def setUp(self):
+        self.fx = CloudFixture()
+        self.alice = self.fx.session("alice")
+
+    def tearDown(self):
+        self.fx.close()
+
+    def test_healthz_needs_no_sign_in(self):
+        status, _, body = self.fx.request("GET", "/healthz")
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body), {"ok": True})
+
+    def test_page_redirects_to_sign_in(self):
+        status, headers, _ = self.fx.request("GET", "/")
+        self.assertEqual(status, 302)
+        self.assertEqual(headers["Location"], "/auth/login")
+
+    def test_api_without_session_is_401(self):
+        for method, path in [("GET", "/api/model"), ("GET", "/api/views"),
+                             ("PUT", "/api/views/default"),
+                             ("DELETE", "/api/views/default"),
+                             ("POST", "/api/layout")]:
+            status, _, _ = self.fx.request(
+                method, path, body={} if method in ("PUT", "POST") else None)
+            self.assertEqual(status, 401, (method, path))
+        # and nothing was written or committed
+        self.assertTrue((self.fx.folder / "views" / "default.json").exists())
+        self.assertEqual(self.fx.remote_log().count("\n"), 1)
+
+    def test_signed_in_user_gets_viewer_and_model(self):
+        status, _, page = self.fx.request("GET", "/", cookie=self.alice)
+        self.assertEqual(status, 200)
+        self.assertIn("<svg", page)
+        status, _, body = self.fx.request("GET", "/api/model", cookie=self.alice)
+        self.assertEqual(status, 200)
+        self.assertIn("Motor", [n["name"] for n in json.loads(body)["nodes"]])
+
+    def test_saving_a_view_commits_and_pushes_as_the_user(self):
+        view = {"name": "Default", "elements": ["TestPkg::Motor"], "nodes": {},
+                "hiddenEdges": [], "view": None, "options": {}}
+        status, _, _ = self.fx.request("PUT", "/api/views/default", view,
+                                       cookie=self.alice)
+        self.assertEqual(status, 200)
+        log = self.fx.remote_log().splitlines()
+        self.assertEqual(
+            log[0], "Alice <42+alice@users.noreply.github.com>|"
+                    "Update view 'Default'")
+        pushed = _git(self.fx.bare, "show", "main:model/views/default.json")
+        self.assertEqual(json.loads(pushed)["elements"], ["TestPkg::Motor"])
+
+    def test_create_delete_and_layout_are_commits_too(self):
+        _, _, body = self.fx.request("POST", "/api/views", {"name": "Power"},
+                                     cookie=self.alice)
+        self.assertEqual(json.loads(body)["id"], "power")
+        self.fx.request("POST", "/api/layout", {"docs": {}}, cookie=self.alice)
+        self.fx.request("DELETE", "/api/views/power", cookie=self.alice)
+        subjects = [line.split("|", 1)[1]
+                    for line in self.fx.remote_log().splitlines()]
+        self.assertEqual(subjects[:3], ["Delete view 'power'",
+                                        "Update explorer layout",
+                                        "Create view 'Power'"])
+
+    def test_saving_unchanged_content_makes_no_commit(self):
+        _, _, body = self.fx.request("GET", "/api/views/default",
+                                     cookie=self.alice)
+        before = self.fx.remote_log()
+        # same content, same formatting the server writes
+        self.fx.request("PUT", "/api/views/default", json.loads(body),
+                        cookie=self.alice)
+        self.fx.request("PUT", "/api/views/default", json.loads(body),
+                        cookie=self.alice)
+        self.assertLessEqual(self.fx.remote_log().count("\n"),
+                             before.count("\n") + 1)
+
+    def test_reads_pick_up_teammates_pushes(self):
+        (self.fx.seed / "model" / "views" / "theirs.json").write_text(
+            json.dumps({"name": "Theirs", "elements": []}), encoding="utf-8")
+        _git(self.fx.seed, "add", "-A")
+        _git(self.fx.seed, "commit", "-q", "-m", "teammate view")
+        _git(self.fx.seed, "push", "-q", "origin", "HEAD:main")
+        _, _, body = self.fx.request("GET", "/api/views", cookie=self.alice)
+        self.assertIn("theirs", [v["id"] for v in json.loads(body)])
+
+    def test_push_after_teammate_push_rebases(self):
+        (self.fx.seed / "model" / "other.txt").write_text("x", encoding="utf-8")
+        _git(self.fx.seed, "add", "-A")
+        _git(self.fx.seed, "commit", "-q", "-m", "teammate change")
+        _git(self.fx.seed, "push", "-q", "origin", "HEAD:main")
+        self.fx.sync.pull_interval = 3600  # the save must not pull first
+        self.fx.sync._last_pull = __import__("time").monotonic()
+        status, _, _ = self.fx.request(
+            "POST", "/api/views", {"name": "Mine"}, cookie=self.alice)
+        self.assertEqual(status, 200)
+        subjects = [line.split("|", 1)[1]
+                    for line in self.fx.remote_log().splitlines()]
+        self.assertEqual(subjects[:2], ["Create view 'Mine'", "teammate change"])
+
+    def test_doc_links_cannot_leave_the_checkout(self):
+        status, _, body = self.fx.request("GET", "/api/doc?path=spec.txt",
+                                          cookie=self.alice)
+        self.assertEqual((status, body), (200, "spec"))
+        outside = Path(self.fx.dir.name) / "secret.txt"
+        for target in ["../../secret.txt", str(outside)]:
+            status, _, _ = self.fx.request(
+                "GET", "/api/doc?path=" + urllib.parse.quote(target),
+                cookie=self.alice)
+            self.assertEqual(status, 404, target)
+
+    def test_login_redirects_to_github_with_state_cookie(self):
+        status, headers, _ = self.fx.request("GET", "/auth/login")
+        self.assertEqual(status, 302)
+        self.assertTrue(headers["Location"].startswith(
+            "https://github.com/login/oauth/authorize?"))
+        self.assertIn("redirect_uri=https%3A%2F%2Fexplorer.example.com"
+                      "%2Fauth%2Fcallback", headers["Location"])
+        self.assertIn(cloud_mod.STATE_COOKIE + "=", headers["Set-Cookie"])
+
+    def test_callback_signs_in_a_collaborator(self):
+        cookie = f"{cloud_mod.STATE_COOKIE}=abc"
+        status, headers, _ = self.fx.request(
+            "GET", "/auth/callback?code=bob&state=abc", cookie=cookie)
+        self.assertEqual(status, 302)
+        self.assertEqual(headers["Location"], "/")
+        session = [c for c in headers.get_all("Set-Cookie")
+                   if c.startswith(cloud_mod.SESSION_COOKIE + "=")][0]
+        value = session.split(";")[0]
+        _, _, me = self.fx.request("GET", "/auth/me", cookie=value)
+        self.assertEqual(json.loads(me)["login"], "bob")
+
+    def test_callback_rejects_state_mismatch(self):
+        status, _, _ = self.fx.request(
+            "GET", "/auth/callback?code=bob&state=abc",
+            cookie=f"{cloud_mod.STATE_COOKIE}=xyz")
+        self.assertEqual(status, 400)
+
+    def test_callback_rejects_non_collaborator(self):
+        status, headers, body = self.fx.request(
+            "GET", "/auth/callback?code=mallory&state=abc",
+            cookie=f"{cloud_mod.STATE_COOKIE}=abc")
+        self.assertEqual(status, 403)
+        self.assertIn("mallory", body)
+        self.assertIsNone(headers["Set-Cookie"])
+
+    def test_logout_clears_the_session(self):
+        status, headers, _ = self.fx.request("GET", "/auth/logout",
+                                             cookie=self.alice)
+        self.assertEqual(status, 302)
+        self.assertIn("Max-Age=0", headers["Set-Cookie"])
+
+
+@unittest.skipUnless(shutil.which("git"), "git not found; skipping cloud tests")
+class CloudAnonymousTests(unittest.TestCase):
+    def test_anonymous_mode_serves_without_sign_in_and_commits_as_bot(self):
+        fx = CloudFixture(auth=None)
+        try:
+            status, _, _ = fx.request("GET", "/api/model")
+            self.assertEqual(status, 200)
+            fx.request("POST", "/api/views", {"name": "Anon"})
+            self.assertTrue(fx.remote_log().startswith(
+                f"{cloud_mod.BOT_NAME} <{cloud_mod.BOT_EMAIL}>|Create view"))
+        finally:
+            fx.close()
+
+
 if __name__ == "__main__":
     unittest.main()
