@@ -397,12 +397,13 @@ let dirty = false;
 // Views (SysML v2's term for a curated presentation of model content): the
 // user creates as many as they like, each with its own membership set,
 // positions, hidden connections, filters, and pan/zoom — persisted as its
-// own file (see /api/views). Membership/positions for the UCD drilldown
-// mode are NOT part of a View — they're global, since a drilldown is a
-// fixed rendering of the model's own useDiagram, not a user-curated diagram.
-let views = [];                   // [{id, name}, ...] from /api/views
+// own file (see /api/views). Activity diagrams are Views too (`kind:
+// "activity"`). Membership/positions for the UCD drilldown mode are NOT
+// part of a View — they're global, since a drilldown is a fixed rendering
+// of the model's own useDiagram, not a user-curated diagram.
+let views = [];                   // [{id, name, kind, activityOwner}, ...] from /api/views
 let activeViewId = null;
-let activeView = null;            // {name, elements, nodes, hiddenEdges, view, options}
+let activeView = null;            // {name, kind, activityOwner, elements, nodes, hiddenEdges, view, options}
 let drilldownNodes = {};          // synthetic UCD role-box positions (global)
 let drilldownHiddenEdges = new Set();
 let drilldownView = null;
@@ -420,10 +421,18 @@ let treeQuery = "";                // filter text for the element tree
 let treeKind = "all";              // "all" | "req" | "part" | "actor" | "usecase"
 
 // the position store currently in effect: a View's own positions in bdd
-// mode, or the shared drilldown positions in ucd mode. A function, not
-// a variable, so mutations always land on the real object (activeView.nodes
-// or drilldownNodes), never a stale copy left behind by a mode switch.
-function posMap() { return mode === "bdd" ? activeView.nodes : drilldownNodes; }
+// and activity Views, or the shared drilldown positions in ucd mode. A
+// function, not a variable, so mutations always land on the real object
+// (activeView.nodes or drilldownNodes), never a stale copy left behind
+// by a mode switch.
+function isActivityView(v) {
+  return !!(v && v.kind === "activity" && v.activityOwner);
+}
+function posMap() {
+  if (mode === "ucd") return drilldownNodes;
+  if (activeView && !activeView.nodes) activeView.nodes = {};
+  return activeView.nodes;
+}
 
 const measureCtx = document.createElement("canvas").getContext("2d");
 function textWidth(text, font) {
@@ -821,7 +830,7 @@ function applyView() {
 // restore whichever pan/zoom belongs to the current mode (a View's own, or
 // the shared drilldown one), falling back to fitting the content
 function restoreViewTransform() {
-  const saved = mode === "bdd" ? activeView.view : drilldownView;
+  const saved = mode === "ucd" ? drilldownView : (activeView && activeView.view);
   if (saved) { view = { ...saved }; applyView(); }
   else fitView();
 }
@@ -830,17 +839,16 @@ function restoreViewTransform() {
 
 function updateDrilldownToolbar() {
   const back = document.getElementById("drilldownBackBtn");
-  const inDrilldown = mode === "ucd" || mode === "activity";
-  back.style.display = inDrilldown ? "" : "none";
+  const inUcd = mode === "ucd";
+  back.style.display = inUcd ? "" : "none";
   back.textContent = "◀ Back to BDD";
   for (const id of ["viewSel", "newViewBtn", "renameViewBtn", "deleteViewBtn"])
-    document.getElementById(id).disabled = inDrilldown;
-  unhideBtn.disabled = inDrilldown || !hiddenEdges.size;
+    document.getElementById(id).disabled = inUcd;
+  unhideBtn.disabled = inUcd || mode === "activity" || !hiddenEdges.size;
 }
 
 async function closeDrilldown() {
   if (mode === "ucd") await closeUcd();
-  else if (mode === "activity") await closeActivity();
 }
 
 // persist the outgoing mode/View's state before switching away from it —
@@ -944,26 +952,45 @@ function activityLaneInfo(act) {
   return { laneOfAction, laneOrder };
 }
 
-async function openActivity(ownerId) {
-  await saveIfDirty();
-  mode = "activity";
-  activityOwner = ownerId;
-  hiddenEdges = drilldownHiddenEdges;
-  rebuild();
-  restoreViewTransform();
-  updateTitle();
-  updateDrilldownToolbar();
+function applyViewKind(v) {
+  if (isActivityView(v) && activityFor(v.activityOwner)) {
+    mode = "activity";
+    activityOwner = v.activityOwner;
+    hiddenEdges = new Set();
+  } else {
+    mode = "bdd";
+    activityOwner = null;
+    hiddenEdges = new Set((v && v.hiddenEdges) || []);
+  }
 }
 
-async function closeActivity() {
-  await saveIfDirty();
-  mode = "bdd";
-  activityOwner = null;
-  hiddenEdges = new Set(activeView.hiddenEdges || []);
-  rebuild();
-  restoreViewTransform();
-  updateTitle();
-  updateDrilldownToolbar();
+function activityViewName(ownerId) {
+  const owner = model.nodes.find(n => n.id === ownerId);
+  return "Activity — " + (owner ? owner.name : ownerId.split("::").pop());
+}
+
+async function ensureActivityView(ownerId) {
+  let v = views.find(x => x.activityOwner === ownerId);
+  if (v) return v;
+  const res = await fetch("/api/views", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: activityViewName(ownerId),
+      kind: "activity",
+      activityOwner: ownerId,
+      description: "Swimlane activity diagram.",
+    }),
+  });
+  v = await res.json();
+  views.push(v);
+  views.sort((a, b) => a.name.localeCompare(b.name));
+  return v;
+}
+
+async function openActivity(ownerId) {
+  const v = await ensureActivityView(ownerId);
+  await switchToView(v.id);
 }
 
 // vertical swimlanes: each role is a column; succession advances downward
@@ -1795,12 +1822,6 @@ function nodeMenuItems(id) {
       label: "Open use case diagram",
       action: () => openUcd(ucdTarget),
     });
-  const activityTarget = mode === "bdd" && activityTargetFor(id);
-  if (activityTarget)
-    items.push({
-      label: "Open activity diagram",
-      action: () => openActivity(activityTarget),
-    });
   if (mode === "bdd") {
     items.push({ sep: true });
     items.push(...relatedMenuItems(id));
@@ -1853,10 +1874,6 @@ function backgroundMenuItems() {
     items.push({ label: "Close use case diagram", action: closeUcd });
     items.push({ sep: true });
   }
-  if (mode === "activity") {
-    items.push({ label: "Close activity diagram", action: closeActivity });
-    items.push({ sep: true });
-  }
   items.push(
     {
       label: `Unhide connections (${hiddenEdges.size})`,
@@ -1903,14 +1920,16 @@ svg.addEventListener("wheel", evt => {
 
 async function save() {
   for (const id in nodes) posMap()[id] = { x: nodes[id].x, y: nodes[id].y };
-  if (mode === "bdd") {
+  if (mode === "ucd") {
+    drilldownView = { ...view };
+  } else if (activeView) {
     activeView.hiddenEdges = [...hiddenEdges];
     activeView.view = { ...view };
-  } else {
-    drilldownView = { ...view };
   }
-  activeView.version = VIEW_VERSION;
-  activeView.options = displayOpts();
+  if (activeView) {
+    activeView.version = VIEW_VERSION;
+    activeView.options = displayOpts();
+  }
 
   layout.version = LAYOUT_VERSION;
   layout.docs = layout.docs || {};
@@ -1918,9 +1937,9 @@ async function save() {
   layout.home = homeOpen;
   layout.expertMode = expertMode;
   layout.activeView = activeViewId;
-  layout.mode = mode;
+  layout.mode = mode === "ucd" ? "ucd" : "bdd";
   layout.ucdOwner = ucdOwner;
-  layout.activityOwner = activityOwner;
+  layout.activityOwner = null;
   layout.drilldownNodes = drilldownNodes;
   layout.drilldownHiddenEdges = [...drilldownHiddenEdges];
   layout.drilldownView = drilldownView;
@@ -1980,9 +1999,9 @@ async function switchToView(id) {
   await saveIfDirty();
   activeViewId = id;
   activeView = await (await fetch(`/api/views/${id}`)).json();
-  hiddenEdges = new Set(activeView.hiddenEdges || []);
   applyDisplayOpts(activeView.options);
-  mode = "bdd"; ucdOwner = null; activityOwner = null;
+  ucdOwner = null;
+  applyViewKind(activeView);
   rebuild();
   restoreViewTransform();
   updateTitle();
@@ -2033,9 +2052,12 @@ function renderHome() {
     desc.textContent = text || "No description.";
     card.appendChild(desc);
 
-    if (typeof v.elementCount === "number") {
-      const count = document.createElement("div");
-      count.className = "count";
+    const count = document.createElement("div");
+    count.className = "count";
+    if (v.kind === "activity") {
+      count.textContent = "Activity diagram";
+      card.appendChild(count);
+    } else if (typeof v.elementCount === "number") {
       count.textContent =
         `${v.elementCount} element${v.elementCount === 1 ? "" : "s"}`;
       card.appendChild(count);
@@ -2118,11 +2140,8 @@ function updateTitle() {
   if (mode === "ucd") {
     const owner = model.nodes.find(n => n.id === ucdOwner);
     document.title = "UCD: " + (owner ? owner.name : ucdOwner);
-  } else if (mode === "activity") {
-    const owner = model.nodes.find(n => n.id === activityOwner);
-    document.title = "Activity: " + (owner ? owner.name : activityOwner);
   } else {
-    const name = activeView ? activeView.name : model.package;
+    const name = activeView ? activeView.name : (model && model.package);
     document.title = name || "SysML Explorer";
   }
 }
@@ -2169,10 +2188,7 @@ async function loadModel() {
     mode = "bdd"; ucdOwner = null;
     hiddenEdges = new Set(activeView.hiddenEdges || []);
   }
-  if (mode === "activity" && !ids.has(activityOwner)) {
-    mode = "bdd"; activityOwner = null;
-    hiddenEdges = new Set(activeView.hiddenEdges || []);
-  }
+  if (mode === "activity") applyViewKind(activeView);
   updateTitle();
   updateDrilldownToolbar();
   rebuild();
@@ -2204,14 +2220,19 @@ async function bootstrapViews() {
     });
     views = [created];
   }
+  for (const a of model.activities || []) {
+    if (!views.some(v => v.activityOwner === a.owner))
+      await ensureActivityView(a.owner);
+  }
   views.sort((a, b) => a.name.localeCompare(b.name));
 
+  const firstBdd = views.find(v => (v.kind || "bdd") !== "activity") || views[0];
   const wantId = layout.activeView && views.some(v => v.id === layout.activeView)
-    ? layout.activeView : views[0].id;
+    ? layout.activeView : firstBdd.id;
   activeViewId = wantId;
   activeView = await (await fetch(`/api/views/${wantId}`)).json();
-  hiddenEdges = new Set(activeView.hiddenEdges || []);
   applyDisplayOpts(activeView.options);
+  applyViewKind(activeView);
 }
 
 async function init() {
@@ -2252,9 +2273,13 @@ async function init() {
     hiddenEdges = drilldownHiddenEdges;
   } else if (layout.mode === "activity" && layout.activityOwner &&
              ids.has(layout.activityOwner)) {
-    mode = "activity";
-    activityOwner = layout.activityOwner;
-    hiddenEdges = drilldownHiddenEdges;
+    const v = views.find(x => x.activityOwner === layout.activityOwner);
+    if (v) {
+      activeViewId = v.id;
+      activeView = await (await fetch(`/api/views/${v.id}`)).json();
+      applyDisplayOpts(activeView.options);
+    }
+    applyViewKind(activeView);
   }
 
   fillViewSel();

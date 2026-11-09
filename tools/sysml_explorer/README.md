@@ -200,7 +200,7 @@ turn back on per View, except where noted):
 - **`useDiagram` blocks contribute no node of their own** — their content
   attaches to the subject element, which gets a marker and a right-click
   drilldown instead.
-- **`perform action` swimlanes** are an explorer-only activity drilldown
+- **`perform action` swimlanes** are an explorer-only activity View
   (see FEATURES.md), not standard `activity def` diagrams.
 - **Actor ↔ use case associations are lifted to the defs**: a `useDiagram`
   connection is declared between local role usages, but the block

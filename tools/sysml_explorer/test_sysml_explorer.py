@@ -1350,7 +1350,8 @@ class ViewApiTests(unittest.TestCase):
         created = json.loads(self.srv.post("/api/views", {"name": "Logical Architecture"}))
         self.assertEqual(created, {"id": "logical-architecture",
                                     "name": "Logical Architecture",
-                                    "description": "", "elementCount": 0})
+                                    "description": "", "elementCount": 0,
+                                    "kind": "bdd", "activityOwner": None})
         self.assertTrue((self.srv.views_dir / "logical-architecture.json").exists())
 
     def test_listing_carries_home_page_card_fields(self):
@@ -1362,7 +1363,7 @@ class ViewApiTests(unittest.TestCase):
         }), encoding="utf-8")
         self.assertEqual(json.loads(self.srv.get("/api/views")), [
             {"id": "ctx", "name": "Context", "description": "Who uses it.",
-             "elementCount": 2},
+             "elementCount": 2, "kind": "bdd", "activityOwner": None},
         ])
 
     def test_listing_defaults_card_fields_for_a_view_without_them(self):
@@ -1371,7 +1372,7 @@ class ViewApiTests(unittest.TestCase):
             json.dumps({"name": "Bare"}), encoding="utf-8")
         self.assertEqual(json.loads(self.srv.get("/api/views")), [
             {"id": "bare", "name": "Bare", "description": "",
-             "elementCount": 0},
+             "elementCount": 0, "kind": "bdd", "activityOwner": None},
         ])
 
     def test_description_round_trips_through_put(self):
@@ -1384,6 +1385,28 @@ class ViewApiTests(unittest.TestCase):
         back = json.loads(self.srv.get(f"/api/views/{created['id']}"))
         self.assertEqual(back["description"],
                          "One sentence on what this View is for.")
+
+    def test_create_activity_view_stores_kind_and_owner(self):
+        created = json.loads(self.srv.post("/api/views", {
+            "name": "Activity — Interaction",
+            "kind": "activity",
+            "activityOwner": "ActPkg::Interaction",
+            "description": "Swimlane activity diagram.",
+        }))
+        self.assertEqual(created, {
+            "id": "activity-interaction",
+            "name": "Activity — Interaction",
+            "description": "Swimlane activity diagram.",
+            "elementCount": 0,
+            "kind": "activity",
+            "activityOwner": "ActPkg::Interaction",
+        })
+        view = json.loads(self.srv.get(f"/api/views/{created['id']}"))
+        self.assertEqual(view["kind"], "activity")
+        self.assertEqual(view["activityOwner"], "ActPkg::Interaction")
+        listed = json.loads(self.srv.get("/api/views"))
+        self.assertEqual(listed[0]["kind"], "activity")
+        self.assertEqual(listed[0]["activityOwner"], "ActPkg::Interaction")
 
     def test_created_view_is_seeded_empty(self):
         created = json.loads(self.srv.post("/api/views", {"name": "Empty"}))
@@ -1789,8 +1812,11 @@ class ViewRenderingTests(unittest.TestCase):
         # launch, pre-populated so the canvas isn't blank
         with ServerFixture(views={}) as srv:
             self.assertEqual(dump_dom(srv.url).count('class="node'), 8)
-            self.assertEqual(json.loads(srv.get("/api/views")),
-                              [{"id": "default", "name": "Default"}])
+            listed = json.loads(srv.get("/api/views"))
+            self.assertEqual(len(listed), 1)
+            self.assertEqual(listed[0]["id"], "default")
+            self.assertEqual(listed[0]["name"], "Default")
+            self.assertEqual(listed[0]["kind"], "bdd")
 
 
 @unittest.skipUnless(EDGE, "Microsoft Edge not found; skipping rendering tests")
@@ -2206,8 +2232,8 @@ class UcdRenderingTests(unittest.TestCase):
 
 @unittest.skipUnless(EDGE, "Microsoft Edge not found; skipping rendering tests")
 class ActivityRenderingTests(unittest.TestCase):
-    """Activity diagram mode, entered via the persisted layout
-    (mode/activityOwner)."""
+    """Activity diagrams are first-class Views. Tests still pass
+    mode/activityOwner in layout.json so startup migrates to that View."""
 
     @classmethod
     def setUpClass(cls):
@@ -2303,11 +2329,24 @@ class ActivityRenderingTests(unittest.TestCase):
         self.assertIsNotNone(x2, step_two)
         self.assertNotEqual(x1.group(1), x2.group(1))
 
-    def test_back_button_shown_only_in_activity_mode(self):
+    def test_back_button_hidden_for_activity_view(self):
         bdd_dom = self.render(self.BDD_LAYOUT)
         act_dom = self.render(self.ACTIVITY_LAYOUT)
         self.assertIn("none", self.button_tag(bdd_dom, "drilldownBackBtn"))
-        self.assertNotIn("none", self.button_tag(act_dom, "drilldownBackBtn"))
+        self.assertIn("none", self.button_tag(act_dom, "drilldownBackBtn"))
+
+    def test_activity_view_listed_and_dropdown_stays_enabled(self):
+        # first-class View, not a UCD-style drilldown: the view picker stays
+        # usable and lists the auto-created Activity — <owner> entry
+        act_dom = self.render(self.ACTIVITY_LAYOUT)
+        m = re.search(r'<select id="viewSel"[^>]*>', act_dom)
+        self.assertIsNotNone(m, "view dropdown not rendered")
+        self.assertNotIn("disabled", m.group(0))
+        self.assertIn("Activity — Interaction", act_dom)
+        listed = json.loads(self.srv.get("/api/views"))
+        self.assertTrue(any(v.get("kind") == "activity" and
+                            v.get("activityOwner") == "ActPkg::Interaction"
+                            for v in listed))
 
     def test_unknown_activity_owner_falls_back_to_bdd(self):
         dom = self.render({"nodes": {}, "selectedPackage": None,
@@ -2659,6 +2698,19 @@ class HomePageTests(unittest.TestCase):
         self.assertEqual(ctx["name"], "Context")
         self.assertEqual(ctx["desc"], "Who uses it.")
         self.assertEqual(ctx["count"], "7 elements")
+
+    def test_activity_card_says_activity_diagram(self):
+        views = [{"id": "act", "name": "Activity — Go",
+                  "description": "Swimlanes.", "elementCount": 0,
+                  "kind": "activity", "activityOwner": "P::Go"}]
+        cards = self.drive(views, "cards", action=(
+            "setHomeOpen(true);\n"
+            'const cards = [...document.querySelectorAll("#homeViews .card")]'
+            '  .map(c => ({ name: c.querySelector(".name").textContent,'
+            '               count: c.querySelector(".count").textContent }));'
+        ))
+        self.assertEqual(cards[0]["name"], "Activity — Go")
+        self.assertEqual(cards[0]["count"], "Activity diagram")
 
     def test_card_without_a_description_says_so(self):
         # a View file may simply not carry one; the card must not look broken

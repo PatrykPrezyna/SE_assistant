@@ -1069,6 +1069,8 @@ def make_handler(folder: Path, layout_path: Path, cloud=None):
                             "description": data.get("description", ""),
                             "elementCount":
                                 len(elements) if isinstance(elements, list) else 0,
+                            "kind": data.get("kind") or "bdd",
+                            "activityOwner": data.get("activityOwner"),
                         })
                 self._send(json.dumps(views))
             elif path.startswith("/api/views/"):
@@ -1136,18 +1138,30 @@ def make_handler(folder: Path, layout_path: Path, cloud=None):
             elif path == "/api/views":
                 body = self._read_json_body()
                 name = (body.get("name") or "").strip() or "Untitled"
+                kind = body.get("kind") or "bdd"
+                activity_owner = body.get("activityOwner")
+                description = body.get("description") or ""
                 views_dir.mkdir(parents=True, exist_ok=True)
                 existing = {p.stem for p in views_dir.glob("*.json")}
                 view_id = _slugify(name, existing)
                 data = {"version": 1, "name": name, "elements": [], "nodes": {},
                         "hiddenEdges": [], "view": None, "options": {}}
+                if kind != "bdd":
+                    data["kind"] = kind
+                if activity_owner:
+                    data["activityOwner"] = activity_owner
+                if description:
+                    data["description"] = description
                 (views_dir / f"{view_id}.json").write_text(
                     json.dumps(data, indent=2) + "\n", encoding="utf-8"
                 )
                 self._saved([views_dir / f"{view_id}.json"],
                             f"Create view '{name}'")
                 self._send(json.dumps({"id": view_id, "name": name,
-                                       "description": "", "elementCount": 0}))
+                                       "description": description,
+                                       "elementCount": 0,
+                                       "kind": kind,
+                                       "activityOwner": activity_owner}))
             else:
                 self.send_error(404)
 
@@ -1238,10 +1252,27 @@ def main():
     # the layout file lives in the folder, independent of which .sysml
     # files happen to be in it
     layout_path = folder / "layout.json"
-    server = ThreadingHTTPServer(
-        ("127.0.0.1", args.port), make_handler(folder, layout_path)
-    )
     url = f"http://127.0.0.1:{args.port}/"
+
+    class _ExplorerServer(ThreadingHTTPServer):
+        # HTTPServer defaults this True so a restart can bind during
+        # TIME_WAIT. On Windows that also lets a *second* explorer bind
+        # the same port; the browser then gets a reset connection and
+        # looks like the viewer "isn't running".
+        allow_reuse_address = False
+
+    try:
+        server = _ExplorerServer(
+            ("127.0.0.1", args.port), make_handler(folder, layout_path)
+        )
+    except OSError as exc:
+        print(f"Port {args.port} is already in use — another explorer is "
+              f"likely already serving {url}", file=sys.stderr)
+        print(f"({exc})", file=sys.stderr)
+        if not args.no_open:
+            webbrowser.open(url)
+        sys.exit(1)
+
     print(f"Serving {len(model_paths)} .sysml file(s) from {folder} at {url}")
     print(f"  ({', '.join(p.name for p in model_paths)})")
     startup_model = parse_models(texts, file_names)

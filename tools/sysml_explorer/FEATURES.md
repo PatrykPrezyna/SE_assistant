@@ -21,9 +21,9 @@ sysml-explorer <folder> [--port 8199] [--no-open]
   **Validation**) and exit nonzero if there are any, usable as a
   pre-commit/CI gate.
 
-Each View is saved to `<folder>/views/<id>.json`; everything else
-(documentation links, the element tree panel, UCD/activity drilldown state)
-is saved to `<folder>/layout.json`. Both formats carry a `version` field
+Each View is saved to `<folder>/views/<id>.json` (including activity
+Views); everything else (documentation links, the element tree panel,
+UCD drilldown state) is saved to `<folder>/layout.json`. Both formats carry a `version` field
 (currently `1`); older files without it are treated as version 1 on load,
 and stale keys (e.g. `ibdOwner`) are dropped on save.
 
@@ -324,8 +324,9 @@ comes back gets a table of contents.
   artifacts are revisited throughout the lifecycle, and that the point is to
   involve the whole development team — then the **Views** grid.
 - **View cards** show the View's name, its `description` (see below) and its
-  element count. Clicking one switches to that View and leaves the home
-  page. With no Views at all the grid says so and points at expert mode.
+  element count (or **Activity diagram** for an activity View). Clicking
+  one switches to that View and leaves the home page. With no Views at
+  all the grid says so and points at expert mode.
 - **`⌂ Home`** (first button in the toolbar, always available — not
   expert-only) toggles the page back on. It is an *overlay* over the canvas,
   not a separate screen: going Home and back never disturbs the diagram
@@ -366,9 +367,10 @@ typically from the element tree.
   for it rather than remembering the old spot.
 - **Right-click context menu** (designed to grow — new entries are added in
   `nodeMenuItems()` in `viewer.html`):
-  - on an *element*: **Open use case diagram** / **Open activity diagram**
-    (only offered when the element has one — see below), the **Show …**
-    related-element actions (see below), **Remove from view**.
+  - on an *element*: **Open use case diagram** (only offered when the
+    element has one — see below), the **Show …** related-element actions
+    (see below), **Remove from view**. Activity diagrams are Views (see
+    below), not a submenu.
   - on a *connection*: **Hide connection** (removes only the line, without
     removing either endpoint — for decluttering a busy View).
   - on the *background*: **Unhide connections (n)**, **Fit view**.
@@ -479,8 +481,9 @@ for the reference set. Generating them from the parsed model is stubbed:
   purple = actor, green = use case, blue = non-part usages; `part` /
   `part def` and other def-level elements are uncolored). Singleton part
   usages are omitted from the tree (their part def stands in for them).
-- Disabled (greyed out, non-interactive) while in UCD or activity mode,
-  since View membership only applies to the block definition diagram.
+- Disabled (greyed out, non-interactive) while in UCD drilldown or an
+  activity View, since View membership only applies to the block
+  definition diagram.
 
 ## Use case diagrams (`viewer.html`)
 
@@ -516,22 +519,26 @@ for the reference set. Generating them from the parsed model is stubbed:
 ## Activity diagrams (`viewer.html`)
 
 - A `perform action Name { ... }` block nested in a `part def` or
-  `use case def` turns that def into an entry point: it carries a 🎬 marker
-  and gains **Open activity diagram** in its right-click menu (from the
-  block definition diagram only).
-- Opening it switches the canvas to **activity mode**: a swimlane layout of
-  the nested `action` usages. Each `part` / `actor` / `subject` role is a
-  **vertical column** (top → bottom); succession order advances **downward**.
-  A `decide` node renders as a diamond; `if <guard> then` / `else` become
-  outgoing edges labeled with the guard (and `no` for `else`). Control
-  endpoints `start` / `done` render as rounded nodes centered across the
-  lanes. Flow edge guards are always shown (not gated by the edge-labels
-  Display toggle).
+  `use case def` is a first-class **View**, listed next to Context /
+  Decomposition in the view dropdown and on the home-page cards — not a
+  submenu on the use case. The owner def still carries a 🎬 marker on the
+  block definition diagram.
+- Each activity View file has `"kind": "activity"` and `"activityOwner"`
+  (the owning def's id). Positions and pan/zoom are stored on that View
+  like any other. If none exists yet, the explorer creates one named
+  **Activity — &lt;owner&gt;** on startup.
+- Selecting the View switches the canvas to **activity mode**: a swimlane
+  layout of the nested `action` usages. Each `part` / `actor` / `subject`
+  role is a **vertical column** (top → bottom); succession order advances
+  **downward**. A `decide` node renders as a diamond; `if <guard> then` /
+  `else` become outgoing edges labeled with the guard (and `no` for
+  `else`). Control endpoints `start` / `done` render as rounded nodes
+  centered across the lanes. Flow edge guards are always shown (not gated
+  by the edge-labels Display toggle).
 - Dragging an action only moves it vertically — its swimlane (x) is fixed
   from the `perform` assignment, so actions cannot be moved between lanes.
-- Same drilldown chrome as UCD (**◀ Back to BDD**, background **Close
-  activity diagram**); View membership controls are disabled while active.
-- Mode and owner are saved in the layout file (`mode`, `activityOwner`).
+- No **◀ Back to BDD** chrome (unlike UCD drilldown). Switch away with the
+  view dropdown or Home, same as Context.
 - Explorer dialect (not standard SysML v2) — see Dialect notes above.
   Spec-level `activity def` as a first-class definition kind is still not
   parsed as its own diagram type.
@@ -552,15 +559,16 @@ viewer UI; `GET /api/model` reports it as `explorerVersion`.
   and `explorerVersion`
 - `GET /api/layout` / `POST /api/layout` — global state persistence, always
   at `<folder>/layout.json`
-- `GET /api/views` — list of `{id, name, description, elementCount}` for
-  every View (`<folder>/views/*.json`); the extra fields are what the home
-  page's cards need, so it renders from this one request
+- `GET /api/views` — list of `{id, name, description, elementCount, kind,
+  activityOwner}` for every View (`<folder>/views/*.json`); the extra
+  fields are what the home page's cards need, so it renders from this one
+  request. `kind` is `"bdd"` unless the file says `"activity"`.
 - `GET /api/views/<id>` — one View's full content
-- `POST /api/views` — create a View; body `{"name": "..."}`, response
-  `{"id": "...", "name": "...", "description": "", "elementCount": 0}`
-  (same shape as a listing entry). The id is a slug derived from the name
-  (lowercased, non-alphanumerics collapsed to `-`; a colliding slug gets a
-  `-2`, `-3`, … suffix) and is fixed for the View's lifetime
+- `POST /api/views` — create a View; body `{"name": "..."}` (optional
+  `kind`, `activityOwner`, `description`), response the same shape as a
+  listing entry. The id is a slug derived from the name (lowercased,
+  non-alphanumerics collapsed to `-`; a colliding slug gets a `-2`,
+  `-3`, … suffix) and is fixed for the View's lifetime
 - `PUT /api/views/<id>` — replace a View's content (also used for renames —
   the id/filename never changes, only the `name` field inside); an
   idempotent create-or-replace, not update-only
