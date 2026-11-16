@@ -4,7 +4,7 @@ The **System Explorer** (`system-explorer`) Python package: an interactive
 SysML v2 model explorer (manual element placement, curated Views) plus
 model validation. This repo contains only the tool. Models live in their own repos and use it after
 `pip install`; the reference example is the CoolSpine model,
-https://github.com/PatrykPrezyna/MedicalDevice_example.
+https://github.com/PatrykPrezyna/cool-spine-model.
 
 Layout: `pyproject.toml` at the root; the package is in
 `src/system_explorer/` (`app.py` = parser + local server + CLI, `cloud.py` =

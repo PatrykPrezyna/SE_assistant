@@ -19,7 +19,7 @@ services:
     envVars:
       # the model repo (not this one); GITHUB_TOKEN must have access to it
       - key: GITHUB_REPO
-        value: PatrykPrezyna/MedicalDevice_example
+        value: PatrykPrezyna/cool-spine-model
       - key: GITHUB_BRANCH
         value: main
       - key: MODEL_PATH

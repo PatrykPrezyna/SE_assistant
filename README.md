@@ -50,9 +50,19 @@ This prints every validation warning (see *Validation* in
 [FEATURES.md](FEATURES.md)) and exits nonzero if there are any, so it works as
 a pre-commit or CI gate. `--print` dumps the parsed model as JSON.
 
-**Example model:** the CoolSpine medical-device model lives in its own repo,
-[MedicalDevice_example](https://github.com/PatrykPrezyna/MedicalDevice_example).
-Clone it and run `system-explorer .` inside it.
+## Example model (for testing)
+
+This repo ships the tool only — there is no sample model here. Use the
+CoolSpine medical-device model to try System Explorer:
+
+```
+git clone https://github.com/PatrykPrezyna/cool-spine-model.git
+cd cool-spine-model
+system-explorer .
+```
+
+That checkout is the reference model for manual testing and for the hosted
+demo (`GITHUB_REPO` in [`render.yaml`](render.yaml)).
 
 ## Setting up the validation parsers
 
@@ -149,7 +159,7 @@ Cloud Run) with the same environment variables.
 2. **Create a token the server uses to pull and push the model repo.**
    GitHub → Settings → Developer settings → Personal access tokens →
    *Fine-grained tokens* → Generate. Repository access: *Only select
-   repositories* → the **model** repo (e.g. `MedicalDevice_example`).
+   repositories* → the **model** repo (e.g. `cool-spine-model`).
    Permissions → Repository → **Contents: Read and write** (Metadata: read
    is added automatically). Copy the token and note its expiry date, because
    the server stops syncing when it expires.
@@ -172,10 +182,10 @@ Cloud Run) with the same environment variables.
      repo, or list GitHub logins (`alice,bob`)
 
    `SESSION_SECRET` is generated for you. `GITHUB_REPO` (default
-   `PatrykPrezyna/MedicalDevice_example`), `MODEL_PATH` (default `.`, the repo
+   `PatrykPrezyna/cool-spine-model`), `MODEL_PATH` (default `.`, the repo
    root) and `GITHUB_BRANCH` are set in `render.yaml`. Click **Apply**.
 5. **Check it.** The deploy log ends with `Serving
-   PatrykPrezyna/MedicalDevice_example:. on port 8080`. Open the URL: you are
+   PatrykPrezyna/cool-spine-model:. on port 8080`. Open the URL: you are
    sent to GitHub to sign in and land on the explorer's home page.
 6. **Invite teammates.** Model repo → Settings → Collaborators → *Add
    people*. Once they accept, they can sign in. If you set `ALLOWED_USERS`,
@@ -202,7 +212,7 @@ Try the container locally before deploying:
 
 ```
 docker build -t system-explorer .
-docker run --rm -p 8080:8080 -e GITHUB_REPO=PatrykPrezyna/MedicalDevice_example \
+docker run --rm -p 8080:8080 -e GITHUB_REPO=PatrykPrezyna/cool-spine-model \
   -e MODEL_PATH=. -e GITHUB_TOKEN=<token> -e ALLOW_ANONYMOUS=1 system-explorer
 ```
 
