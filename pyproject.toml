@@ -1,0 +1,24 @@
+[project]
+name = "system-explorer"
+dynamic = ["version"]
+description = "Interactive System Explorer for SysML v2 models with manual element placement."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = []
+
+[project.scripts]
+system-explorer = "system_explorer.app:main"
+system-explorer-cloud = "system_explorer.cloud:cloud_main"
+
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.dynamic]
+version = {attr = "system_explorer.version.__version__"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+system_explorer = ["viewer.html"]

@@ -1,4 +1,0 @@
-openai>=1.0.0
-jinja2>=3.0.0
-cadquery>=2.4.0
-ocp_vscode>=2.0.0

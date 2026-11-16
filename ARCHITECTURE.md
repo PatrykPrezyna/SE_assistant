@@ -1,4 +1,4 @@
-# SE Assistant — Architecture and Next Steps
+﻿# SE Assistant — Architecture and Next Steps
 
 AI-powered Systems Engineering assistant for small/medium organizations.
 This file captures the agreed direction (2026-07-25) so it survives between
@@ -10,7 +10,7 @@ sessions. See `TODO.md` for tool-level tasks.
    Model files stay 100% standard SysML v2 — no custom dialect. Anything
    extra (views, layouts, links to docs/pictures, rationale) lives in
    sidecar files next to the model.
-2. **`sysml_explorer` is a viewer only.** Its job is simplifying the
+2. **`system_explorer` is a viewer only.** Its job is simplifying the
    graphical notation — curated views, manual placement, drill-down — so
    non-modelers can read the model. It is *not* a model API or a modeling
    platform, and never edits the model.
@@ -25,7 +25,7 @@ sessions. See `TODO.md` for tool-level tasks.
 5. **Deterministic where it matters.** Validation, traceability queries,
    diffs, and impact analysis are computed by tools; the LLM only decides
    and narrates.
-6. **Complexity is limited at both levels.** `sysml_explorer` limits
+6. **Complexity is limited at both levels.** `system_explorer` limits
    *presentation* complexity (simplified diagrams); a convention linter
    limits *model* complexity by enforcing a house modeling style on top of
    raw syntax validity (see "Convention linter" below). Legal SysML is not
@@ -53,9 +53,11 @@ step-specific tools below.
 Each methodology step gets one or more tools/scripts, exposed to the agent
 (MCP or CLI). Examples: interview-guide generator, transcript → needs
 extractor, requirement quality linter, Pugh matrix / tradespace runner
-(seed: `examples/RoboticArm/1_SystemModel/Tradespace exploration`),
+(seed: the tradespace scripts in the separate RoboticArm_example repo),
 risk-register maintenance, verification-status report, parameter-consistency
-check against CAD/simulation (seed: `Traceability/test_link_lengths_traceability.py`).
+check against CAD/simulation (seed: the RoboticArm example's
+`Traceability/test_link_lengths_traceability.py`, in this repo's git history
+before the examples moved out).
 
 ### Deterministic parser & CI gate
 The OMG pilot parser (conda env `sysml`) is the conformance authority:
@@ -83,7 +85,7 @@ deterministic checks, each with an ID, so violations can be reported in CI,
 surfaced to the coding agent, and suppressed case-by-case with a recorded
 justification when a rule genuinely shouldn't apply.
 
-### sysml_explorer (viewer)
+### system_explorer (viewer)
 Read-only visualization of the model: simplified diagrams, manual layout,
 views saved as sidecars and validated against the model.
 
@@ -122,7 +124,7 @@ flowchart TB
     PARSER["Deterministic parser<br/>(OMG pilot, conda env)"]
     LINT["Convention linter<br/>(naming, single-usage,<br/>model simplicity rules)"]
     CI["CI gate:<br/>validate + lint + consistency checks"]
-    VIEWER["sysml_explorer<br/>(viewer only —<br/>simplified diagrams)"]
+    VIEWER["system_explorer<br/>(viewer only —<br/>simplified diagrams)"]
     CHANGE["Change awareness:<br/>element-level git diff →<br/>session-start briefing"]
 
     SE <--> AGENT
@@ -143,6 +145,9 @@ flowchart TB
 1. **Migrate the model dialect to pure standard SysML v2** (drop `ibd def`
    / `use case useDiagram` forms; use `connect` + `view def`/`view`).
    Cheapest now, expensive later. (Already top of `TODO.md`.)
+   *Status 2026-11:* the explorer no longer parses either form and the
+   CoolSpine example no longer uses them; still to do is getting the
+   official parser green on the example.
 2. **Stage 1 — validation hook:** after any `.sysml` edit by the coding
    agent, automatically run the pilot parser and feed errors back. Direct
    edits stay allowed, but a syntax break can never go unnoticed.
@@ -169,7 +174,7 @@ flowchart TB
 ## Open-source building blocks (evaluated 2026-07)
 
 - `daltskin/sysml-v2-lsp` — LSP + MCP server on local files (read/query/
-  validate); already wrapped by `tools/sysml_jamied_mcp.cmd`.
+  validate); already driven by `python -m system_explorer.jamied_check`.
 - `redsteve/SysML-v2-API-MCP-Server` — MCP client for the standard SysML v2
   API (needs an API server running).
 - `Open-MBEE/sysmod-sysmlv2-api` — methodology-aware (SYSMOD) API + MCP;

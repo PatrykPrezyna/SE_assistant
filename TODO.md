@@ -32,3 +32,29 @@ Minor: _parse_blocks scans char-by-char with no string-literal awareness, so a {
 
 The custom dialect. ibd def X of Owner and use case useDiagram Name for Subject are not SysML v2 — a conforming parser (the pilot implementation, or any future commercial tool) will reject those files. That means your .sysml files can only ever be validated and consumed by this tool, which is the opposite of a single source of truth. The standard way to express both is connect inside part usages (which you already support) and view def/view for diagram membership. I'd treat migrating the dialect toward standard syntax as the highest-leverage improvement — more valuable than any new feature — because it's cheap now and expensive later, once views and models accumulate.
 Coverage gaps mislead the very audience it targets. Non-engineers can't tell "not in the model" from "not parsed" (constraints, states, activities, interfaces are all unparsed). Combined with silent reference-dropping, the diagram can look more complete and more correct than the model is. Honest-uncertainty affordances — the unresolved-reference counter, maybe a per-file "N constructs skipped" note — matter more here than for a tool aimed at modelers.
+
+## Generated default views (not implemented)
+
+Moved here from the code (`DEFAULT_VIEW_SPECS` / `build_default_views()` /
+`sync_default_views()`, a no-op placeholder, removed in 0.1.0). The idea:
+every model gets three standard Views generated from the parsed model
+instead of hand-authored JSON. The CoolSpine example's hand-made
+`views/{context,decomposition,interconnections}.json` are the reference set.
+A generator should only ever overwrite these three ids, never a View made
+by hand.
+
+| id | name | shows |
+| --- | --- | --- |
+| `context` | **1 Context** | every member of the context block plus the connections between them; the context block itself on top, with composition edges shown to its members (system, actors, external systems) |
+| `decomposition` | **2 Decomposition** | the system part def and up to three levels of composition below it, as a pyramid: level 1 centred on top, level 2 spread beneath, level 3 under its own parent. Realization specializations of a level-2 part (`Thermistor :> TemperatureSensor`) count as level 3. Attributes/parts compartments off, **docs on**; connector edges hidden so only the tree shows |
+| `interconnections` | **3 Interconnections** | the connections declared in the system part def, between its **first-level parts only**. The system block itself is deliberately not a member, so no composition edge competes with the connectors. (The system's "internal block diagram", named for what it shows rather than for SysML v1.) |
+
+## Unfinished notes from the old README
+
+Moved here when README.md became the tool's front page:
+
+- SE task map link: TBD
+- useful SysML tutorials: advent
+- MAS4SysML citation: [@liuMAS4SysMLMultiAgentFramework2026]
+- "System modeling:" (unfinished list entry)
+- similar work: "Johnsep"
