@@ -20,6 +20,9 @@ system-explorer <folder> [--port 8199] [--no-open]
 - `--check` — run only the validation: print every warning (see
   **Validation**) and exit nonzero if there are any, usable as a
   pre-commit/CI gate.
+- `--publish <outdir>` — write a static view-only **Viewer** site into
+  `<outdir>` and exit (see **Published Viewer**). Combined with `--check`,
+  the site is written only when validation reports no warnings.
 
 Each View is saved to `<folder>/views/<id>.json` (including activity
 Views); everything else (documentation links, the element tree panel, the
@@ -534,6 +537,46 @@ not shown in the viewer UI; `GET /api/model` reports it as
   the id/filename never changes, only the `name` field inside); an
   idempotent create-or-replace, not update-only
 - `DELETE /api/views/<id>` — remove a View
+
+## Published Viewer (`publish.py`, `publish_viewer.html`)
+
+`system-explorer <folder> --publish <outdir>` writes a static site that
+shows the prepared block Views and nothing else. It is the phone page: view
+only, no dragging, no saving, no element tree. Activity Views (`kind:
+"activity"`) are skipped and counted on stdout. The Explorer remains the
+tool that creates Views and positions.
+
+`<outdir>` contents:
+
+- `index.html` — `publish_viewer.html` with the model, Views, and
+  documentation links embedded so the page renders without a server
+- `model.json` — the same parsed model the Explorer serves, plus
+  `explorerVersion` and `file`
+- `views.json` — `{views: [{id, name, description, elements, nodes,
+  hiddenEdges}]}` for every block View, in filename order. Invalid JSON
+  and ids that are not slugs are skipped
+- `docs.json` — `{links, omitted}`. `links` maps an element id to an
+  `http(s)` URL or to `files/<path>` inside the site. `omitted` lists
+  documentation links that were not published
+- `files/` — copies of linked files that resolve inside the model folder.
+  A path that escapes the folder, or that is not a file, is omitted. The
+  `files/` directory is replaced on every publish
+
+On the page, the home screen lists those Views. Opening one draws its
+members at the saved positions (elements with no saved position stack in a
+column underneath). The whole View is then shifted so its top-left
+sits on the page; relative placement is unchanged. A single usage of a part def is hidden when that def is
+also on the View, matching the Explorer. Edges between visible members are
+drawn, except hidden edges and the type-level edges the Explorer already
+suppresses when the usage nodes are on the diagram. A tap opens a panel
+with the element's `doc` text, an **Open documentation** link when one was
+published, **Requirements** (every element it `satisfy`s, with that
+requirement's `doc`), and **Satisfied by** when the element is itself a
+requirement. Positions cannot be changed. `?v=<view id>&e=<element id>`
+opens that View and panel directly.
+
+With `--check`, warnings are printed and the site is not written when there
+are any.
 
 ## Hosted mode (`src/system_explorer/cloud.py`)
 

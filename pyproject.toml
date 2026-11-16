@@ -21,4 +21,4 @@ version = {attr = "system_explorer.version.__version__"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-system_explorer = ["viewer.html"]
+system_explorer = ["viewer.html", "publish_viewer.html"]

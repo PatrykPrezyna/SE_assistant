@@ -64,6 +64,31 @@ system-explorer .
 That checkout is the reference model for manual testing and for the hosted
 demo (`GITHUB_REPO` in [`render.yaml`](render.yaml)).
 
+## Published Viewer (phone)
+
+The Explorer is where an engineer edits `.sysml` (by hand or with the AI
+chat) and arranges prepared Views. The Viewer is a separate, view-only site
+generated from that folder: elements stay where they were placed, a tap
+shows the element's `doc` text, the requirements it `satisfy`s, and its
+documentation link.
+
+```
+system-explorer <folder> --publish docs
+```
+
+`<outdir>` (here `docs/`) receives `index.html`, `model.json`, `views.json`,
+`docs.json`, and copies of documentation files that live inside the model
+folder. Open `index.html` through any static host. Activity Views are left
+out; block Views are published.
+
+On each push of the model repository, GitHub Actions can run that command
+and deploy the folder to GitHub Pages. The workflow lives in the model
+repo at `.github/workflows/viewer.yml` (added in `spine-cooling`). It
+installs this package from a pinned ref, so a later Explorer change does
+not rebuild the site until that ref moves. An `http(s)` documentation link
+opens as-is. A path outside the model folder is listed in `docs.json`
+under `omitted` and is not copied.
+
 ## Setting up the validation parsers
 
 `system-explorer --check` is a fast, dependency-free sanity check built on this
@@ -340,8 +365,10 @@ servers before debugging the tool.
 ```
 src/system_explorer/
   app.py             parser, local HTTP server, and the system-explorer CLI
+  publish.py         --publish: static view-only Viewer site
   cloud.py           hosted mode (system-explorer-cloud)
-  viewer.html        the whole browser UI
+  viewer.html        the Explorer UI
+  publish_viewer.html  the view-only Viewer page (--publish fills it in)
   official_check.py  OMG pilot-parser validator (python -m system_explorer.official_check)
   jamied_check.py    JamieD parser validator (python -m system_explorer.jamied_check)
 tests/test_system_explorer.py

@@ -17,7 +17,7 @@ import threading
 import unittest
 import urllib.error
 import urllib.request
-from http.server import ThreadingHTTPServer
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 SRC = Path(__file__).resolve().parents[1] / "src"
@@ -27,6 +27,7 @@ from system_explorer import (  # noqa: E402
     make_handler,
     parse_models,
     parse_sysml,
+    publish_site,
 )
 from system_explorer import app as app_mod  # noqa: E402
 
@@ -3111,6 +3112,179 @@ class CloudAnonymousTests(unittest.TestCase):
                 f"{cloud_mod.BOT_NAME} <{cloud_mod.BOT_EMAIL}>|Create view"))
         finally:
             fx.close()
+
+
+class PublishTests(unittest.TestCase):
+    """--publish writes a static view-only site from prepared Views."""
+
+    def write_model(self, folder):
+        (folder / "model.sysml").write_text(SAMPLE, encoding="utf-8")
+        notes = folder / "notes"
+        notes.mkdir()
+        (notes / "fast.txt").write_text("requirement note\n", encoding="utf-8")
+        outside = folder.parent / "outside.txt"
+        outside.write_text("nope\n", encoding="utf-8")
+        (folder / "layout.json").write_text(json.dumps({
+            "docs": {
+                "TestPkg::Motor": "https://example.com/motor",
+                "TestPkg::Reqs::Fast": "notes/fast.txt",
+                "TestPkg::Wheel": "../outside.txt",
+                "TestPkg::Chassis": "notes/missing.txt",
+            },
+        }), encoding="utf-8")
+        views = folder / "views"
+        views.mkdir()
+        (views / "context.json").write_text(json.dumps({
+            "name": "Context",
+            "description": "The system and its requirement.",
+            "elements": ["TestPkg::Motor", "TestPkg::Reqs::Fast"],
+            "nodes": {
+                "TestPkg::Motor": {"x": 40, "y": 80},
+                "TestPkg::Reqs::Fast": {"x": 280, "y": 80},
+            },
+            "hiddenEdges": [],
+        }), encoding="utf-8")
+        (views / "flow.json").write_text(json.dumps({
+            "name": "Flow", "kind": "activity", "elements": [], "nodes": {},
+        }), encoding="utf-8")
+        (views / "arch.json").write_text(json.dumps({
+            "name": "Architecture",
+            "elements": ["TestPkg::Robot", "TestPkg::robot1"],
+            "nodes": {
+                "TestPkg::Robot": {"x": -30, "y": -10},
+                "TestPkg::robot1": {"x": 300, "y": 10},
+            },
+        }), encoding="utf-8")
+        return outside
+
+    def test_publish_writes_views_docs_and_skips_activity(self):
+        with tempfile.TemporaryDirectory() as d:
+            folder = Path(d) / "model"
+            folder.mkdir()
+            self.write_model(folder)
+            out = Path(d) / "site"
+            info = publish_site(folder, out)
+            self.assertEqual(info["views"], 2)
+            self.assertEqual(info["skippedActivity"], 1)
+            self.assertEqual(info["links"]["TestPkg::Motor"],
+                             "https://example.com/motor")
+            self.assertEqual(info["links"]["TestPkg::Reqs::Fast"],
+                             "files/notes/fast.txt")
+            self.assertIn("../outside.txt", info["omitted"])
+            self.assertIn("notes/missing.txt", info["omitted"])
+            page = (out / "index.html").read_text(encoding="utf-8")
+            self.assertNotIn("__VIEWER_DATA__", page)
+            self.assertIn("https://example.com/motor", page)
+            self.assertNotIn("mousemove", page)
+            views = json.loads((out / "views.json").read_text(encoding="utf-8"))
+            self.assertEqual([v["id"] for v in views["views"]],
+                             ["arch", "context"])
+            self.assertEqual(
+                (out / "files" / "notes" / "fast.txt").read_text(encoding="utf-8"),
+                "requirement note\n")
+            model = json.loads((out / "model.json").read_text(encoding="utf-8"))
+            self.assertEqual(model["explorerVersion"], __version__)
+
+    def test_cli_publish_and_check_gate(self):
+        env = dict(os.environ, PYTHONPATH=str(SRC))
+        with tempfile.TemporaryDirectory() as d:
+            folder = Path(d) / "model"
+            folder.mkdir()
+            (folder / "m.sysml").write_text(SAMPLE, encoding="utf-8")
+            out = Path(d) / "site"
+            proc = subprocess.run(
+                [sys.executable, "-m", "system_explorer", str(folder),
+                 "--publish", str(out)],
+                capture_output=True, text=True, timeout=30, env=env,
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertIn("Published 0 view(s)", proc.stdout)
+            self.assertTrue((out / "index.html").is_file())
+
+            bad = Path(d) / "bad"
+            bad.mkdir()
+            (bad / "m.sysml").write_text(
+                "package P { part def A { satisfy NOPE; } }", encoding="utf-8")
+            blocked = Path(d) / "blocked"
+            proc = subprocess.run(
+                [sys.executable, "-m", "system_explorer", str(bad),
+                 "--check", "--publish", str(blocked)],
+                capture_output=True, text=True, timeout=30, env=env,
+            )
+            self.assertEqual(proc.returncode, 1)
+            self.assertFalse(blocked.exists())
+
+
+def dump_published(url):
+    out = subprocess.run(
+        [EDGE, "--headless", "--disable-gpu", "--virtual-time-budget=3000",
+         "--dump-dom", url],
+        capture_output=True, text=True, encoding="utf-8", timeout=60,
+    )
+    return out.stdout
+
+
+@unittest.skipUnless(EDGE, "Microsoft Edge not found; skipping rendering tests")
+class PublishedViewerTests(unittest.TestCase):
+    """The generated page draws a prepared View and lists satisfy links."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        root = Path(cls.tmp.name)
+        cls.folder = root / "model"
+        cls.folder.mkdir()
+        PublishTests().write_model(cls.folder)
+        cls.out = root / "site"
+        publish_site(cls.folder, cls.out)
+
+        class Handler(SimpleHTTPRequestHandler):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, directory=str(cls.out), **kwargs)
+
+            def log_message(self, fmt, *args):
+                pass
+
+        cls.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        cls.url = f"http://127.0.0.1:{cls.server.server_address[1]}"
+        cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
+        cls.thread.start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.shutdown()
+        cls.server.server_close()
+        cls.tmp.cleanup()
+
+    def test_home_lists_prepared_views(self):
+        dom = dump_published(self.url + "/index.html")
+        self.assertIn("Context", dom)
+        self.assertIn("Architecture", dom)
+        self.assertNotIn("Flow", dom)
+
+    def test_view_renders_saved_positions(self):
+        dom = dump_published(self.url + "/index.html?v=context")
+        # saved (40, 80) and (280, 80) are shifted so the top-left node
+        # sits at the page margin; the 240px gap is unchanged
+        self.assertIn('transform="translate(24 24)"', dom)
+        self.assertIn('transform="translate(264 24)"', dom)
+        self.assertIn("Motor", dom)
+        self.assertIn("Fast", dom)
+        self.assertIn('class="edge satisfy"', dom)
+
+    def test_tap_lists_connected_requirements_and_doc_link(self):
+        dom = dump_published(
+            self.url + "/index.html?v=context&e=TestPkg::Motor")
+        self.assertIn("Robot shall be fast.", dom)
+        self.assertIn("https://example.com/motor", dom)
+        self.assertIn(">Fast<", dom)
+
+    def test_singleton_usage_stays_off_the_diagram(self):
+        dom = dump_published(self.url + "/index.html?v=arch")
+        self.assertIn('data-id="TestPkg::Robot"', dom)
+        self.assertNotIn('data-id="TestPkg::robot1"', dom)
+        # a position above/left of the origin is shifted onto the page
+        self.assertIn('transform="translate(24 24)"', dom)
 
 
 if __name__ == "__main__":

@@ -13,6 +13,7 @@ Usage (after `pip install -e .` in this repo, or the git URL in README.md):
     system-explorer <folder> [--port 8199] [--no-open]
     system-explorer <folder> --check   # validate only, nonzero on warnings
     system-explorer <folder> --print   # dump parsed JSON
+    system-explorer <folder> --publish <outdir>  # static view-only site
 
 Without installing, from a checkout of this repo:
     python -m system_explorer <folder>   # run from src/
@@ -1050,6 +1051,12 @@ def main():
         help="validate the model: print every warning and exit nonzero "
              "if there are any (usable as a pre-commit/CI gate)",
     )
+    ap.add_argument(
+        "--publish", metavar="OUTDIR",
+        help="write a static view-only Viewer site (for GitHub Pages) "
+             "and exit. With --check, the site is written only when the "
+             "model has no warnings",
+    )
     args = ap.parse_args()
 
     folder = Path(args.folder).resolve()
@@ -1059,12 +1066,28 @@ def main():
     if model is None:
         sys.exit(f"no .sysml files found directly in {folder}")
 
-    if args.check:
+    if args.publish and args.print:
+        sys.exit("use either --print or --publish")
+
+    if args.check or args.publish:
         for w in model["warnings"]:
             print(f"warning: {w}")
+    if args.check and model["warnings"]:
         n = len(model["warnings"])
-        if n:
-            sys.exit(f"{n} warning(s) in {len(model_paths)} file(s)")
+        sys.exit(f"{n} warning(s) in {len(model_paths)} file(s)")
+    if args.publish:
+        from .publish import publish_site
+        outdir = Path(args.publish)
+        info = publish_site(folder, outdir)
+        print(f"Published {info['views']} view(s) to {outdir.resolve()}")
+        if info["skippedActivity"]:
+            print(f"skipped {info['skippedActivity']} activity view(s)")
+        if info["omitted"]:
+            print("omitted documentation links outside the model folder:")
+            for raw in info["omitted"]:
+                print(f"  {raw}")
+        return
+    if args.check:
         print(f"OK — {len(model['nodes'])} elements, no warnings")
         return
 

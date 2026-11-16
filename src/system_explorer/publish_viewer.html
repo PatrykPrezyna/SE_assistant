@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Viewer</title>
+<style>
+  :root { color-scheme: light; }
+  html, body { margin: 0; height: 100%;
+    font-family: "Segoe UI", system-ui, sans-serif; background: #f3f5f8;
+    color: #1c1c1c; }
+  header { position: sticky; top: 0; z-index: 5; display: flex;
+    align-items: center; gap: 8px; min-height: 48px; padding: 8px 12px;
+    background: #fff; border-bottom: 1px solid #e2e5ea; }
+  header h1 { font-size: 17px; font-weight: 650; margin: 0; line-height: 1.3; }
+  header button, .card, .sheet button.row { font: inherit; }
+  #back { min-height: 40px; padding: 8px 12px; border-radius: 8px;
+    border: 1px solid #d5d8de; background: #fff; }
+  #home, #stage { display: none; }
+  body.home #home, body.view #stage { display: block; }
+  #home { padding: 16px 16px 32px; max-width: 640px; margin: 0 auto; }
+  #home .lead { margin: 0 0 14px; color: #555; font-size: 14px; line-height: 1.45; }
+  .card { display: block; width: 100%; text-align: left; margin: 0 0 12px;
+    padding: 14px 16px; border-radius: 12px; border: 1px solid #e0e3e8;
+    background: #fff; min-height: 48px; }
+  .card strong { display: block; font-size: 16px; }
+  .card span { display: block; margin-top: 4px; color: #666; font-size: 13px;
+    line-height: 1.4; }
+  #empty { color: #666; font-size: 15px; }
+  #warn { display: none; margin: 0 0 12px; padding: 8px 10px; border-radius: 8px;
+    background: #fff8e1; color: #7a5c00; font-size: 13px; }
+  #stage { position: fixed; top: 57px; left: 0; right: 0; bottom: 0; }
+  #canvas { position: absolute; inset: 0; overflow: auto; -webkit-overflow-scrolling: touch;
+    touch-action: pan-x pan-y pinch-zoom; background:
+      linear-gradient(#e6e9ee 1px, transparent 1px) 0 0 / 24px 24px,
+      linear-gradient(90deg, #e6e9ee 1px, transparent 1px) 0 0 / 24px 24px,
+      #f7f8fb; }
+  svg { display: block; }
+  .node { cursor: pointer; }
+  .node rect { fill: #fff; stroke: #1a6bbf; stroke-width: 1.5; rx: 6; }
+  .node.req rect { fill: #fff8e1; stroke: #a08000; }
+  .node.actor rect { fill: #f3f0ff; stroke: #5b4b8a; }
+  .node.usecase rect { fill: #f3fff6; stroke: #2e7d4f; }
+  .node.sel rect { stroke-width: 3; }
+  .node text { font-family: "Segoe UI", system-ui, sans-serif; pointer-events: none; }
+  .node .kind { fill: #777; font-size: 11px; }
+  .node .name { fill: #1c1c1c; font-size: 15px; font-weight: 650; }
+  .edge line { stroke: #8aa0b8; stroke-width: 1.4; }
+  .edge.satisfy line { stroke: #a08000; stroke-dasharray: 5 4; }
+  .edge text { fill: #667; font-size: 11px; font-family: "Segoe UI", system-ui, sans-serif; }
+  #sheet { display: none; position: fixed; left: 0; right: 0; bottom: 0; z-index: 6;
+    max-height: 72vh; overflow: auto; background: #fff; border-radius: 16px 16px 0 0;
+    box-shadow: 0 -6px 28px rgba(0,0,0,.16); padding: 8px 16px 24px; }
+  body.sheet #sheet { display: block; }
+  #sheet .grab { width: 36px; height: 4px; border-radius: 2px; background: #ddd;
+    margin: 4px auto 10px; }
+  #sheet h2 { font-size: 18px; margin: 0 8px 2px 0; }
+  #sheet .kind { color: #777; font-size: 12px; margin: 0 0 10px; }
+  #sheet .doc { white-space: pre-wrap; font-size: 15px; line-height: 1.45; margin: 0 0 12px; }
+  #sheet .doc:empty, #sheet .doc.hidden { display: none; }
+  #docLink { display: inline-block; margin: 0 0 14px; color: #1a6bbf; font-size: 15px; }
+  #docLink.hidden { display: none; }
+  #sheet h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em;
+    color: #888; margin: 8px 0; }
+  #sheet h3.hidden, #sheet ul.hidden { display: none; }
+  #sheet ul { list-style: none; margin: 0 0 8px; padding: 0; }
+  #sheet button.row { display: block; width: 100%; text-align: left;
+    padding: 10px 12px; margin: 0 0 8px; border-radius: 10px;
+    border: 1px solid #e4e6eb; background: #fafbfc; min-height: 44px; }
+  #sheet button.row small { display: block; color: #555; font-size: 13px;
+    white-space: pre-wrap; margin-top: 2px; }
+  #closeSheet { position: absolute; top: 10px; right: 12px; border: none;
+    background: none; font-size: 22px; line-height: 1; padding: 8px; color: #666; }
+</style>
+</head>
+<body class="home">
+<header>
+  <button type="button" id="back" hidden>Views</button>
+  <h1 id="title">Viewer</h1>
+</header>
+<main id="home">
+  <p class="lead">Prepared views. Nothing here can be moved.</p>
+  <div id="warn"></div>
+  <div id="cards"></div>
+  <p id="empty" hidden>No prepared views yet.</p>
+</main>
+<div id="stage">
+  <div id="canvas"></div>
+</div>
+<aside id="sheet" aria-live="polite">
+  <div class="grab"></div>
+  <button type="button" id="closeSheet" aria-label="Close">×</button>
+  <h2 id="sheetName"></h2>
+  <p class="kind" id="sheetKind"></p>
+  <p class="doc" id="sheetDoc"></p>
+  <a id="docLink" target="_blank" rel="noopener">Open documentation</a>
+  <h3 id="reqHead">Requirements</h3>
+  <ul id="reqList"></ul>
+  <h3 id="byHead">Satisfied by</h3>
+  <ul id="byList"></ul>
+</aside>
+<script id="viewer-data" type="application/json">__VIEWER_DATA__</script>
+<script>
+const DATA = JSON.parse(document.getElementById("viewer-data").textContent);
+const model = DATA.model || { nodes: [], edges: [], warnings: [] };
+const views = DATA.views || [];
+const docs = DATA.docs || {};
+const byId = Object.fromEntries((model.nodes || []).map(n => [n.id, n]));
+
+const NS = "http://www.w3.org/2000/svg";
+const measureCtx = document.createElement("canvas").getContext("2d");
+function textWidth(text, font) {
+  measureCtx.font = font;
+  return measureCtx.measureText(text).width;
+}
+function edgeKey(d) {
+  return d.kind + "|" + d.from + "|" + d.to + "|" + (d.label || "");
+}
+function partUsagesByTypeId() {
+  const map = new Map();
+  for (const e of model.edges || []) {
+    if (e.kind !== "typing") continue;
+    const usage = byId[e.from], type = byId[e.to];
+    if (!usage || usage.kind !== "part") continue;
+    if (!type || type.kind !== "part def") continue;
+    const list = map.get(e.to) || [];
+    list.push(e.from);
+    map.set(e.to, list);
+  }
+  return map;
+}
+function suppressedSingletonUsages(vis) {
+  const suppressed = new Set();
+  for (const [typeId, usageIds] of partUsagesByTypeId()) {
+    if (usageIds.length !== 1) continue;
+    const u = usageIds[0];
+    if (vis.has(typeId) && vis.has(u)) suppressed.add(u);
+  }
+  return suppressed;
+}
+function nodeSize(d) {
+  const kind = "«" + d.kind + "»";
+  const name = (d.shortName ? "«" + d.shortName + "» " : "") + d.name;
+  const w = Math.max(132, Math.ceil(Math.max(
+    textWidth(kind, "11px sans-serif"),
+    textWidth(name, "600 15px sans-serif")) + 28));
+  return { w, h: 56 };
+}
+function state() {
+  const q = new URLSearchParams(location.search);
+  return { v: q.get("v"), e: q.get("e") };
+}
+function go(v, e, push) {
+  const q = new URLSearchParams();
+  if (v) q.set("v", v);
+  if (e) q.set("e", e);
+  const next = location.pathname + (q.toString() ? "?" + q.toString() : "");
+  const now = location.pathname + location.search;
+  if (next === now) { render(); return; }
+  history[push ? "pushState" : "replaceState"](null, "", next);
+  render();
+}
+function findView(id) {
+  return views.find(v => v.id === id) || null;
+}
+function requirementsOf(id) {
+  const out = [];
+  for (const e of model.edges || [])
+    if (e.kind === "satisfy" && e.from === id && byId[e.to] && !out.includes(e.to))
+      out.push(e.to);
+  return out;
+}
+function satisfiersOf(id) {
+  const out = [];
+  for (const e of model.edges || [])
+    if (e.kind === "satisfy" && e.to === id && byId[e.from] && !out.includes(e.from))
+      out.push(e.from);
+  return out;
+}
+function fillLinks(listId, headId, ids, viewId) {
+  const list = document.getElementById(listId);
+  const head = document.getElementById(headId);
+  list.textContent = "";
+  head.classList.toggle("hidden", !ids.length);
+  list.classList.toggle("hidden", !ids.length);
+  for (const id of ids) {
+    const n = byId[id];
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "row";
+    btn.textContent = n.name;
+    if (n.doc) {
+      const small = document.createElement("small");
+      small.textContent = n.doc;
+      btn.appendChild(small);
+    }
+    btn.addEventListener("click", () => go(viewId, id, true));
+    list.appendChild(btn);
+  }
+}
+function showSheet(view, id) {
+  const n = byId[id];
+  document.body.classList.toggle("sheet", !!n);
+  if (!n) return;
+  document.getElementById("sheetName").textContent = n.name;
+  document.getElementById("sheetKind").textContent =
+    "«" + n.kind + "»" + (n.shortName ? "  «" + n.shortName + "»" : "");
+  const doc = document.getElementById("sheetDoc");
+  doc.textContent = n.doc || "";
+  doc.classList.toggle("hidden", !n.doc);
+  const link = document.getElementById("docLink");
+  const href = docs[id];
+  if (href) {
+    link.href = href;
+    const leaf = href.split(/[\\/]/).pop();
+    link.textContent = /^https?:\/\//i.test(href)
+      ? "Open documentation" : "Open documentation (" + leaf + ")";
+    link.classList.remove("hidden");
+  } else {
+    link.removeAttribute("href");
+    link.classList.add("hidden");
+  }
+  fillLinks("reqList", "reqHead", requirementsOf(id), view.id);
+  fillLinks("byList", "byHead", satisfiersOf(id), view.id);
+}
+function renderHome() {
+  document.body.className = "home";
+  document.getElementById("back").hidden = true;
+  document.getElementById("title").textContent = "Viewer";
+  const warn = document.getElementById("warn");
+  const warnings = model.warnings || [];
+  warn.style.display = warnings.length ? "block" : "none";
+  warn.textContent = warnings.length
+    ? "The model has " + warnings.length + " validation warning"
+      + (warnings.length === 1 ? "" : "s") + "."
+    : "";
+  const cards = document.getElementById("cards");
+  cards.textContent = "";
+  document.getElementById("empty").hidden = views.length > 0;
+  for (const view of views) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "card";
+    const name = document.createElement("strong");
+    name.textContent = view.name;
+    btn.appendChild(name);
+    const meta = document.createElement("span");
+    const count = (view.elements || []).filter(id => byId[id]).length;
+    meta.textContent = (view.description ? view.description + " — " : "")
+      + count + (count === 1 ? " element" : " elements");
+    btn.appendChild(meta);
+    btn.addEventListener("click", () => go(view.id, null, true));
+    cards.appendChild(btn);
+  }
+}
+function place(view) {
+  const vis = new Set((view.elements || []).filter(id => byId[id]));
+  const suppressed = suppressedSingletonUsages(vis);
+  const saved = view.nodes || {};
+  const nodes = {};
+  const pending = [];
+  let maxY = 24;
+  for (const id of vis) {
+    if (suppressed.has(id)) continue;
+    const size = nodeSize(byId[id]);
+    const pos = saved[id];
+    if (pos && typeof pos.x === "number" && typeof pos.y === "number") {
+      nodes[id] = { data: byId[id], x: pos.x, y: pos.y, w: size.w, h: size.h };
+      maxY = Math.max(maxY, pos.y + size.h);
+    } else {
+      pending.push(id);
+    }
+  }
+  let y = pending.length && Object.keys(nodes).length ? maxY + 32 : 24;
+  for (const id of pending) {
+    const size = nodeSize(byId[id]);
+    nodes[id] = { data: byId[id], x: 24, y, w: size.w, h: size.h };
+    y += size.h + 24;
+  }
+  // The Explorer stores positions in a pannable world. Move the whole
+  // drawing so its top-left sits on the page; relative placement stays.
+  let minX = Infinity, minY = Infinity;
+  for (const n of Object.values(nodes)) {
+    minX = Math.min(minX, n.x);
+    minY = Math.min(minY, n.y);
+  }
+  if (Number.isFinite(minX)) {
+    const dx = 24 - minX, dy = 24 - minY;
+    for (const n of Object.values(nodes)) { n.x += dx; n.y += dy; }
+  }
+  return nodes;
+}
+function renderView(view, selected) {
+  document.body.className = "view" + (selected && byId[selected] ? " sheet" : "");
+  document.getElementById("back").hidden = false;
+  document.getElementById("title").textContent = view.name;
+  const nodes = place(view);
+  const hidden = new Set(view.hiddenEdges || []);
+  const shown = (model.edges || []).filter(d =>
+    nodes[d.from] && nodes[d.to] && !hidden.has(edgeKey(d))
+    && !(d.usageId && nodes[d.usageId])
+    && !(d.fromUsage && nodes[d.fromUsage] && d.toUsage && nodes[d.toUsage]));
+  let maxX = 320, maxY = 200;
+  for (const n of Object.values(nodes)) {
+    maxX = Math.max(maxX, n.x + n.w + 32);
+    maxY = Math.max(maxY, n.y + n.h + 32);
+  }
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("width", maxX);
+  svg.setAttribute("height", maxY);
+  svg.setAttribute("id", "diagram");
+  const edges = document.createElementNS(NS, "g");
+  const layer = document.createElementNS(NS, "g");
+  svg.appendChild(edges);
+  svg.appendChild(layer);
+  const pairCount = {}, pairSeen = {};
+  for (const d of shown) {
+    const key = [d.from, d.to].sort().join("|");
+    pairCount[key] = (pairCount[key] || 0) + 1;
+  }
+  for (const d of shown) {
+    const a = nodes[d.from], b = nodes[d.to];
+    const key = [d.from, d.to].sort().join("|");
+    const i = (pairSeen[key] = (pairSeen[key] || 0) + 1);
+    const off = pairCount[key] > 1 ? (i - 1 - (pairCount[key] - 1) / 2) * 10 : 0;
+    const p1 = borderPoint(a, b), p2 = borderPoint(b, a);
+    const g = document.createElementNS(NS, "g");
+    g.setAttribute("class", "edge " + d.kind);
+    const line = document.createElementNS(NS, "line");
+    const mx = (p1.x + p2.x) / 2, my = (p1.y + p2.y) / 2;
+    const len = Math.hypot(p2.x - p1.x, p2.y - p1.y) || 1;
+    const ox = -(p2.y - p1.y) / len * off, oy = (p2.x - p1.x) / len * off;
+    line.setAttribute("x1", p1.x + ox); line.setAttribute("y1", p1.y + oy);
+    line.setAttribute("x2", p2.x + ox); line.setAttribute("y2", p2.y + oy);
+    g.appendChild(line);
+    if (d.label) {
+      const t = document.createElementNS(NS, "text");
+      t.setAttribute("x", mx + ox);
+      t.setAttribute("y", my + oy - 4);
+      t.textContent = d.label;
+      g.appendChild(t);
+    }
+    edges.appendChild(g);
+  }
+  for (const n of Object.values(nodes)) {
+    const g = document.createElementNS(NS, "g");
+    g.setAttribute("class", "node"
+      + (n.data.kind.startsWith("requirement") ? " req" : "")
+      + (n.data.kind === "actor def" || n.data.kind === "actor" ? " actor" : "")
+      + (n.data.kind === "use case def" || n.data.kind === "use case" ? " usecase" : "")
+      + (n.data.id === selected ? " sel" : ""));
+    g.dataset.id = n.data.id;
+    g.setAttribute("transform", "translate(" + n.x + " " + n.y + ")");
+    const rect = document.createElementNS(NS, "rect");
+    rect.setAttribute("width", n.w);
+    rect.setAttribute("height", n.h);
+    rect.setAttribute("rx", 6);
+    g.appendChild(rect);
+    const kind = document.createElementNS(NS, "text");
+    kind.setAttribute("class", "kind");
+    kind.setAttribute("x", 12);
+    kind.setAttribute("y", 20);
+    kind.textContent = "«" + n.data.kind + "»";
+    g.appendChild(kind);
+    const name = document.createElementNS(NS, "text");
+    name.setAttribute("class", "name");
+    name.setAttribute("x", 12);
+    name.setAttribute("y", 40);
+    name.textContent = (n.data.shortName ? "«" + n.data.shortName + "» " : "") + n.data.name;
+    g.appendChild(name);
+    g.addEventListener("click", evt => {
+      evt.stopPropagation();
+      go(view.id, n.data.id, true);
+    });
+    layer.appendChild(g);
+  }
+  svg.addEventListener("click", () => { if (selected) go(view.id, null, true); });
+  const canvas = document.getElementById("canvas");
+  canvas.textContent = "";
+  canvas.appendChild(svg);
+  showSheet(view, selected);
+}
+function borderPoint(n, toward) {
+  const cx = n.x + n.w / 2, cy = n.y + n.h / 2;
+  const tx = toward.x + toward.w / 2, ty = toward.y + toward.h / 2;
+  const dx = tx - cx, dy = ty - cy;
+  if (!dx && !dy) return { x: cx, y: cy };
+  const sx = dx ? (n.w / 2) / Math.abs(dx) : Infinity;
+  const sy = dy ? (n.h / 2) / Math.abs(dy) : Infinity;
+  const s = Math.min(sx, sy);
+  return { x: cx + dx * s, y: cy + dy * s };
+}
+function render() {
+  const { v, e } = state();
+  const view = v ? findView(v) : null;
+  if (!view) renderHome();
+  else renderView(view, e);
+}
+document.getElementById("back").addEventListener("click", () => go(null, null, true));
+document.getElementById("closeSheet").addEventListener("click", () => {
+  const { v } = state();
+  go(v, null, true);
+});
+window.addEventListener("popstate", render);
+render();
+</script>
+</body>
+</html>
