@@ -1,0 +1,52 @@
+# Product-development methodology.
+#
+# Each entry under `activities` is one step a team is guided through.
+# `method` says how to do the step. `tool` is the script that checks the
+# register and writes the model. Progress is stored in the model folder
+# (see `register` and `outputs`), not in this file.
+#
+# Worked example:
+#   python methodology/stakeholder_analysis.py check methodology/example
+#   python methodology/stakeholder_analysis.py apply methodology/example
+
+id: product-development
+name: Product development
+activities:
+  - id: stakeholder-analysis
+    name: Stakeholder analysis
+    order: 1
+    summary: Name the people and organizations who have a stake in the product, give each one a category, and write at least one user need for each.
+    method:
+      steps:
+        - id: list
+          text: Write a list of stakeholders.
+        - id: needs
+          text: Write at least one user need for each stakeholder.
+        - id: categorize
+          text: Categorize each stakeholder as customer, internal, or regulatory.
+      categories:
+        - id: customer
+          label: Customer
+          sysml: Customer
+          doc: A person or organization who uses the product or is directly affected by it.
+        - id: internal
+          label: Internal stakeholder
+          sysml: InternalStakeholder
+          doc: A role inside the team that develops the product.
+        - id: regulatory
+          label: Regulatory
+          sysml: RegulatoryStakeholder
+          doc: A body that decides whether the product may be placed on the market.
+      exit:
+        - id: has-stakeholder
+          text: The list contains at least one stakeholder.
+        - id: each-has-need
+          text: Every stakeholder has at least one user need.
+        - id: each-categorized
+          text: Every stakeholder is categorized as customer, internal, or regulatory.
+    tool: methodology/stakeholder_analysis.py
+    register: process/stakeholders.yaml
+    outputs:
+      stakeholders: stakeholders.sysml
+      needs: user_needs.sysml
+      state: process/state.yaml

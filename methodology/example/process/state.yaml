@@ -1,0 +1,33 @@
+# Written by stakeholder_analysis.py. Re-run the tool after editing the register.
+methodology: product-development
+activity: stakeholder-analysis
+status: done
+register: process/stakeholders.yaml
+system: InfusionPump
+outputs:
+  - stakeholders.sysml
+  - user_needs.sysml
+stakeholders:
+  - name: Surgeon
+    category: customer
+    needs:
+      - NEED-1
+      - NEED-2
+  - name: SystemsEngineer
+    category: internal
+    needs:
+      - NEED-3
+  - name: NotifiedBody
+    category: regulatory
+    needs:
+      - NEED-4
+exit:
+  - id: has-stakeholder
+    met: true
+    text: The list contains at least one stakeholder.
+  - id: each-has-need
+    met: true
+    text: Every stakeholder has at least one user need.
+  - id: each-categorized
+    met: true
+    text: Every stakeholder is categorized as customer, internal, or regulatory.

@@ -3519,5 +3519,250 @@ class NotationProfileTests(unittest.TestCase):
         self.assertEqual(labels["specialization"], "kind of")
         self.assertEqual(labels["typing"], "is a")
 
+
+def _load_stakeholder_tool():
+    path = Path(__file__).resolve().parents[1] / "methodology" / "stakeholder_analysis.py"
+    spec = importlib.util.spec_from_file_location("stakeholder_analysis", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class StakeholderAnalysisTests(unittest.TestCase):
+    """The stakeholder-analysis activity: register in, SysML and process state out."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tool = _load_stakeholder_tool()
+        cls.root = Path(__file__).resolve().parents[1]
+        cls.example = cls.root / "methodology" / "example"
+        cls.methodology = cls.root / "methodology" / "product-development.yaml"
+
+    def test_methodology_file_declares_the_three_rules(self):
+        methodology_id, activity = self.tool.load_methodology(self.methodology)
+        self.assertEqual(methodology_id, "product-development")
+        self.assertEqual(activity["order"], 1)
+        self.assertEqual(
+            [step["id"] for step in activity["method"]["steps"]],
+            ["list", "needs", "categorize"],
+        )
+        self.assertEqual(
+            [item["id"] for item in activity["method"]["categories"]],
+            ["customer", "internal", "regulatory"],
+        )
+        self.assertEqual(
+            [rule["id"] for rule in activity["method"]["exit"]],
+            ["has-stakeholder", "each-has-need", "each-categorized"],
+        )
+
+    def test_yaml_keeps_quoted_colons_and_drops_comments(self):
+        loaded = self.tool.load_yaml(
+            '# heading\n'
+            'system: InfusionPump  # the device\n'
+            'note: "The surgeon needs: a clear field."\n'
+        )
+        self.assertEqual(loaded["system"], "InfusionPump")
+        self.assertEqual(loaded["note"], "The surgeon needs: a clear field.")
+
+    def test_example_parses_without_warnings(self):
+        folder = self.example
+        texts = [
+            (folder / name).read_text(encoding="utf-8")
+            for name in ("stakeholders.sysml", "user_needs.sysml")
+        ]
+        model = parse_models(texts, ["stakeholders.sysml", "user_needs.sysml"])
+        self.assertEqual(model["warnings"], [])
+        self.assertEqual(node(model, "Surgeon")["kind"], "part def")
+        self.assertTrue(node(model, "Customer")["abstract"])
+        specs = {
+            (e["from"].split("::")[-1], e["to"].split("::")[-1])
+            for e in edges_of(model, "specialization")
+        }
+        self.assertIn(("Surgeon", "Customer"), specs)
+        self.assertIn(("SystemsEngineer", "InternalStakeholder"), specs)
+        self.assertIn(("NotifiedBody", "RegulatoryStakeholder"), specs)
+        self.assertIn(("Customer", "Stakeholder"), specs)
+        need = node(model, "SetTargetTemperature")
+        self.assertEqual(need["kind"], "requirement")
+        self.assertEqual(need["shortName"], "NEED-1")
+        self.assertIn("Stakeholder: Surgeon (Customer).", need["doc"])
+        comps = [
+            (e["from"].split("::")[-1], e["to"].split("::")[-1], e["label"])
+            for e in edges_of(model, "composition")
+            if e["label"]
+        ]
+        self.assertIn(("OperationalContext", "Surgeon", "surgeon"), comps)
+        self.assertIn(("OperationalContext", "InfusionPump", "infusionPump"), comps)
+
+    def test_check_example_is_done_and_does_not_write(self):
+        before = {
+            name: (self.example / name).read_bytes()
+            for name in (
+                "stakeholders.sysml",
+                "user_needs.sysml",
+                "process/state.yaml",
+                "process/stakeholders.yaml",
+            )
+        }
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            code = self.tool.main(["check", str(self.example)])
+        self.assertEqual(code, 0)
+        self.assertIn("Status: done", buf.getvalue())
+        self.assertIn("apply would write", buf.getvalue())
+        self.assertNotIn("Wrote ", buf.getvalue())
+        after = {
+            name: (self.example / name).read_bytes()
+            for name in before
+        }
+        self.assertEqual(after, before)
+
+    def test_apply_reproduces_the_example(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            (folder / "process").mkdir()
+            shutil.copy(
+                self.example / "process" / "stakeholders.yaml",
+                folder / "process" / "stakeholders.yaml",
+            )
+            result = self.tool.execute("apply", folder, self.methodology)
+            self.assertEqual(result.code, 0)
+            self.assertIn("Wrote stakeholders.sysml, user_needs.sysml, process/state.yaml.", result.report)
+            for name in ("stakeholders.sysml", "user_needs.sysml", "process/state.yaml"):
+                got = (folder / name).read_text(encoding="utf-8").replace("\r\n", "\n")
+                expected = (self.example / name).read_text(encoding="utf-8").replace("\r\n", "\n")
+                self.assertEqual(got, expected, name)
+
+    def test_missing_need_stays_open_and_still_writes_the_model(self):
+        register = """
+system: InfusionPump
+stakeholders:
+  - name: Surgeon
+    category: customer
+    description: Uses the device on a patient.
+    needs:
+      - id: NEED-1
+        name: SetTargetTemperature
+        text: The surgeon needs to set a temperature.
+  - name: SystemsEngineer
+    category: internal
+    description: Develops the product.
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            self._write_register(folder, register)
+            result = self.tool.execute("apply", folder, self.methodology)
+            self.assertEqual(result.code, 2)
+            self.assertIn("SystemsEngineer has no user need.", result.report)
+            self.assertIn("Status: open", result.report)
+            model = self._parsed(folder)
+            self.assertEqual(model["warnings"], [])
+            self.assertIn("SystemsEngineer", [n["name"] for n in model["nodes"]])
+            self.assertNotIn("TraceableNeeds", [n["name"] for n in model["nodes"]])
+            state = self.tool.load_yaml_file(folder / "process" / "state.yaml")
+            self.assertEqual(state["status"], "open")
+            unmet = [rule["id"] for rule in state["exit"] if not rule["met"]]
+            self.assertEqual(unmet, ["each-has-need"])
+
+    def test_missing_category_specializes_the_base_stakeholder(self):
+        register = """
+system: InfusionPump
+stakeholders:
+  - name: Surgeon
+    description: Uses the device on a patient.
+    needs:
+      - id: NEED-1
+        name: SetTargetTemperature
+        text: The surgeon needs to set a temperature.
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            self._write_register(folder, register)
+            result = self.tool.execute("apply", folder, self.methodology)
+            self.assertEqual(result.code, 2)
+            self.assertIn("Surgeon has no category.", result.report)
+            model = self._parsed(folder)
+            specs = {
+                (e["from"].split("::")[-1], e["to"].split("::")[-1])
+                for e in edges_of(model, "specialization")
+            }
+            self.assertIn(("Surgeon", "Stakeholder"), specs)
+            self.assertIn("Category: not set.", node(model, "Surgeon")["doc"])
+
+    def test_bad_category_does_not_change_the_model(self):
+        register = """
+system: InfusionPump
+stakeholders:
+  - name: Surgeon
+    category: client
+    description: Uses the device.
+    needs:
+      - id: NEED-1
+        name: SetTargetTemperature
+        text: The surgeon needs to set a temperature.
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            self._write_register(folder, register)
+            result = self.tool.execute("apply", folder, self.methodology)
+            self.assertEqual(result.code, 1)
+            self.assertIn("client", result.report)
+            self.assertIn("Model files were not changed.", result.report)
+            self.assertFalse((folder / "stakeholders.sysml").exists())
+            self.assertFalse((folder / "process" / "state.yaml").exists())
+
+    def test_duplicate_need_id_is_an_error(self):
+        register = """
+system: InfusionPump
+stakeholders:
+  - name: Surgeon
+    category: customer
+    needs:
+      - id: NEED-1
+        name: SetTargetTemperature
+        text: One need.
+  - name: NotifiedBody
+    category: regulatory
+    needs:
+      - id: NEED-1
+        name: ShownConformity
+        text: Another need.
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            self._write_register(folder, register)
+            result = self.tool.execute("check", folder, self.methodology)
+            self.assertEqual(result.code, 1)
+            self.assertIn("duplicate need id 'NEED-1'", result.report)
+            self.assertFalse((folder / "stakeholders.sysml").exists())
+
+    def test_missing_register_check_writes_nothing_and_apply_creates_a_template(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            checked = self.tool.execute("check", folder, self.methodology)
+            self.assertEqual(checked.code, 2)
+            self.assertIn("The register file is missing.", checked.report)
+            self.assertIn("apply would write", checked.report)
+            self.assertFalse((folder / "process" / "stakeholders.yaml").exists())
+            applied = self.tool.execute("apply", folder, self.methodology)
+            self.assertEqual(applied.code, 2)
+            self.assertIn("Wrote process/stakeholders.yaml, process/state.yaml.", applied.report)
+            self.assertFalse((folder / "stakeholders.sysml").exists())
+            template = self.tool.load_yaml_file(folder / "process" / "stakeholders.yaml")
+            self.assertEqual(template["system"], "SystemOfInterest")
+            self.assertEqual(template["stakeholders"], [])
+            state = self.tool.load_yaml_file(folder / "process" / "state.yaml")
+            self.assertEqual(state["status"], "open")
+
+    def _write_register(self, folder, text):
+        path = folder / "process" / "stakeholders.yaml"
+        path.parent.mkdir(parents=True)
+        path.write_text(text.strip() + "\n", encoding="utf-8")
+
+    def _parsed(self, folder):
+        names = ["stakeholders.sysml", "user_needs.sysml"]
+        texts = [(folder / name).read_text(encoding="utf-8") for name in names]
+        return parse_models(texts, names)
+
 if __name__ == "__main__":
     unittest.main()

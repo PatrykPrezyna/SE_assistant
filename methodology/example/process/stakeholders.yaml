@@ -1,0 +1,30 @@
+# Input for the stakeholder-analysis activity. Edit this file, then run
+#   python methodology/stakeholder_analysis.py apply methodology/example
+# The tool rewrites stakeholders.sysml, user_needs.sysml, and process/state.yaml.
+
+system: InfusionPump
+stakeholders:
+  - name: Surgeon
+    category: customer
+    description: Uses the device on a patient during the procedure.
+    needs:
+      - id: NEED-1
+        name: SetTargetTemperature
+        text: The surgeon needs to set the target temperature without looking away from the surgical field.
+      - id: NEED-2
+        name: StableTemperature
+        text: The surgeon needs the delivered temperature to stay at the set value for the whole procedure.
+  - name: SystemsEngineer
+    category: internal
+    description: Develops the product and keeps the model consistent with the design.
+    needs:
+      - id: NEED-3
+        name: TraceableNeeds
+        text: The systems engineer needs every later requirement to trace to a stakeholder need.
+  - name: NotifiedBody
+    category: regulatory
+    description: Reviews the technical documentation before the device is placed on the market.
+    needs:
+      - id: NEED-4
+        name: ShownConformity
+        text: The notified body needs each applicable requirement to have traceable evidence of conformity.

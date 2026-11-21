@@ -281,6 +281,29 @@ Also point the agent at [FEATURES.md](FEATURES.md), so it knows exactly which
 constructs the explorer parses and renders (and which warnings it emits)
 when it edits models meant to be viewed here.
 
+## Guided activity: stakeholder analysis
+
+The first process step lives outside the viewer. The activity is declared in
+[`methodology/product-development.yaml`](methodology/product-development.yaml):
+write a list of stakeholders, write at least one user need for each, and
+categorize each stakeholder as customer, internal, or regulatory. A model
+folder holds the register at `process/stakeholders.yaml`. The script checks
+that register and writes standard SysML v2.
+
+```
+python methodology/stakeholder_analysis.py check methodology/example
+python methodology/stakeholder_analysis.py apply methodology/example
+```
+
+`check` prints the method and which exit rules are still open, and does not
+write files. `apply` writes `stakeholders.sysml`, `user_needs.sysml`, and
+`process/state.yaml` when the register is well formed. Exit code 0 means the
+activity is done, 2 means it is still open, and 1 means the register is
+malformed. `methodology/example` is a finished register for a small infusion
+pump. Open that folder with `system-explorer` to see the stakeholders, the
+three categories, and the needs. Details are in
+[FEATURES.md](FEATURES.md) under *Stakeholder analysis*.
+
 ## Troubleshooting
 
 **PDFs download instead of opening in the tab.** The server serves

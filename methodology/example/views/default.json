@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "name": "Default",
+  "elements": [
+    "Stakeholders::Stakeholder",
+    "Stakeholders::Customer",
+    "Stakeholders::InternalStakeholder",
+    "Stakeholders::RegulatoryStakeholder",
+    "Stakeholders::Surgeon",
+    "Stakeholders::SystemsEngineer",
+    "Stakeholders::NotifiedBody",
+    "Stakeholders::InfusionPump",
+    "Stakeholders::OperationalContext",
+    "UserNeeds::UserNeed",
+    "UserNeeds::SetTargetTemperature",
+    "UserNeeds::StableTemperature",
+    "UserNeeds::TraceableNeeds",
+    "UserNeeds::ShownConformity"
+  ],
+  "nodes": {},
+  "hiddenEdges": [],
+  "view": null,
+  "options": {}
+}

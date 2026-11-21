@@ -156,9 +156,13 @@ flowchart TB
    as the parser. Grows rule-by-rule from there.
 4. **CI validation:** run parser + linter + consistency checks (unresolved
    refs, trace gaps, stale views) on every commit/PR.
-5. **Methodology Agent v1:** encode one methodology as skills/checklists
-   with process state tracked in a project file; wire in the first
-   per-step tools (requirements linter, tradespace runner).
+5. **Methodology Agent v1:** encode one methodology as a YAML checklist
+   with process state in the model folder. The first activity is
+   stakeholder analysis (`methodology/product-development.yaml`,
+   `methodology/stakeholder_analysis.py`): a register of stakeholders,
+   at least one user need each, categorized as customer, internal, or
+   regulatory, written out as standard SysML v2. Later activities
+   (requirements linter, tradespace runner) follow the same shape.
 6. **Stage 2 — structured edits:** small write-side MCP server
    (add element / add relationship / rename with reference updates) that
    validates *before* writing; block direct `.sysml` edits for covered

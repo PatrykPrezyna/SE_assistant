@@ -676,3 +676,74 @@ Environment variables:
 | `WORK_DIR` | no | where the clone lives, default `/tmp/system-explorer/repo` |
 | `GIT_REMOTE` | no | clone URL override (non-GitHub host, or a local path for testing) |
 | `ALLOW_ANONYMOUS` | no | `1` turns sign-in off (*not needed then). Local testing only |
+
+## Stakeholder analysis (`methodology/stakeholder_analysis.py`)
+
+The first guided activity. It is a repository script, not part of the
+installed viewer: the viewer only reads the SysML it writes. The activity
+declaration is [`methodology/product-development.yaml`](methodology/product-development.yaml).
+The worked model is [`methodology/example`](methodology/example).
+
+```
+python methodology/stakeholder_analysis.py check <model-folder>
+python methodology/stakeholder_analysis.py apply <model-folder>
+```
+
+`--methodology` overrides the activities file. The default is
+`product-development.yaml` beside the script.
+
+**Method.** Three steps, printed by both commands:
+
+1. Write a list of stakeholders.
+2. Write at least one user need for each stakeholder.
+3. Categorize each stakeholder as customer, internal, or regulatory.
+
+**Register.** `<model-folder>/process/stakeholders.yaml`. `system` is an
+UpperCamelCase name (default `SystemOfInterest` when the key is omitted).
+Each stakeholder has an UpperCamelCase `name`, an optional `description`,
+a `category` of `customer`, `internal`, or `regulatory`, and a `needs`
+list. Each need has an `id` such as `NEED-1`, an UpperCamelCase `name`,
+and a `text`. Names must not collide with each other or with the generated
+definitions `Stakeholder`, `Customer`, `InternalStakeholder`,
+`RegulatoryStakeholder`, `OperationalContext`, and `UserNeed`.
+
+**Exit rules.** `has-stakeholder` (at least one stakeholder),
+`each-has-need` (every stakeholder has at least one need),
+`each-categorized` (every stakeholder has one of the three categories).
+A missing category or a missing need leaves the activity open and still
+writes the model. An unknown category, a duplicate id or name, a bad
+identifier, or a YAML syntax error is a malformed register: nothing is
+written.
+
+**Exit codes.** 0 when every exit rule is met, 2 when the activity is
+open, 1 when the folder, the methodology file, or the register is
+malformed.
+
+**check** prints the method, the roster, and the exit rules. It does not
+create or modify files. **apply** writes:
+
+- `stakeholders.sysml` — abstract category definitions, one `part def` per
+  stakeholder specializing its category (or `Stakeholder` when the
+  category is still unset), the system of interest, and an
+  `OperationalContext` that composes them. Written only when the register
+  lists at least one stakeholder.
+- `user_needs.sysml` — a `UserNeed` requirement definition and one
+  requirement usage per need, with the need text and stakeholder in
+  `doc` and a `stakeholder` feature typed by that stakeholder's part def.
+  The explorer draws the requirements and their docs; it does not draw a
+  separate edge for the `stakeholder` feature.
+- `process/state.yaml` — methodology id, activity id, `open` or `done`,
+  and the exit-rule results.
+
+When the register file is missing, `apply` creates a commented template
+at `process/stakeholders.yaml` and an open `process/state.yaml`, and does
+not write SysML. `check` only reports that the register is missing.
+
+Both commands read the category ids, labels, docs, step text, and output
+paths from the activity declaration, so a later activities file can rename
+those without changing the script. Adding an exit rule the script does
+not know is an error, rather than a rule that looks enforced and is not.
+
+`validate_register(register)` returns the same structural errors `apply`
+would refuse, without writing a file. The assistant uses it before it
+saves a register the team has confirmed.
