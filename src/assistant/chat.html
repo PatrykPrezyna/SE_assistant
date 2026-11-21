@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SE assistant</title>
+<style>
+  :root { color-scheme: light; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: "Segoe UI", system-ui, sans-serif;
+    background: #f3f5f8; color: #1c1c1c;
+    display: flex; flex-direction: column;
+  }
+  header {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 16px; background: #fff; border-bottom: 1px solid #e2e5ea;
+  }
+  header h1 { font-size: 17px; font-weight: 650; margin: 0; }
+  header .grow { flex: 1; }
+  header a, button {
+    font: inherit; font-size: 14px; color: #1a6bbf; text-decoration: none;
+  }
+  button {
+    min-height: 36px; padding: 6px 14px; cursor: pointer;
+    border-radius: 8px; border: 1px solid #d5d8de; background: #fff; color: #1c1c1c;
+  }
+  button:disabled { opacity: 0.6; cursor: default; }
+  #folder { color: #5c6570; font-size: 13px; }
+  main { flex: 1; overflow: auto; padding: 16px; }
+  .msg { max-width: 42rem; margin: 0 auto 12px; padding: 10px 12px;
+    border-radius: 10px; white-space: pre-wrap; line-height: 1.45; }
+  .msg.assistant { background: #fff; border: 1px solid #e2e5ea; }
+  .msg.user { background: #eaf3fc; border: 1px solid #d3e4f5; }
+  .notes { max-width: 42rem; margin: -6px auto 12px; color: #5c6570; font-size: 13px; }
+  #error { max-width: 42rem; margin: 0 auto 12px; color: #9a3412; }
+  form {
+    display: flex; gap: 8px; padding: 12px 16px; background: #fff;
+    border-top: 1px solid #e2e5ea;
+  }
+  textarea {
+    flex: 1; font: inherit; font-size: 15px; min-height: 44px; max-height: 160px;
+    resize: vertical; padding: 8px 10px; border-radius: 8px; border: 1px solid #d5d8de;
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>SE assistant</h1>
+  <span id="folder"></span>
+  <span class="grow"></span>
+  <a id="diagram" href="http://127.0.0.1:8199/">Open the diagram</a>
+</header>
+<main id="log"></main>
+<form id="composer">
+  <label for="draft" class="grow" style="position:absolute;left:-9999px">Message</label>
+  <textarea id="draft" placeholder="Reply to the assistant"></textarea>
+  <button type="submit" id="send">Send</button>
+</form>
+<script>
+const log = document.getElementById("log");
+const draft = document.getElementById("draft");
+const send = document.getElementById("send");
+let messages = [];
+let busy = false;
+
+function add(parent, tag, className, text) {
+  const el = document.createElement(tag);
+  if (className) el.className = className;
+  el.textContent = text;
+  parent.appendChild(el);
+  return el;
+}
+
+function render(notes, error) {
+  log.replaceChildren();
+  for (const message of messages) {
+    add(log, "div", "msg " + message.role, message.content);
+  }
+  if (notes && notes.length) add(log, "div", "notes", notes.join(" "));
+  if (error) add(log, "div", "", error).id = "error";
+  log.scrollTop = log.scrollHeight;
+}
+
+async function start() {
+  const response = await fetch("/api/session");
+  const data = await response.json();
+  messages = data.messages || [];
+  document.getElementById("folder").textContent = data.modelFolder || "";
+  const diagram = document.getElementById("diagram");
+  if (data.explorerUrl) diagram.href = data.explorerUrl;
+  render([], data.configMessage || "");
+}
+
+document.getElementById("composer").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const text = draft.value.trim();
+  if (!text || busy) return;
+  busy = true;
+  send.disabled = true;
+  draft.value = "";
+  messages = messages.concat([{role: "user", content: text}]);
+  render(["Working…"]);
+  try {
+    const response = await fetch("/api/chat", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({messages}),
+    });
+    const data = await response.json();
+    if (data.messages) messages = data.messages;
+    render(data.notes || [], data.error || "");
+  } catch (err) {
+    render([], "The assistant page could not complete the request.");
+  } finally {
+    busy = false;
+    send.disabled = false;
+    draft.focus();
+  }
+});
+
+start();
+</script>
+</body>
+</html>

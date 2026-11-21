@@ -3764,5 +3764,321 @@ stakeholders:
         texts = [(folder / name).read_text(encoding="utf-8") for name in names]
         return parse_models(texts, names)
 
+
+class AssistantTests(unittest.TestCase):
+    """Local chat: provider client, stakeholder tools, and the session page."""
+
+    def settings(self, folder, **extra):
+        from assistant.config import load_settings
+        environ = {
+            "ASSISTANT_BASE_URL": "https://example.test/v1",
+            "ASSISTANT_API_KEY": "sk-test-secret",
+            "ASSISTANT_MODEL": "test-model",
+            "MODEL_FOLDER": str(folder),
+            "EXPLORER_URL": "http://127.0.0.1:8199/",
+            "ASSISTANT_PORT": "8201",
+            "ASSISTANT_CHAT_PATH": "/chat/completions",
+            "ASSISTANT_AUTH": "bearer",
+        }
+        environ.update(extra)
+        return load_settings(environ=environ, files={})
+
+    def test_environment_wins_over_env_file_and_the_key_is_not_a_setting_label(self):
+        from assistant.config import load_settings, read_env_file
+        text = "\n".join([
+            "# comment",
+            "ASSISTANT_MODEL=from-file",
+            "ASSISTANT_API_KEY='file-secret'",
+            "ASSISTANT_BASE_URL=http://files.example/v1",
+            "",
+        ])
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / ".env"
+            path.write_text(text, encoding="utf-8")
+            parsed = read_env_file(path)
+        self.assertEqual(parsed["ASSISTANT_API_KEY"], "file-secret")
+        settings = load_settings(
+            environ={"ASSISTANT_MODEL": "from-env", "MODEL_FOLDER": tmp},
+            files={
+                "ASSISTANT_MODEL": "from-file",
+                "ASSISTANT_API_KEY": "file-secret",
+                "ASSISTANT_BASE_URL": "http://files.example/v1",
+            },
+        )
+        self.assertEqual(settings.model, "from-env")
+        self.assertEqual(settings.base_url, "http://files.example/v1")
+        self.assertEqual(settings.api_key, "file-secret")
+
+    def test_complete_uses_bearer_and_does_not_return_the_key(self):
+        from assistant.provider import complete
+        captured = {}
+
+        class Response:
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+            def read(self):
+                return json.dumps({
+                    "choices": [{
+                        "message": {
+                            "content": "Hello there",
+                            "tool_calls": [{
+                                "id": "c1",
+                                "type": "function",
+                                "function": {
+                                    "name": "stakeholder_check",
+                                    "arguments": "{}",
+                                },
+                            }],
+                        },
+                    }],
+                }).encode()
+
+        def urlopen(request, timeout=0):
+            captured["url"] = request.full_url
+            captured["auth"] = request.get_header("Authorization")
+            return Response()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result = complete(
+                [{"role": "user", "content": "Hi"}],
+                self.settings(Path(tmp)),
+                tools=[{"type": "function"}],
+                urlopen=urlopen,
+            )
+        self.assertEqual(result["content"], "Hello there")
+        self.assertEqual(result["tool_calls"][0]["name"], "stakeholder_check")
+        self.assertEqual(result["tool_calls"][0]["arguments"], {})
+        self.assertEqual(captured["auth"], "Bearer sk-test-secret")
+        self.assertTrue(captured["url"].endswith("/chat/completions"))
+        self.assertNotIn("sk-test-secret", json.dumps(result))
+
+    def test_api_key_header_mode(self):
+        from assistant.provider import complete
+        captured = {}
+
+        class Response:
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+            def read(self):
+                return json.dumps({
+                    "choices": [{"message": {"content": "ok"}}],
+                }).encode()
+
+        def urlopen(request, timeout=0):
+            captured["api_key"] = request.get_header("Api-key")
+            captured["auth"] = request.get_header("Authorization")
+            return Response()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            complete(
+                [{"role": "user", "content": "Hi"}],
+                self.settings(Path(tmp), ASSISTANT_AUTH="api-key"),
+                urlopen=urlopen,
+            )
+        self.assertEqual(captured["api_key"], "sk-test-secret")
+        self.assertIsNone(captured["auth"])
+
+    def test_new_folder_opens_with_the_greeting(self):
+        from assistant.agent import GREETING, opening_text
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(opening_text(Path(tmp)), GREETING)
+
+    def test_open_activity_skips_the_greeting(self):
+        from assistant.agent import GREETING, opening_text
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            path = folder / "process" / "state.yaml"
+            path.parent.mkdir()
+            path.write_text(
+                "activity: stakeholder-analysis\n"
+                "status: open\n"
+                "exit:\n"
+                "  - id: each-has-need\n"
+                "    met: false\n"
+                "    text: Every stakeholder has at least one user need.\n"
+                "    detail:\n"
+                "      - Surgeon has no user need.\n",
+                encoding="utf-8",
+            )
+            text = opening_text(folder)
+        self.assertNotIn(GREETING, text)
+        self.assertIn("still open", text)
+        self.assertIn("Surgeon has no user need.", text)
+
+    def test_apply_writes_the_model_and_a_bad_category_does_not(self):
+        from assistant.tools import run_tool
+        register = {
+            "system": "InfusionPump",
+            "stakeholders": [
+                {
+                    "name": "Surgeon",
+                    "category": "customer",
+                    "description": "Uses the device.",
+                    "needs": [{
+                        "id": "NEED-1",
+                        "name": "SetTargetTemperature",
+                        "text": "The surgeon needs to set a temperature.",
+                    }],
+                },
+                {
+                    "name": "SystemsEngineer",
+                    "category": "Internal Stakeholder",
+                    "description": "Develops the product.",
+                    "needs": [{
+                        "id": "NEED-2",
+                        "name": "TraceableNeeds",
+                        "text": "The engineer needs a trace to each need.",
+                    }],
+                },
+                {
+                    "name": "NotifiedBody",
+                    "category": "regulatory",
+                    "description": "Reviews the file.",
+                    "needs": [{
+                        "id": "NEED-3",
+                        "name": "ShownConformity",
+                        "text": "The body needs evidence of conformity.",
+                    }],
+                },
+            ],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            settings = self.settings(folder)
+            report = run_tool("stakeholder_apply", register, settings)
+            self.assertIn("Status: done", report)
+            model = parse_models(
+                [(folder / name).read_text(encoding="utf-8")
+                 for name in ("stakeholders.sysml", "user_needs.sysml")],
+                ["stakeholders.sysml", "user_needs.sysml"],
+            )
+            self.assertEqual(model["warnings"], [])
+            self.assertIn("Surgeon", [node["name"] for node in model["nodes"]])
+            rejected = run_tool("stakeholder_apply", {
+                "system": "InfusionPump",
+                "stakeholders": [{
+                    "name": "Surgeon",
+                    "category": "client",
+                    "needs": [{
+                        "id": "NEED-9",
+                        "name": "OtherNeed",
+                        "text": "A need that must not be written.",
+                    }],
+                }],
+            }, settings)
+            self.assertIn("not written", rejected.lower())
+            self.assertNotIn("OtherNeed", (folder / "user_needs.sysml").read_text(encoding="utf-8"))
+            self.assertIn(
+                "Rejected unknown tool",
+                run_tool("delete_model", {}, settings),
+            )
+
+    def test_turn_calls_check_then_answers(self):
+        from assistant.agent import run_turn
+
+        def fake(messages, tools):
+            if not any(item["role"] == "tool" for item in messages):
+                names = [tool["function"]["name"] for tool in tools]
+                self.assertIn("stakeholder_check", names)
+                self.assertIn("stakeholder_apply", names)
+                return {
+                    "content": "",
+                    "tool_calls": [{
+                        "id": "1",
+                        "name": "stakeholder_check",
+                        "arguments": {},
+                    }],
+                }
+            self.assertIn("Stakeholder analysis", messages[-1]["content"])
+            return {"content": "What is the product called?", "tool_calls": []}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            updated, notes = run_turn(
+                [{"role": "user", "content": "We are just starting."}],
+                self.settings(Path(tmp)),
+                fake,
+            )
+        self.assertEqual(updated[-1]["content"], "What is the product called?")
+        self.assertEqual(notes, ["Checked the stakeholder register."])
+
+    def test_turn_stops_when_tools_do_not_finish(self):
+        from assistant.agent import run_turn
+
+        def fake(messages, tools):
+            return {
+                "content": "",
+                "tool_calls": [{"id": "1", "name": "nope", "arguments": {}}],
+            }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            updated, notes = run_turn(
+                [{"role": "user", "content": "Hello"}],
+                self.settings(Path(tmp)),
+                fake,
+            )
+        self.assertIn("stopped", updated[-1]["content"])
+        self.assertTrue(all(note.startswith("Rejected") for note in notes))
+
+    def test_prompt_includes_shared_text_and_not_the_key(self):
+        from assistant.agent import system_message
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            (folder / "notes.txt").write_text(
+                "The surgeon needs a quiet pump.", encoding="utf-8"
+            )
+            (folder / "brief.pdf").write_bytes(b"%PDF")
+            content = system_message(self.settings(folder))["content"]
+        self.assertIn("The surgeon needs a quiet pump.", content)
+        self.assertIn("brief.pdf (PDF, not read)", content)
+        self.assertIn("only after the team has confirmed", content)
+        self.assertNotIn("sk-test-secret", content)
+
+    def test_session_and_chat_hide_the_key(self):
+        from assistant.agent import GREETING
+        from assistant.server import make_handler
+        from http.server import ThreadingHTTPServer
+
+        def fake(messages, tools):
+            return {"content": "What is the product called?", "tool_calls": []}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = self.settings(Path(tmp))
+            server = ThreadingHTTPServer(
+                ("127.0.0.1", 0), make_handler(settings, fake)
+            )
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                port = server.server_address[1]
+                base = f"http://127.0.0.1:{port}"
+                page = urllib.request.urlopen(base + "/").read().decode()
+                self.assertIn("SE assistant", page)
+                session = json.load(urllib.request.urlopen(base + "/api/session"))
+                self.assertEqual(session["messages"][0]["content"], GREETING)
+                self.assertNotIn("sk-test-secret", json.dumps(session))
+                body = json.dumps({
+                    "messages": session["messages"] + [
+                        {"role": "user", "content": "We are starting a pump."}
+                    ],
+                }).encode()
+                request = urllib.request.Request(
+                    base + "/api/chat", data=body,
+                    headers={"Content-Type": "application/json"},
+                )
+                payload = json.load(urllib.request.urlopen(request))
+                self.assertEqual(
+                    payload["messages"][-1]["content"],
+                    "What is the product called?",
+                )
+                self.assertNotIn("sk-test-secret", json.dumps(payload))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+
 if __name__ == "__main__":
     unittest.main()

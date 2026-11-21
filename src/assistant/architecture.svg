@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="520" viewBox="0 0 1040 520">
+  <title>Repository architecture</title>
+  <desc>The assistant talks to a model provider, runs the methodology tools, writes the model folder, and System Explorer only reads that folder.</desc>
+  <style>
+    text { font-family: "Segoe UI", system-ui, sans-serif; fill: #1c2430; }
+    .title { font-size: 20px; font-weight: 650; }
+    .box-title { font-size: 15px; font-weight: 650; }
+    .line { font-size: 13px; fill: #3d4754; }
+    .small { font-size: 12px; fill: #5c6570; }
+    .arrow { font-size: 12px; fill: #5c6570; }
+  </style>
+  <rect width="1040" height="520" fill="#f4f6f8"/>
+  <text class="title" x="32" y="36">Repository architecture</text>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 0 1.2 L 9 5 L 0 8.8 z" fill="#5c6b7a"/>
+    </marker>
+  </defs>
+
+  <!-- provider -->
+  <rect x="230" y="64" width="230" height="78" rx="10" fill="#eaf3fc" stroke="#b9d4ee"/>
+  <text class="box-title" x="246" y="90">Model provider</text>
+  <text class="line" x="246" y="110">Cloud subscription now</text>
+  <text class="line" x="246" y="128">Local model later</text>
+
+  <!-- team -->
+  <rect x="24" y="196" width="150" height="88" rx="10" fill="#ffffff" stroke="#d5d8de"/>
+  <text class="box-title" x="40" y="232">Engineering</text>
+  <text class="box-title" x="40" y="252">team</text>
+
+  <!-- assistant -->
+  <rect x="230" y="168" width="230" height="148" rx="10" fill="#ffffff" stroke="#d5d8de"/>
+  <text class="box-title" x="246" y="194">src/assistant</text>
+  <text class="line" x="246" y="216">Chat page, port 8201</text>
+  <text class="line" x="246" y="238">agent.py</text>
+  <text class="line" x="246" y="258">provider.py</text>
+  <text class="line" x="246" y="278">tools.py</text>
+
+  <!-- methodology -->
+  <rect x="520" y="168" width="230" height="148" rx="10" fill="#ffffff" stroke="#d5d8de"/>
+  <text class="box-title" x="536" y="194">methodology/</text>
+  <text class="line" x="536" y="216">product-development.yaml</text>
+  <text class="small" x="536" y="236">steps and exit rules</text>
+  <text class="line" x="536" y="262">stakeholder_analysis.py</text>
+  <text class="small" x="536" y="282">writes the SysML</text>
+
+  <!-- model folder -->
+  <rect x="810" y="64" width="200" height="148" rx="10" fill="#ffffff" stroke="#d5d8de"/>
+  <text class="box-title" x="826" y="90">Model folder</text>
+  <text class="line" x="826" y="114">*.sysml</text>
+  <text class="line" x="826" y="136">process/stakeholders.yaml</text>
+  <text class="line" x="826" y="158">process/state.yaml</text>
+  <text class="small" x="826" y="184">documents the team shares</text>
+
+  <!-- explorer -->
+  <rect x="810" y="292" width="200" height="120" rx="10" fill="#ffffff" stroke="#d5d8de"/>
+  <text class="box-title" x="826" y="320">src/system_explorer</text>
+  <text class="line" x="826" y="344">Viewer only</text>
+  <text class="line" x="826" y="366">Diagram in the browser</text>
+  <text class="small" x="826" y="390">does not edit the model</text>
+
+  <!-- arrows -->
+  <line x1="174" y1="240" x2="224" y2="240" stroke="#5c6b7a" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <line x1="345" y1="142" x2="345" y2="162" stroke="#5c6b7a" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <line x1="460" y1="230" x2="514" y2="230" stroke="#5c6b7a" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <line x1="750" y1="242" x2="804" y2="148" stroke="#5c6b7a" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <line x1="910" y1="212" x2="910" y2="286" stroke="#5c6b7a" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <path d="M 810 360 H 99 V 284" fill="none" stroke="#5c6b7a" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+  <text class="arrow" x="186" y="230">talks</text>
+  <text class="arrow" x="468" y="222">calls</text>
+  <text class="arrow" x="754" y="186">writes</text>
+  <text class="arrow" x="918" y="256">reads</text>
+  <text class="arrow" x="40" y="312">shows the diagram</text>
+
+  <text class="small" x="32" y="470">.env holds the API key on your machine and is not committed. tests/ checks the explorer and the assistant.</text>
+  <text class="small" x="32" y="492">A later local model uses provider.py with a different base URL. The chat page and the methodology file stay the same.</text>
+</svg>

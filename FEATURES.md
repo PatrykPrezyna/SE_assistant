@@ -747,3 +747,53 @@ not know is an error, rather than a rule that looks enforced and is not.
 `validate_register(register)` returns the same structural errors `apply`
 would refuse, without writing a file. The assistant uses it before it
 saves a register the team has confirmed.
+
+## SE assistant (`src/assistant/`)
+
+A local chat page, separate from the explorer. It binds to
+`127.0.0.1:8201` unless `ASSISTANT_HOST` / `ASSISTANT_PORT` say otherwise.
+
+```
+python -m assistant
+python -m assistant say "We are starting a portable infusion pump."
+```
+
+`--model-folder`, `--port`, and `--explorer-url` override the environment
+for one run. Settings are read from the environment first, then from a
+`.env` file in the current directory or the repo root. `.env` is
+gitignored. The names are listed in `.env.example`.
+
+**Provider.** `POST {ASSISTANT_BASE_URL}{ASSISTANT_CHAT_PATH}` with a JSON
+chat-completions body. The default path is `/chat/completions`.
+`ASSISTANT_AUTH=bearer` (default) sends `Authorization: Bearer`.
+`ASSISTANT_AUTH=api-key` sends the key in the `api-key` header instead.
+The key is not written to the page, the transcript, or the model folder.
+A missing base URL, model name, or model folder is reported on the page
+and the provider is not called. A local server that speaks the same
+protocol is the same settings with a different base URL and an empty key.
+
+**First message.** A model folder with no `process/state.yaml` starts with
+the fixed greeting (what the project is, and whether documents already
+exist). An open activity continues that activity and names the unmet exit
+rules. A finished activity says so and waits for a review or a change.
+
+**Tools.** The model may call only `stakeholder_check` and
+`stakeholder_apply`. Anything else is rejected. `check` does not write.
+`apply` with a register argument validates it, writes
+`process/stakeholders.yaml`, then generates the SysML. A register that
+fails validation is not written. `apply` without arguments regenerates
+from the register already in the folder. The prompt tells the model to
+call `apply` only after the team confirms the list. After four tool
+rounds without a final answer, the turn stops.
+
+**Documents.** Text files (`.txt`, `.md`, `.csv`) in the model folder are
+included in the prompt, up to a size cap. PDFs are named and not parsed.
+`.env` is never read into the prompt.
+
+**Page.** `GET /` is the chat. `GET /api/session` returns the opening
+messages, the model folder, and the diagram link (`EXPLORER_URL`, only
+`http` and `https` are accepted). `POST /api/chat` takes
+`{"messages": [{"role", "content"}]}` of user and assistant turns and
+returns the transcript plus short notes for tools that ran. The
+transcript is kept in the browser for the session.
+

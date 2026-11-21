@@ -140,6 +140,129 @@ flowchart TB
     VIEWER --> SE
 ```
 
+## Assistant and viewer
+
+The engineering team uses two local pages. The assistant is a separate
+application from `system_explorer`. The explorer keeps reading the model
+folder and drawing it. The assistant is the only process that talks to a
+language model, asks the team what to do next, and runs the activity
+tools that write the folder. A cloud subscription and a future local
+model are two settings of that assistant, using the same chat protocol.
+
+```mermaid
+flowchart TB
+    team([Engineering team])
+
+    subgraph ASSISTANT["Assistant application"]
+        direction TB
+        chat[Chat page]
+        agent[Methodology agent]
+        provider["Model provider<br/>OpenAI-compatible chat"]
+    end
+
+    cloud["Cloud subscription<br/>base URL, API key, model name"]
+    localmodel["Local model, later<br/>same protocol, other base URL"]
+    method["product-development.yaml<br/>activities, steps, exit rules"]
+    tool["Activity tools<br/>stakeholder_analysis.py today"]
+    folder["Model folder in git<br/>*.sysml and process/*.yaml"]
+    explorer["system_explorer<br/>viewer only"]
+
+    team <--> chat
+    chat --> agent
+    agent --> provider
+    cloud --> provider
+    localmodel --> provider
+    agent --> method
+    agent --> tool
+    tool --> folder
+    folder --> explorer
+    explorer --> team
+```
+
+### Why a separate application
+
+The explorer's job is the diagram. It stays free of API keys, chat
+transcripts, and model writes, including when a folder is published as a
+static viewer. The assistant owns the conversation and the credentials.
+Both live in this repo and share the model folder on disk. Locally the
+team opens the chat on one port and the explorer on another; the chat
+page links to the explorer rather than embedding it.
+
+Putting the chat inside `viewer.html` would make the viewer a modeling
+tool and would tie every future model change to the diagram page. A
+second repository would split the methodology file from the tool that
+implements it.
+
+### Model provider
+
+One client function, `complete(messages) -> text`, speaks the OpenAI
+chat-completions protocol. Cloud subscriptions that expose that protocol
+(OpenAI, Azure OpenAI, OpenRouter, and others) and local servers that
+expose it (Ollama, LM Studio) differ only by configuration:
+
+| Variable | Cloud subscription | Local model, later |
+| --- | --- | --- |
+| `ASSISTANT_BASE_URL` | the provider's `/v1` URL | `http://127.0.0.1:11434/v1` (Ollama) or the local server's equivalent |
+| `ASSISTANT_API_KEY` | the subscription key | empty when the local server does not use one |
+| `ASSISTANT_MODEL` | the subscribed model name | the local model name |
+| `MODEL_FOLDER` | the folder `system-explorer` is showing | the same |
+| `EXPLORER_URL` | `http://127.0.0.1:8199/` | the same |
+
+The key stays in the assistant process. The explorer never receives it.
+Changing provider is a change of these variables, not a change to the
+chat page, the methodology file, or the activity tools.
+
+### What the model is allowed to do
+
+The model asks, explains, and chooses the next question. It does not
+write `.sysml` itself. A turn runs like this:
+
+1. Load `process/state.yaml`. A new folder gets the opening question:
+   what the project is, and whether the team already has documents or is
+   at the beginning. A folder with an open activity continues that
+   activity instead of greeting again.
+2. Send the methodology entry, the state, and the transcript to the
+   provider.
+3. When the model asks for a tool, the server runs only the activity
+   tools named in the methodology file (`check` and `apply` for
+   stakeholder analysis). The model receives the tool's text report.
+4. `apply` writes the register, the SysML, and the state. The team
+   refreshes the explorer, or follows the link, to see the diagram.
+
+Documents the team wants to share go in the model folder. The assistant
+may read them and propose register rows. `apply` runs after the team
+confirms the proposal.
+
+### Implementation plan
+
+1. **Provider client.** Implement `complete(messages)` behind the
+   variables above, with no web page. A single CLI turn must work
+   against a cloud key, and the same call must work later against a
+   local base URL.
+2. **Tool loop.** Let the model request `check` and `apply` for
+   stakeholder analysis. The server executes those commands in
+   `MODEL_FOLDER` and returns their output. Reject any other command.
+3. **Local chat page.** A small page on its own port: the transcript,
+   one text box, and a link to `EXPLORER_URL`. The first turn is the
+   fixed greeting. The page stores the transcript for the session only.
+4. **State on return.** At the start of a session, read
+   `process/state.yaml` and continue an open activity. Skip the greeting
+   when a step is already underway.
+5. **Shared documents.** Accept files dropped into the model folder,
+   quote the parts that support a proposed stakeholder or need, and wait
+   for confirmation before `apply`.
+6. **Further activities.** Each new row in `product-development.yaml`
+   brings one tool and the same loop. The provider client and the chat
+   page stay as they are.
+
+*Status 2026-11-21:* steps 1–4 are the `assistant` package (`python -m assistant`).
+The provider speaks OpenAI chat completions, including tool calls.
+`ASSISTANT_AUTH=api-key` covers subscriptions that do not use a bearer
+token. Step 5 reads `.txt`, `.md`, and `.csv` files already in the model
+folder; PDFs are listed and not parsed. The model may call
+`stakeholder_check` and `stakeholder_apply`. `apply` writes the register
+the team confirmed, then the SysML.
+
 ## Next steps (in order)
 
 1. **Migrate the model dialect to pure standard SysML v2** (drop `ibd def`
@@ -163,6 +286,8 @@ flowchart TB
    at least one user need each, categorized as customer, internal, or
    regulatory, written out as standard SysML v2. Later activities
    (requirements linter, tradespace runner) follow the same shape.
+   The chatbot that drives this file is a separate application; the
+   plan and the provider settings are under "Assistant and viewer".
 6. **Stage 2 — structured edits:** small write-side MCP server
    (add element / add relationship / rename with reference updates) that
    validates *before* writing; block direct `.sysml` edits for covered

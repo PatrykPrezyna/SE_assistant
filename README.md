@@ -304,6 +304,29 @@ pump. Open that folder with `system-explorer` to see the stakeholders, the
 three categories, and the needs. Details are in
 [FEATURES.md](FEATURES.md) under *Stakeholder analysis*.
 
+## SE assistant (local chat)
+
+The chat is a separate program from the explorer. It asks the team what
+they are building, calls the stakeholder tool, and links to the diagram.
+The model provider is an OpenAI-compatible chat endpoint, so a cloud
+subscription and a later local model are the same client with different
+settings.
+
+Copy [`.env.example`](.env.example) to `.env` (gitignored) and set
+`ASSISTANT_BASE_URL`, `ASSISTANT_API_KEY`, `ASSISTANT_MODEL`, and
+`MODEL_FOLDER`. Then, from this repo:
+
+```
+python -m assistant
+```
+
+Open http://127.0.0.1:8201/ and keep System Explorer open on the same
+`MODEL_FOLDER`. `EXPLORER_URL` is the "Open the diagram" link. Put the
+API key only in `.env` or the environment, never in the model files.
+How to run it, and a picture of the repository, are in
+[src/assistant/README.md](src/assistant/README.md). Behavior details are in
+[FEATURES.md](FEATURES.md) under *SE assistant*.
+
 ## Troubleshooting
 
 **PDFs download instead of opening in the tab.** The server serves

@@ -9,6 +9,7 @@ dependencies = []
 [project.scripts]
 system-explorer = "system_explorer.app:main"
 system-explorer-cloud = "system_explorer.cloud:cloud_main"
+se-assistant = "assistant.server:main"
 
 [build-system]
 requires = ["setuptools>=64"]
@@ -22,3 +23,4 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 system_explorer = ["viewer.html", "publish_viewer.html"]
+assistant = ["chat.html"]

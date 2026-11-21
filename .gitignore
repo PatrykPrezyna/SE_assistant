@@ -12,6 +12,9 @@ venv/
 env/
 .env
 
+# Local trial model for the assistant (not the shared example)
+local-model/
+
 # Test / tooling caches
 .pytest_cache/
 .mypy_cache/
