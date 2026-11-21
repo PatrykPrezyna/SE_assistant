@@ -2,35 +2,42 @@
 <html>
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>System Explorer</title>
 <style>
-  html, body { margin: 0; height: 100%; overflow: hidden;
-    font-family: "Segoe UI", system-ui, sans-serif; }
+  :root { --bar: 49px; color-scheme: light; }
+  html, body { margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none;
+    font-family: "Segoe UI", system-ui, sans-serif; background: #f3f5f8;
+    color: #1c1c1c; }
   #toolbar { position: fixed; top: 0; left: 0; right: 0; z-index: 10;
-    display: flex; align-items: center; gap: 8px; padding: 6px 12px;
-    background: #f7f7f9; border-bottom: 1px solid #ddd; font-size: 13px;
-    flex-wrap: wrap; min-height: 28px; }
-  #toolbar .sep { width: 1px; height: 18px; background: #ddd; margin: 0 2px;
+    display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+    background: #fff; border-bottom: 1px solid #e2e5ea; font-size: 14px;
+    flex-wrap: wrap; min-height: 48px; box-sizing: border-box;
+    overflow: visible; }
+  #toolbar h1 { font-size: 17px; font-weight: 650; margin: 0; line-height: 1.3;
+    white-space: nowrap; }
+  #toolbar .sep { width: 1px; height: 18px; background: #e2e5ea; margin: 0 2px;
     flex: none; }
-  #toolbar button { font-size: 13px; padding: 3px 10px; cursor: pointer; }
-  #toolbar label { user-select: none; cursor: pointer; }
-  #toolbar select { font-size: 13px; max-width: 180px; }
+  #toolbar button, #zoombar button { font: inherit; font-size: 14px;
+    min-height: 36px; padding: 6px 12px; cursor: pointer; border-radius: 8px;
+    border: 1px solid #d5d8de; background: #fff; }
+  #toolbar label { user-select: none; cursor: pointer; white-space: nowrap;
+    display: flex; align-items: center; gap: 6px; }
+  #toolbar select { font: inherit; font-size: 14px; max-width: 180px;
+    min-height: 36px; border-radius: 8px; border: 1px solid #d5d8de;
+    background: #fff; padding: 4px 8px; }
   #toolbar .grow { flex: 1; min-width: 8px; }
-  /* Expert-only controls (custom-diagram building) are hidden until the
-     expert toggle is on — see setExpertMode() */
-  body:not(.expert) .expert-only { display: none !important; }
-  #expertBtn { font-size: 13px; line-height: 1; padding: 3px 6px;
-    border: 1px solid transparent; background: none; color: #888;
-    border-radius: 4px; }
-  #expertBtn:hover { background: #ececf0; color: #444; }
+  /* Reading is the default. Edit (expert mode) reveals the authoring
+     controls — see setExpertMode(). */
+  body:not(.expert) .expert-only,
+  body:not(.expert) .edit-only { display: none !important; }
   #expertBtn.on { color: #1a6bbf; border-color: #b9d4ee; background: #eaf3fc; }
-  #homeBtn.on { border-color: #b9d4ee; background: #eaf3fc; color: #1a6bbf; }
   #status { color: #2a7; min-width: 70px; }
   #status.dirty { color: #c60; }
   .menu-wrap { position: relative; }
   .menu-panel { display: none; position: absolute; top: 100%; left: 0;
     margin-top: 4px; background: #fff; border: 1px solid #ccc;
-    border-radius: 4px; padding: 6px 0; min-width: 180px; z-index: 25;
+    border-radius: 4px; padding: 6px 0; min-width: 200px; z-index: 30;
     box-shadow: 0 2px 8px rgba(0,0,0,.12); }
   .menu-panel.open { display: block; }
   .menu-panel .item { display: block; width: 100%; text-align: left;
@@ -42,10 +49,10 @@
   .menu-panel label.item input { margin: 0; }
   .menu-panel .sep { border-top: 1px solid #e5e5e5; margin: 4px 0;
     height: 0; width: auto; background: none; }
-  #error { position: fixed; top: 40px; left: 0; right: 0; z-index: 10;
+  #error { position: fixed; top: var(--bar); left: 0; right: 0; z-index: 10;
     background: #fdd; color: #900; padding: 6px 12px; display: none; }
   #warnBtn { color: #a05a00; }
-  #warnings { position: fixed; top: 40px; left: 0; right: 0; z-index: 9;
+  #warnings { position: fixed; top: var(--bar); left: 0; right: 0; z-index: 9;
     background: #fff8e1; color: #7a5c00; border-bottom: 1px solid #e0c060;
     padding: 4px 12px; display: none; max-height: 30%; overflow-y: auto;
     font-size: 12px; }
@@ -57,41 +64,53 @@
     border: 1px solid #e0e0e0; border-radius: 6px; }
   #emptyHint.hidden { display: none; }
   /* home page: the landing screen — what this is, and which View to open */
-  #home { position: fixed; top: 40px; left: 0; right: 0; bottom: 0; z-index: 12;
-    background: #fff; overflow-y: auto; padding: 32px 24px 48px; }
+  #home { position: fixed; top: var(--bar); left: 0; right: 0; bottom: 0; z-index: 12;
+    background: #f3f5f8; overflow-y: auto; padding: 16px 16px 32px; }
   #home.hidden { display: none; }
-  #homeInner { max-width: 880px; margin: 0 auto; }
+  #homeInner { max-width: 640px; margin: 0 auto; width: 100%;
+    box-sizing: border-box; }
   #home h1 { font-size: 22px; margin: 0 0 2px; }
   #home .sub { color: #888; font-size: 12px; margin-bottom: 18px; }
-  #home .intro { font-size: 14px; line-height: 1.55; color: #444;
-    max-width: 660px; }
+  #home .intro { font-size: 14px; line-height: 1.45; color: #555;
+    max-width: 640px; }
   #home .intro p { margin: 0 0 10px; }
-  #home .intro code { background: #f3f3f6; border-radius: 3px;
+  #home .intro code { background: #fff; border-radius: 3px;
     padding: 0 3px; font-size: 13px; }
   #home .viewsHint { font-size: 13px; color: #666; margin: 0 0 12px;
-    max-width: 660px; line-height: 1.5; }
+    max-width: 640px; line-height: 1.5; }
   #home h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em;
-    color: #888; margin: 26px 0 10px; font-weight: 600; }
-  #homeViews { display: grid; gap: 12px;
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+    color: #888; margin: 22px 0 10px; font-weight: 600; }
+  #homeViews { display: flex; flex-direction: column; gap: 12px; }
   #homeViews .card { text-align: left; font: inherit; cursor: pointer;
-    background: #fff; border: 1px solid #ddd; border-radius: 6px;
-    padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
+    background: #fff; border: 1px solid #e0e3e8; border-radius: 12px;
+    padding: 14px 16px; display: flex; flex-direction: column; gap: 4px;
+    min-height: 48px; width: 100%; box-sizing: border-box; }
   #homeViews .card:hover { border-color: #1a6bbf; background: #f7fbff; }
-  #homeViews .card .name { font-weight: 600; font-size: 14px; color: #1a3d5c; }
-  #homeViews .card .desc { font-size: 12.5px; color: #555; line-height: 1.4; }
+  #homeViews .card .name { font-weight: 650; font-size: 16px; color: #1c1c1c; }
+  #homeViews .card .desc { font-size: 13px; color: #666; line-height: 1.4; }
   #homeViews .card .desc.none { color: #aaa; font-style: italic; }
-  #homeViews .card .count { font-size: 11px; color: #999; margin-top: 2px; }
-  #homeViews .empty { color: #888; font-size: 13px; }
-  #canvas { width: 100%; height: 100%; background: #ffffff; display: block;
-    cursor: grab; }
+  #homeViews .card .count { font-size: 13px; color: #666; margin-top: 2px; }
+  #homeViews .empty { color: #666; font-size: 15px; }
+  #canvas { width: 100%; height: 100%; display: block; cursor: grab;
+    touch-action: none; user-select: none; -webkit-user-select: none;
+    background:
+      linear-gradient(#e6e9ee 1px, transparent 1px) 0 0 / 24px 24px,
+      linear-gradient(90deg, #e6e9ee 1px, transparent 1px) 0 0 / 24px 24px,
+      #f7f8fb; }
+  #zoombar { position: fixed; top: calc(var(--bar) + 12px); right: 12px;
+    z-index: 18; display: flex; flex-direction: column; gap: 8px; }
+  body.home-open #zoombar { display: none; }
+  #zoombar button { width: 44px; height: 44px; min-height: 44px; padding: 0;
+    font-size: 22px; line-height: 1; border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+  #zoomFit, #fitBtn { font-size: 13px; font-weight: 650; }
   #canvas.panning { cursor: grabbing; }
-  .node rect.body { fill: #fdfdfd; stroke: #444; stroke-width: 1.2; }
-  .node.req rect.body { fill: #fffbea; }
-  .node.usage rect.body { fill: #f2f7fd; }
-  .node.actor rect.body { fill: #f6f0ff; }
-  .node.usecase rect.body { fill: #eefaf0; }
-  .node line.sep { stroke: #444; stroke-width: 1; }
+  .node rect.body { fill: #fff; stroke: #1a6bbf; stroke-width: 1.5; }
+  .node.req rect.body { fill: #fff8e1; stroke: #a08000; }
+  .node.usage rect.body { fill: #fff; }
+  .node.actor rect.body { fill: #f3f0ff; stroke: #5b4b8a; }
+  .node.usecase rect.body { fill: #f3fff6; stroke: #2e7d4f; }
+  .node line.sep { stroke: #d5d8de; stroke-width: 1; }
   .node text { fill: #222; font-size: 12px; }
   .node text.stereo { fill: #666; font-size: 11px; }
   .node text.name { font-size: 13px; font-weight: 600; }
@@ -100,7 +119,8 @@
   .node.dragging rect.body { stroke: #1a6fd4; stroke-width: 2; }
   .node.sel rect.body { stroke: #d4351a; stroke-width: 2.5; }
   .node.hl rect.body { stroke: #1a6fd4; stroke-width: 1.8; }
-  .node { cursor: move; }
+  .node { cursor: pointer; }
+  body.expert .node { cursor: move; }
   .node text.docicon { font-size: 11px; }
   .node text.activityicon { font-size: 11px; }
   .node.action rect.body { fill: #fff7e6; }
@@ -117,6 +137,8 @@
   .edge.typing line.wire { stroke-dasharray: 5 4; }
   .edge.satisfy line.wire { stroke-dasharray: 5 4; stroke: #a08000; }
   .edge.satisfy text { fill: #7a6a00; }
+  .edge.verify line.wire { stroke-dasharray: 5 4; stroke: #1a6aa8; }
+  .edge.verify text { fill: #1a6aa8; }
   .edge.connector line.wire { stroke: #2a8f4d; stroke-width: 1.4; }
   .edge.connector text { fill: #1f6b39; }
   .edge.association line.wire { stroke: #6a3fa0; }
@@ -142,7 +164,7 @@
   #ctxmenu .item.disabled { color: #aaa; cursor: default; }
   #ctxmenu .item.disabled:hover { background: none; }
   #ctxmenu .sep { border-top: 1px solid #e5e5e5; margin: 4px 0; }
-  #tree { position: fixed; top: 40px; left: 0; bottom: 0; width: 260px;
+  #tree { position: fixed; top: var(--bar); left: 0; bottom: 0; width: 260px;
     overflow-y: auto; overflow-x: hidden; background: #fafafa;
     border-right: 1px solid #ddd; font-size: 12px; padding: 0 0 6px; z-index: 8;
     display: flex; flex-direction: column; }
@@ -203,26 +225,52 @@
   #browseList .row:hover { background: #eef4fb; }
   #browseList .row.empty { cursor: default; color: #999; }
   #browseList .row.empty:hover { background: none; }
+  body.sheet #legend { display: none !important; }
+  #sheet { display: none; position: fixed; left: 0; right: 0; bottom: 0; z-index: 16;
+    max-height: 50%; max-height: 50dvh; box-sizing: border-box; overflow: auto;
+    touch-action: pan-y; background: #fff; border-radius: 16px 16px 0 0;
+    box-shadow: 0 -6px 28px rgba(0,0,0,.16); padding: 8px 16px 24px; }
+  body.sheet #sheet { display: block; }
+  #sheet .grab { width: 36px; height: 4px; border-radius: 2px; background: #ddd;
+    margin: 4px auto 10px; }
+  #sheet h2 { font-size: 18px; margin: 0 8px 2px 0; }
+  #sheet .kind { color: #777; font-size: 12px; margin: 0 0 10px; }
+  #sheet .doc { white-space: pre-wrap; font-size: 15px; line-height: 1.45; margin: 0 0 12px; }
+  #sheet .doc:empty, #sheet .doc.hidden { display: none; }
+  #docLink { display: inline-block; margin: 0 0 14px; color: #1a6bbf; font-size: 15px; }
+  #docLink.hidden { display: none; }
+  #sheet h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em;
+    color: #888; margin: 8px 0; }
+  #sheet h3.hidden, #sheet ul.hidden { display: none; }
+  #sheet ul { list-style: none; margin: 0 0 8px; padding: 0; }
+  #sheet button.row { display: block; width: 100%; text-align: left; font: inherit;
+    padding: 10px 12px; margin: 0 0 8px; border-radius: 10px;
+    border: 1px solid #e4e6eb; background: #fafbfc; min-height: 44px; cursor: pointer; }
+  #sheet button.row small { display: block; color: #555; font-size: 13px;
+    white-space: pre-wrap; margin-top: 2px; }
+  #closeSheet { position: absolute; top: 10px; right: 12px; border: none;
+    background: none; font-size: 22px; line-height: 1; padding: 8px; color: #666;
+    cursor: pointer; }
 </style>
 </head>
 <body>
 <div id="toolbar">
-  <button id="homeBtn" title="Back to the home page">⌂ Home</button>
+  <button id="homeBtn" title="Back to the list of views">Views</button>
+  <h1 id="viewTitle">Explorer</h1>
   <button id="treeBtn" class="expert-only" title="Show/hide the element tree">Tree</button>
-  <label>view <select id="viewSel"></select></label>
+  <label class="edit-only">view <select id="viewSel"></select></label>
   <button id="newViewBtn" class="expert-only" title="Create a new view">+</button>
-  <span class="sep"></span>
-  <button id="saveBtn" title="Ctrl+S">Save</button>
-  <button id="revertBtn" disabled
+  <span class="sep edit-only"></span>
+  <button id="saveBtn" class="edit-only" title="Ctrl+S">Save</button>
+  <button id="revertBtn" class="edit-only" disabled
           title="Discard unsaved changes and go back to the last saved version">Revert</button>
-  <button id="fitBtn">Fit</button>
-  <span class="sep"></span>
-  <div class="menu-wrap expert-only">
+  <span class="sep edit-only"></span>
+  <div class="menu-wrap">
     <button id="displayBtn" title="What to show on nodes and edges">Display ▾</button>
     <div id="displayMenu" class="menu-panel" role="menu">
       <label class="item"><input type="checkbox" id="attrsCb" checked> attributes</label>
       <label class="item"><input type="checkbox" id="partsCb" checked> parts</label>
-      <label class="item"><input type="checkbox" id="keywordsCb"> keywords («part def»…)</label>
+      <label class="item"><input type="checkbox" id="keywordsCb"> «part def» keywords</label>
       <label class="item"><input type="checkbox" id="edgeLabelsCb"> edge labels</label>
       <label class="item"><input type="checkbox" id="packagesCb"> package paths</label>
       <label class="item"><input type="checkbox" id="docsOnNodeCb"> docs on node</label>
@@ -240,7 +288,7 @@
     </div>
   </div>
   <span class="grow"></span>
-  <button id="expertBtn" aria-pressed="false" title="Expert mode — build your own diagrams">⚙</button>
+  <button id="expertBtn" aria-pressed="false" title="Edit — move elements and change views">Edit</button>
   <button id="warnBtn" style="display:none" title="Model validation warnings — click to show/hide"></button>
   <span id="status"></span>
 </div>
@@ -271,9 +319,8 @@
     </div>
     <h2>Views</h2>
     <p class="viewsHint">Each view is a curated slice of the model. Pick one
-    to open it; the <b>view</b> switcher in the toolbar moves between them,
-    and <span aria-hidden="true">&#8962;</span> <b>Home</b> comes back
-    here.</p>
+    to open it. <b>Views</b> comes back here. <b>Edit</b> is how you move
+    elements and change what a view contains.</p>
     <div id="homeViews"></div>
   </div>
 </div>
@@ -299,6 +346,25 @@
   </div>
   <div id="treeBody"></div>
 </div>
+<div id="zoombar">
+  <button type="button" id="zoomIn" aria-label="Zoom in">+</button>
+  <button type="button" id="zoomOut" aria-label="Zoom out">−</button>
+  <button type="button" id="fitBtn" aria-label="Show whole diagram">Fit</button>
+</div>
+<aside id="sheet" aria-live="polite">
+  <div class="grab"></div>
+  <button type="button" id="closeSheet" aria-label="Close">×</button>
+  <h2 id="sheetName"></h2>
+  <p class="kind" id="sheetKind"></p>
+  <p class="doc" id="sheetDoc"></p>
+  <a id="docLink" target="_blank" rel="noopener">Open documentation</a>
+  <h3 id="reqHead">Requirements</h3>
+  <ul id="reqList"></ul>
+  <h3 id="byHead">Satisfied by</h3>
+  <ul id="byList"></ul>
+  <h3 id="verHead">Verified by</h3>
+  <ul id="verList"></ul>
+</aside>
 <svg id="canvas">
   <defs>
     <marker id="mTriangle" markerUnits="userSpaceOnUse" markerWidth="16" markerHeight="14"
@@ -372,9 +438,20 @@ function applyDisplayOpts(opts) {
   document.getElementById("docsOnNodeCb").checked = !!o.docsOnNode;
 }
 
-// layout constants for reserving screen space around the canvas — must
-// match the CSS (#toolbar height, #tree width)
-const TOOLBAR_H = 40;
+// The header height follows the bar itself (reading vs Edit can differ).
+// --bar keeps the tree and the home page below it.
+function chromeTop() {
+  const bar = document.getElementById("toolbar");
+  const h = bar ? bar.offsetHeight : 49;
+  document.documentElement.style.setProperty("--bar", h + "px");
+  return h;
+}
+// A wrapped header (a phone, or Edit turned on) must push the zoom buttons
+// down with it, or they sit underneath the bar and cannot be tapped.
+if (window.ResizeObserver) {
+  const bar = document.getElementById("toolbar");
+  if (bar) new ResizeObserver(() => chromeTop()).observe(bar);
+}
 const TREE_WIDTH = 260;
 
 const svg = document.getElementById("canvas");
@@ -496,8 +573,8 @@ function buildNodeContent(d) {
   if (opts.keywords)
     header.push({ text: "«" + d.kind + "»", cls: "stereo" });
   // Usage nodes show only the role name (not `role : Type`). The type is
-  // already on the typing edge ("is a"); see README "What the viewer
-  // simplifies". `usageType` stays on the model for edges / menus.
+  // already on the typing edge ("is a"); see NOTATION.md N3. `usageType`
+  // stays on the model for edges / menus.
   header.push({ text: (d.shortName ? d.shortName + " " : "") + d.name,
                 cls: "name", italic: d.abstract });
   if (opts.packages && d.package) header.push({ text: d.package, cls: "pkg" });
@@ -568,6 +645,7 @@ function createNodeEl(n) {
 
   const rect = document.createElementNS(svg.namespaceURI, "rect");
   rect.setAttribute("class", "body");
+  rect.setAttribute("rx", "6");
   g.appendChild(rect);
 
   let y = PAD + 12;
@@ -672,6 +750,7 @@ function createEdgeEl(data) {
   if (data.kind === "composition") line.setAttribute("marker-start", "url(#mDiamond)");
   if (data.kind === "typing") line.setAttribute("marker-end", "url(#mOpen)");
   if (data.kind === "satisfy") line.setAttribute("marker-end", "url(#mOpenSat)");
+  if (data.kind === "verify") line.setAttribute("marker-end", "url(#mOpen)");
   if (data.kind === "connector") {
     line.setAttribute("marker-start", "url(#mBall)");
     line.setAttribute("marker-end", "url(#mBall)");
@@ -697,19 +776,21 @@ function updateAllEdges() { for (const e of edges) updateEdge(e); }
 
 // ---------------------------------------------------------------- legend
 
-const LEGEND_ORDER = ["specialization", "composition", "typing", "satisfy", "connector", "association"];
+const LEGEND_ORDER = ["specialization", "composition", "typing", "satisfy", "verify", "connector", "association"];
 const LEGEND_LABELS = {
   specialization: "kind of",
   composition: "composition (has part)",
   typing: "is a",
   satisfy: "satisfies requirement",
+  verify: "verifies requirement",
   connector: "connector",
   association: "association (actor/subject ↔ use case)",
 };
 
 function legendRow(kind) {
-  const dashed = kind === "typing" || kind === "satisfy";
+  const dashed = kind === "typing" || kind === "satisfy" || kind === "verify";
   const color = kind === "satisfy" ? "#a08000"
+    : kind === "verify" ? "#1a6aa8"
     : kind === "connector" ? "#2a8f4d"
     : kind === "association" ? "#6a3fa0"
     : "#555";
@@ -718,6 +799,7 @@ function legendRow(kind) {
   if (kind === "composition") marker = 'marker-start="url(#mDiamond)"';
   if (kind === "typing") marker = 'marker-end="url(#mOpen)"';
   if (kind === "satisfy") marker = 'marker-end="url(#mOpenSat)"';
+  if (kind === "verify") marker = 'marker-end="url(#mOpen)"';
   if (kind === "connector") marker = 'marker-start="url(#mBall)" marker-end="url(#mBall)"';
   return '<div class="lrow"><svg width="66" height="14">' +
     `<line x1="2" y1="7" x2="48" y2="7" stroke="${color}" stroke-width="1.2" ` +
@@ -786,11 +868,12 @@ function fitView() {
   }
   if (minX === Infinity) return;
   const treeW = treeVisible() ? TREE_WIDTH : 0;
-  const cw = svg.clientWidth - treeW, ch = svg.clientHeight - TOOLBAR_H;
+  const top = chromeTop();
+  const cw = svg.clientWidth - treeW, ch = svg.clientHeight - top;
   const s = Math.min(1.5, 0.9 * Math.min(cw / (maxX - minX + 1), ch / (maxY - minY + 1)));
   view.s = s;
   view.tx = treeW + cw / 2 - s * (minX + maxX) / 2;
-  view.ty = TOOLBAR_H + ch / 2 - s * (minY + maxY) / 2;
+  view.ty = top + ch / 2 - s * (minY + maxY) / 2;
   applyView();
 }
 
@@ -798,15 +881,40 @@ function centerOn(id) {
   const n = nodes[id];
   if (!n) return;
   const treeW = treeVisible() ? TREE_WIDTH : 0;
-  const cw = svg.clientWidth - treeW, ch = svg.clientHeight - TOOLBAR_H;
+  const top = chromeTop();
+  const cw = svg.clientWidth - treeW, ch = svg.clientHeight - top;
   view.tx = treeW + cw / 2 - view.s * (n.x + n.w / 2);
-  view.ty = TOOLBAR_H + ch / 2 - view.s * (n.y + n.h / 2);
+  view.ty = top + ch / 2 - view.s * (n.y + n.h / 2);
   applyView();
 }
 
 function applyView() {
   world.setAttribute("transform",
     `translate(${view.tx},${view.ty}) scale(${view.s})`);
+}
+
+// Zoom around a client point (mouse wheel, pinch, or the on-screen buttons).
+function zoomAtClient(clientX, clientY, factor) {
+  if (!factor || !isFinite(factor)) return;
+  const r = svg.getBoundingClientRect();
+  const mx = clientX - r.left, my = clientY - r.top;
+  view.tx = mx - (mx - view.tx) * factor;
+  view.ty = my - (my - view.ty) * factor;
+  view.s *= factor;
+  applyView();
+}
+
+// + / − zoom around the center of the diagram that is still visible.
+// The detail sheet covers at most the bottom half, so the anchor stays
+// in the part of the canvas the sheet is not covering.
+function zoomBy(factor) {
+  const r = svg.getBoundingClientRect();
+  let bottom = r.bottom;
+  if (document.body.classList.contains("sheet")) {
+    const sr = document.getElementById("sheet").getBoundingClientRect();
+    if (sr.height > 0 && sr.top < bottom) bottom = Math.max(r.top + 48, sr.top);
+  }
+  zoomAtClient(r.left + r.width / 2, (r.top + bottom) / 2, factor);
 }
 
 // restore the active View's own pan/zoom, falling back to fitting the content
@@ -1280,10 +1388,11 @@ function setTreeOpen(open) {
   applyTreePanel();
 }
 
-// Expert mode gates every control that builds a custom diagram by hand:
-// the element tree, view create/rename/delete, the Display menu and
-// Unhide connections. Everything else — the predefined views, moving
-// elements, Save, Fit — stays available to everyone.
+// Edit is the extra option on top of the reader page. It gates diagram
+// building (tree, new/rename/delete view, Unhide) and the authoring
+// controls (Save, Revert, the view switcher), and it is what allows
+// elements to be dragged. Display, More, Fit, pan, and zoom stay
+// available either way. The flag is still layout.expertMode.
 function setExpertMode(on) {
   expertMode = !!on;
   document.body.classList.toggle("expert", expertMode);
@@ -1291,8 +1400,10 @@ function setExpertMode(on) {
   btn.classList.toggle("on", expertMode);
   btn.setAttribute("aria-pressed", expertMode ? "true" : "false");
   btn.title = expertMode
-    ? "Expert mode on — click to hide the custom-diagram controls"
-    : "Expert mode — build your own diagrams";
+    ? "Edit on — click to go back to reading"
+    : "Edit — move elements and change views";
+  if (expertMode) hideSheet();
+  chromeTop();
   applyTreePanel();
   updateEmptyHint();
 }
@@ -1303,7 +1414,7 @@ function updateEmptyHint() {
     && !(activeView.elements || []).some(id => model.nodes.some(n => n.id === id));
   hint.textContent = expertMode
     ? "This view is empty. Check elements in the tree to add them."
-    : "This view is empty. Turn on expert mode (⚙) to add elements.";
+    : "This view is empty. Turn Edit on to add elements.";
   hint.classList.toggle("hidden", !empty);
 }
 
@@ -1366,6 +1477,11 @@ function clearSelection() { selection = null; clearHighlightClasses(); }
 // ---------------------------------------------------------------- interaction
 
 let drag = null; // {kind: "node"|"pan", ...}
+const activePointers = new Map();
+let pinchDist = 0;
+// Set when a press turned into a pan, so the click that follows does not
+// also open or close the detail sheet.
+let gestureMoved = false;
 
 function toWorld(evt) {
   const r = svg.getBoundingClientRect();
@@ -1373,38 +1489,75 @@ function toWorld(evt) {
            y: (evt.clientY - r.top - view.ty) / view.s };
 }
 
-svg.addEventListener("mousedown", evt => {
-  if (evt.button !== 0) return;
+function finishDrag() {
+  if (!drag) return;
+  if (drag.kind === "node") drag.n.el.classList.remove("dragging");
+  // A drag pans and leaves the detail sheet up. A tap (no movement) falls
+  // through to the click handler, which opens or closes the sheet.
+  if (drag.kind === "pan" && drag.moved) {
+    gestureMoved = true;
+    setTimeout(() => { gestureMoved = false; }, 700);
+  }
+  svg.classList.remove("panning");
+  drag = null;
+}
+
+svg.addEventListener("pointerdown", evt => {
+  if (evt.pointerType === "mouse" && evt.button !== 0) return;
+  activePointers.set(evt.pointerId, true);
+  if (activePointers.size >= 2) {
+    // second finger: the touch handlers pinch-zoom; this press is not a pan
+    if (drag && drag.kind === "node") drag.n.el.classList.remove("dragging");
+    svg.classList.remove("panning");
+    drag = null;
+    return;
+  }
   const nodeEl = evt.target.closest(".node");
   if (nodeEl) {
+    if (!expertMode) {
+      // Reading: a tap opens the sheet, a drag pans — even when it starts
+      // on a node, which is most of the screen on a phone. The sheet stays
+      // open while the diagram moves.
+      drag = { kind: "pan", pointerId: evt.pointerId, pointerType: evt.pointerType,
+               sx: evt.clientX, sy: evt.clientY,
+               tx: view.tx, ty: view.ty, moved: false };
+      return;
+    }
     selectNode(nodeEl.dataset.id);
+    hideSheet();
     const n = nodes[nodeEl.dataset.id];
     const p = toWorld(evt);
-    drag = { kind: "node", n, dx: p.x - n.x, dy: p.y - n.y,
-             startX: evt.clientX, startY: evt.clientY, moved: false };
+    drag = { kind: "node", pointerId: evt.pointerId, n, dx: p.x - n.x,
+             dy: p.y - n.y, startX: evt.clientX, startY: evt.clientY,
+             moved: false };
     nodeEl.classList.add("dragging");
     nodeLayer.appendChild(nodeEl); // raise to front
-    evt.preventDefault();
     return;
   }
   const edgeEl = evt.target.closest(".edge");
-  if (edgeEl) {
-    selectEdge(edgeEl.dataset.key);
-    evt.preventDefault();
+  if (edgeEl && !expertMode) {
+    drag = { kind: "pan", pointerId: evt.pointerId, pointerType: evt.pointerType,
+             sx: evt.clientX, sy: evt.clientY,
+             tx: view.tx, ty: view.ty, moved: false };
     return;
   }
-  clearSelection();
-  drag = { kind: "pan", sx: evt.clientX, sy: evt.clientY,
-           tx: view.tx, ty: view.ty };
-  svg.classList.add("panning");
-  evt.preventDefault();
+  if (edgeEl) {
+    selectEdge(edgeEl.dataset.key);
+    return;
+  }
+  if (expertMode) { clearSelection(); hideSheet(); }
+  drag = { kind: "pan", pointerId: evt.pointerId, pointerType: evt.pointerType,
+           sx: evt.clientX, sy: evt.clientY, tx: view.tx, ty: view.ty,
+           moved: false };
 });
 
-window.addEventListener("mousemove", evt => {
-  if (!drag) return;
+window.addEventListener("pointermove", evt => {
+  if (!activePointers.has(evt.pointerId)) return;
+  if (activePointers.size >= 2 || !drag || evt.pointerId !== drag.pointerId)
+    return;
   if (drag.kind === "node") {
     if (!drag.moved) {
-      // below this threshold it's a click (expand/collapse), not a drag
+      // below this threshold it's a click, not a drag
       if (Math.hypot(evt.clientX - drag.startX, evt.clientY - drag.startY) < 4)
         return;
       drag.moved = true;
@@ -1423,18 +1576,91 @@ window.addEventListener("mousemove", evt => {
     updateAllEdges();
     setDirty(true);
   } else {
-    view.tx = drag.tx + (evt.clientX - drag.sx);
-    view.ty = drag.ty + (evt.clientY - drag.sy);
+    const dx = evt.clientX - drag.sx, dy = evt.clientY - drag.sy;
+    if (!drag.moved) {
+      // a finger jitters; a mouse click does not. Past this, it's a pan
+      // and the detail sheet stays open.
+      const slop = drag.pointerType === "mouse" ? 2 : 8;
+      if (Math.hypot(dx, dy) < slop) return;
+      drag.moved = true;
+      svg.classList.add("panning");
+    }
+    view.tx = drag.tx + dx;
+    view.ty = drag.ty + dy;
     applyView();
   }
 });
 
-window.addEventListener("mouseup", () => {
-  if (drag && drag.kind === "node") {
-    drag.n.el.classList.remove("dragging");
+function releasePointer(evt, cancelled) {
+  const tracked = activePointers.has(evt.pointerId);
+  activePointers.delete(evt.pointerId);
+  if (!tracked) return;
+  if (activePointers.size > 0) return;
+  if (cancelled) {
+    if (drag && drag.kind === "node") drag.n.el.classList.remove("dragging");
+    svg.classList.remove("panning");
+    drag = null;
+    return;
   }
+  finishDrag();
+}
+window.addEventListener("pointerup", evt => releasePointer(evt, false));
+window.addEventListener("pointercancel", evt => releasePointer(evt, true));
+svg.addEventListener("click", evt => {
+  if (gestureMoved) {
+    gestureMoved = false;
+    evt.preventDefault();
+    evt.stopPropagation();
+    return;
+  }
+  if (expertMode) return;
+  const nodeEl = evt.target.closest(".node");
+  if (nodeEl) {
+    selectNode(nodeEl.dataset.id);
+    showSheet(nodeEl.dataset.id);
+    return;
+  }
+  const edgeEl = evt.target.closest(".edge");
+  if (edgeEl) { selectEdge(edgeEl.dataset.key); return; }
+  clearSelection();
+  hideSheet();
+});
+
+// Two-finger pinch zooms the diagram, including while the detail sheet is
+// open (the fingers are often on the sheet, not on the canvas).
+function touchDistance(touches) {
+  return Math.hypot(touches[0].clientX - touches[1].clientX,
+                     touches[0].clientY - touches[1].clientY);
+}
+document.addEventListener("touchstart", evt => {
+  if (document.body.classList.contains("home-open")) return;
+  if (evt.touches.length < 2) return;
+  if (drag && drag.kind === "node") drag.n.el.classList.remove("dragging");
   svg.classList.remove("panning");
   drag = null;
+  pinchDist = touchDistance(evt.touches);
+  evt.preventDefault();
+}, { passive: false });
+document.addEventListener("touchmove", evt => {
+  if (evt.touches.length >= 2 && pinchDist > 0) {
+    const dist = touchDistance(evt.touches);
+    if (dist > 0) {
+      zoomAtClient((evt.touches[0].clientX + evt.touches[1].clientX) / 2,
+                   (evt.touches[0].clientY + evt.touches[1].clientY) / 2,
+                   dist / pinchDist);
+      pinchDist = dist;
+    }
+    evt.preventDefault();
+    return;
+  }
+  // a one-finger drag on the diagram must not turn into a page scroll
+  if (drag && drag.moved && evt.cancelable) evt.preventDefault();
+}, { passive: false });
+document.addEventListener("touchend", evt => {
+  if (evt.touches.length < 2) pinchDist = 0;
+});
+document.addEventListener("touchcancel", evt => {
+  if (evt.touches.length < 2) pinchDist = 0;
 });
 
 // ---------------------------------------------------------------- context menu
@@ -1468,7 +1694,7 @@ window.addEventListener("mousedown", evt => {
   if (!ctxmenu.contains(evt.target)) hideMenu();
 }, true);
 window.addEventListener("keydown", evt => {
-  if (evt.key === "Escape") { hideMenu(); clearSelection(); }
+  if (evt.key === "Escape") { hideMenu(); clearSelection(); hideSheet(); }
 });
 
 // ---- generic modal dialog (used by the documentation-link file browser) ----
@@ -1605,7 +1831,7 @@ function partUsagesByTypeId() {
 
 // Usages of a part def that appears only once in the model. Those are
 // hidden in the tree / Show usages, and suppressed on the canvas when the
-// def is also a View member (see README "What the viewer simplifies").
+// def is also a View member (see NOTATION.md N4).
 function singletonPartUsageIds() {
   const out = new Set();
   for (const usageIds of partUsagesByTypeId().values()) {
@@ -1668,8 +1894,14 @@ function relatedGroups(id) {
     ? "satisfy relations"
     : (satisfiers.length && !satisfied.length
         ? "satisfying elements" : "satisfied requirements");
+  const verified = relatedIds(id, "verify", "down");
+  const verifiers = relatedIds(id, "verify", "up");
+  const verifyLabel = verified.length && verifiers.length
+    ? "verify relations"
+    : (verifiers.length && !verified.length
+        ? "verifying cases" : "verified requirements");
   const hideSingleton = singletonPartUsageIds();
-  return [
+  const groups = [
     { label: "decomposition",
       ids: relatedIds(id, "composition", "down", {usagesOnly: true}) },
     { label: "usages", ids: model.nodes.filter(n => n.usageOwner === id)
@@ -1680,6 +1912,12 @@ function relatedGroups(id) {
       ids: relatedIds(id, "specialization", "up", {transitive: true}) },
     { label: satisfyLabel, ids: [...new Set([...satisfied, ...satisfiers])] },
   ];
+  if (verified.length || verifiers.length)
+    groups.push({
+      label: verifyLabel,
+      ids: [...new Set([...verified, ...verifiers])],
+    });
+  return groups;
 }
 
 // adds `ids` to the active View, keeping the ones already there untouched
@@ -1777,6 +2015,7 @@ function backgroundMenuItems() {
 
 svg.addEventListener("contextmenu", evt => {
   evt.preventDefault();
+  if (!expertMode) return;
   const nodeEl = evt.target.closest(".node");
   if (nodeEl) {
     showMenu(evt.clientX, evt.clientY, nodeMenuItems(nodeEl.dataset.id));
@@ -1793,12 +2032,7 @@ svg.addEventListener("contextmenu", evt => {
 svg.addEventListener("wheel", evt => {
   evt.preventDefault();
   const k = evt.deltaY < 0 ? 1.1 : 1 / 1.1;
-  const r = svg.getBoundingClientRect();
-  const mx = evt.clientX - r.left, my = evt.clientY - r.top;
-  view.tx = mx - (mx - view.tx) * k;
-  view.ty = my - (my - view.ty) * k;
-  view.s *= k;
-  applyView();
+  zoomAtClient(evt.clientX, evt.clientY, k);
 }, { passive: false });
 
 // ---------------------------------------------------------------- persistence
@@ -1900,7 +2134,7 @@ function renderHome() {
   if (!views.length) {
     const p = document.createElement("div");
     p.className = "empty";
-    p.textContent = "No views yet — turn on expert mode (⚙) and use + to create one.";
+    p.textContent = "No views yet. Turn Edit on and use + to create one.";
     box.appendChild(p);
     return;
   }
@@ -1941,7 +2175,11 @@ function renderHome() {
 
 function applyHome() {
   document.getElementById("home").classList.toggle("hidden", !homeOpen);
-  document.getElementById("homeBtn").classList.toggle("on", homeOpen);
+  document.body.classList.toggle("home-open", homeOpen);
+  const back = document.getElementById("homeBtn");
+  if (back) back.hidden = homeOpen;
+  if (homeOpen && typeof hideSheet === "function") hideSheet();
+  if (typeof updateTitle === "function") updateTitle();
   if (homeOpen) renderHome();
 }
 
@@ -1969,6 +2207,7 @@ async function createView() {
   views.push(created);
   views.sort((a, b) => a.name.localeCompare(b.name));
   await switchToView(created.id);
+  setHomeOpen(false);
 }
 
 async function renameActiveView() {
@@ -2010,7 +2249,84 @@ async function deleteActiveView() {
 function updateTitle() {
   const name = activeView ? activeView.name : (model && model.package);
   document.title = name || "System Explorer";
+  const h = document.getElementById("viewTitle");
+  if (h) h.textContent = homeOpen ? "Explorer" : (name || "Explorer");
 }
+
+// ------------------------------------------------------- detail sheet
+// The same panel the published Viewer opens on a tap: the element's doc,
+// its documentation link, and the requirements it satisfies or is
+// satisfied by. Reading only — Edit is what changes the diagram.
+function hideSheet() {
+  document.body.classList.remove("sheet");
+}
+
+function sheetPeers(id, end, kinds) {
+  const other = end === "from" ? "to" : "from";
+  const out = [];
+  for (const e of model.edges || []) {
+    if (!kinds.includes(e.kind) || e[end] !== id) continue;
+    if (e[other] && !out.includes(e[other])) out.push(e[other]);
+  }
+  return out;
+}
+
+function fillSheetLinks(listId, headId, ids) {
+  const list = document.getElementById(listId);
+  const head = document.getElementById(headId);
+  list.textContent = "";
+  head.classList.toggle("hidden", !ids.length);
+  list.classList.toggle("hidden", !ids.length);
+  const byId = Object.fromEntries(model.nodes.map(n => [n.id, n]));
+  for (const id of ids) {
+    const n = byId[id];
+    if (!n) continue;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "row";
+    btn.textContent = n.name;
+    if (n.doc) {
+      const small = document.createElement("small");
+      small.textContent = n.doc;
+      btn.appendChild(small);
+    }
+    btn.addEventListener("click", () => {
+      showSheet(id);
+      if (nodes[id]) { selectNode(id); centerOn(id); }
+    });
+    list.appendChild(btn);
+  }
+}
+
+function showSheet(id) {
+  if (!model) return;
+  const n = model.nodes.find(x => x.id === id);
+  if (!n) { hideSheet(); return; }
+  document.body.classList.add("sheet");
+  document.getElementById("sheetName").textContent = n.name;
+  document.getElementById("sheetKind").textContent =
+    "«" + n.kind + "»" + (n.shortName ? "  «" + n.shortName + "»" : "");
+  const doc = document.getElementById("sheetDoc");
+  doc.textContent = n.doc || "";
+  doc.classList.toggle("hidden", !n.doc);
+  const link = document.getElementById("docLink");
+  const href = (layout.docs || {})[id];
+  if (href) {
+    link.href = /^https?:\/\//i.test(href)
+      ? href : "/api/doc?path=" + encodeURIComponent(href);
+    const leaf = String(href).split(/[\\/]/).pop();
+    link.textContent = /^https?:\/\//i.test(href)
+      ? "Open documentation" : "Open documentation (" + leaf + ")";
+    link.classList.remove("hidden");
+  } else {
+    link.removeAttribute("href");
+    link.classList.add("hidden");
+  }
+  fillSheetLinks("reqList", "reqHead", sheetPeers(id, "from", ["satisfy", "verify"]));
+  fillSheetLinks("byList", "byHead", sheetPeers(id, "to", ["satisfy"]));
+  fillSheetLinks("verList", "verHead", sheetPeers(id, "to", ["verify"]));
+}
+// ------------------------------------------------------- detail sheet end
 
 // validation warnings from the parser (unbalanced braces, unrecognized
 // statements, ambiguous names, unresolved references): a ⚠ counter in the
@@ -2145,6 +2461,9 @@ document.getElementById("homeBtn").addEventListener("click", () => {
 document.getElementById("saveBtn").addEventListener("click", save);
 document.getElementById("revertBtn").addEventListener("click", revert);
 document.getElementById("fitBtn").addEventListener("click", fitView);
+document.getElementById("zoomIn").addEventListener("click", () => zoomBy(1.25));
+document.getElementById("zoomOut").addEventListener("click", () => zoomBy(1 / 1.25));
+document.getElementById("closeSheet").addEventListener("click", hideSheet);
 document.getElementById("reloadBtn").addEventListener("click", () => {
   closeMenus();
   loadModel();

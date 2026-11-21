@@ -2,14 +2,15 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Viewer</title>
 <style>
   :root { color-scheme: light; }
-  html, body { margin: 0; height: 100%;
+  html, body { margin: 0; height: 100%; overscroll-behavior: none;
     font-family: "Segoe UI", system-ui, sans-serif; background: #f3f5f8;
     color: #1c1c1c; }
-  header { position: sticky; top: 0; z-index: 5; display: flex;
+  body { display: flex; flex-direction: column; overflow: hidden; }
+  header { position: relative; z-index: 8; display: flex; flex: none;
     align-items: center; gap: 8px; min-height: 48px; padding: 8px 12px;
     background: #fff; border-bottom: 1px solid #e2e5ea; }
   header h1 { font-size: 17px; font-weight: 650; margin: 0; line-height: 1.3; }
@@ -18,7 +19,8 @@
     border: 1px solid #d5d8de; background: #fff; }
   #home, #stage { display: none; }
   body.home #home, body.view #stage { display: block; }
-  #home { padding: 16px 16px 32px; max-width: 640px; margin: 0 auto; }
+  #home { flex: 1; overflow: auto; padding: 16px 16px 32px; max-width: 640px;
+    margin: 0 auto; width: 100%; box-sizing: border-box; }
   #home .lead { margin: 0 0 14px; color: #555; font-size: 14px; line-height: 1.45; }
   .card { display: block; width: 100%; text-align: left; margin: 0 0 12px;
     padding: 14px 16px; border-radius: 12px; border: 1px solid #e0e3e8;
@@ -29,27 +31,48 @@
   #empty { color: #666; font-size: 15px; }
   #warn { display: none; margin: 0 0 12px; padding: 8px 10px; border-radius: 8px;
     background: #fff8e1; color: #7a5c00; font-size: 13px; }
-  #stage { position: fixed; top: 57px; left: 0; right: 0; bottom: 0; }
-  #canvas { position: absolute; inset: 0; overflow: auto; -webkit-overflow-scrolling: touch;
-    touch-action: pan-x pan-y pinch-zoom; background:
+  #stage { position: relative; flex: 1; min-height: 0; }
+  #canvas { position: absolute; inset: 0; overflow: hidden; touch-action: none;
+    user-select: none; -webkit-user-select: none; background:
       linear-gradient(#e6e9ee 1px, transparent 1px) 0 0 / 24px 24px,
       linear-gradient(90deg, #e6e9ee 1px, transparent 1px) 0 0 / 24px 24px,
       #f7f8fb; }
-  svg { display: block; }
+  svg { display: block; width: 100%; height: 100%; touch-action: none; }
+  #zoombar { position: absolute; top: 12px; right: 12px; z-index: 7;
+    display: none; flex-direction: column; gap: 8px; }
+  body.view #zoombar { display: flex; }
+  #zoombar button { width: 44px; height: 44px; border-radius: 10px;
+    border: 1px solid #d5d8de; background: #fff; font: inherit; font-size: 22px;
+    line-height: 1; box-shadow: 0 2px 8px rgba(0,0,0,.12); padding: 0; }
+  #zoomFit { font-size: 13px; font-weight: 650; }
   .node { cursor: pointer; }
   .node rect { fill: #fff; stroke: #1a6bbf; stroke-width: 1.5; rx: 6; }
   .node.req rect { fill: #fff8e1; stroke: #a08000; }
   .node.actor rect { fill: #f3f0ff; stroke: #5b4b8a; }
   .node.usecase rect { fill: #f3fff6; stroke: #2e7d4f; }
   .node.sel rect { stroke-width: 3; }
-  .node text { font-family: "Segoe UI", system-ui, sans-serif; pointer-events: none; }
-  .node .kind { fill: #777; font-size: 11px; }
-  .node .name { fill: #1c1c1c; font-size: 15px; font-weight: 650; }
-  .edge line { stroke: #8aa0b8; stroke-width: 1.4; }
+  .node text { fill: #222; font-size: 12px; font-family: "Segoe UI", system-ui, sans-serif;
+    pointer-events: none; }
+  .node text.name { fill: #1c1c1c; font-size: 13px; font-weight: 600; }
+  .node line.sep { stroke: #d5d8de; stroke-width: 1; }
+  .node text.docicon { font-size: 11px; }
+  .edge line { stroke: #555; stroke-width: 1.2; fill: none; }
+  .edge.typing line { stroke-dasharray: 5 4; }
   .edge.satisfy line { stroke: #a08000; stroke-dasharray: 5 4; }
-  .edge text { fill: #667; font-size: 11px; font-family: "Segoe UI", system-ui, sans-serif; }
+  .edge.verify line { stroke: #1a6aa8; stroke-dasharray: 5 4; }
+  .edge.connector line { stroke: #2a8f4d; stroke-width: 1.4; }
+  .edge.association line { stroke: #6a3fa0; }
+  .edge text { fill: #444; font-size: 11px; font-family: "Segoe UI", system-ui, sans-serif; }
+  #legend { position: absolute; left: 12px; bottom: 10px; z-index: 5;
+    background: rgba(255,255,255,.95); border: 1px solid #ddd;
+    border-radius: 4px; padding: 6px 10px; font-size: 12px; color: #333;
+    display: none; }
+  #legend .lrow { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
+  #legend svg { flex: none; }
+  body.sheet #legend { display: none !important; }
   #sheet { display: none; position: fixed; left: 0; right: 0; bottom: 0; z-index: 6;
-    max-height: 72vh; overflow: auto; background: #fff; border-radius: 16px 16px 0 0;
+    max-height: 50%; max-height: 50dvh; box-sizing: border-box; overflow: auto;
+    touch-action: pan-y; background: #fff; border-radius: 16px 16px 0 0;
     box-shadow: 0 -6px 28px rgba(0,0,0,.16); padding: 8px 16px 24px; }
   body.sheet #sheet { display: block; }
   #sheet .grab { width: 36px; height: 4px; border-radius: 2px; background: #ddd;
@@ -85,7 +108,13 @@
   <p id="empty" hidden>No prepared views yet.</p>
 </main>
 <div id="stage">
+  <div id="legend"></div>
   <div id="canvas"></div>
+  <div id="zoombar">
+    <button type="button" id="zoomIn" aria-label="Zoom in">+</button>
+    <button type="button" id="zoomOut" aria-label="Zoom out">−</button>
+    <button type="button" id="zoomFit" aria-label="Show whole diagram">Fit</button>
+  </div>
 </div>
 <aside id="sheet" aria-live="polite">
   <div class="grab"></div>
@@ -98,6 +127,8 @@
   <ul id="reqList"></ul>
   <h3 id="byHead">Satisfied by</h3>
   <ul id="byList"></ul>
+  <h3 id="verHead">Verified by</h3>
+  <ul id="verList"></ul>
 </aside>
 <script id="viewer-data" type="application/json">__VIEWER_DATA__</script>
 <script>
@@ -138,13 +169,95 @@ function suppressedSingletonUsages(vis) {
   }
   return suppressed;
 }
+// Explorer display defaults (NOTATION.md): name only, attribute and parts
+// compartments on, no package line, no doc body. The published page has no
+// Display menu, so these are fixed.
+const LINE_H = 16, PAD = 8;
+const NAME_FONT = '600 13px "Segoe UI", system-ui, sans-serif';
+const BODY_FONT = '12px "Segoe UI", system-ui, sans-serif';
+function nodeLines(d) {
+  const header = [(d.shortName ? d.shortName + " " : "") + d.name];
+  const compartments = [];
+  const attrs = d.attributes || [];
+  if (attrs.length) compartments.push(attrs.slice());
+  const parts = d.parts || [];
+  if (parts.length) {
+    const lines = [];
+    for (const p of parts) {
+      lines.push(p.text);
+      for (const a of p.attrs || []) lines.push("    ." + a);
+    }
+    compartments.push(lines);
+  }
+  return { header, compartments };
+}
 function nodeSize(d) {
-  const kind = "«" + d.kind + "»";
-  const name = (d.shortName ? "«" + d.shortName + "» " : "") + d.name;
-  const w = Math.max(132, Math.ceil(Math.max(
-    textWidth(kind, "11px sans-serif"),
-    textWidth(name, "600 15px sans-serif")) + 28));
-  return { w, h: 56 };
+  const { header, compartments } = nodeLines(d);
+  let w = 110;
+  for (const text of header)
+    w = Math.max(w, textWidth(text, NAME_FONT) + 2 * PAD);
+  for (const comp of compartments)
+    for (const text of comp)
+      w = Math.max(w, textWidth(text, BODY_FONT) + 2 * PAD);
+  w = Math.ceil(w);
+  let y = PAD + 12 + header.length * LINE_H - 4;
+  for (const comp of compartments)
+    y += 6 + comp.length * LINE_H - 4;
+  return { w, h: y - LINE_H + PAD + 6 };
+}
+function drawNode(n, selected) {
+  const d = n.data;
+  const { header, compartments } = nodeLines(d);
+  const g = document.createElementNS(NS, "g");
+  g.setAttribute("class", "node"
+    + (d.kind.startsWith("requirement") ? " req" : "")
+    + (d.kind === "actor def" || d.kind === "actor" ? " actor" : "")
+    + (d.kind === "use case def" || d.kind === "use case" ? " usecase" : "")
+    + (d.id === selected ? " sel" : ""));
+  g.dataset.id = d.id;
+  g.setAttribute("transform", "translate(" + n.x + " " + n.y + ")");
+  const rect = document.createElementNS(NS, "rect");
+  rect.setAttribute("width", n.w);
+  rect.setAttribute("height", n.h);
+  rect.setAttribute("rx", 6);
+  g.appendChild(rect);
+  let y = PAD + 12;
+  function addText(text, cls, centered, italic) {
+    const t = document.createElementNS(NS, "text");
+    if (cls) t.setAttribute("class", cls);
+    if (italic) t.setAttribute("font-style", "italic");
+    t.setAttribute("x", centered ? n.w / 2 : PAD);
+    if (centered) t.setAttribute("text-anchor", "middle");
+    t.setAttribute("y", y);
+    t.textContent = text;
+    g.appendChild(t);
+    y += LINE_H;
+  }
+  for (const text of header) addText(text, "name", true, !!d.abstract);
+  y -= 4;
+  for (const comp of compartments) {
+    const sepY = y - 12 + 4;
+    const sep = document.createElementNS(NS, "line");
+    sep.setAttribute("class", "sep");
+    sep.setAttribute("x1", 0);
+    sep.setAttribute("x2", n.w);
+    sep.setAttribute("y1", sepY);
+    sep.setAttribute("y2", sepY);
+    g.appendChild(sep);
+    y += 6;
+    for (const text of comp) addText(text, "", false, false);
+    y -= 4;
+  }
+  if (docs[d.id]) {
+    const icon = document.createElementNS(NS, "text");
+    icon.setAttribute("class", "docicon");
+    icon.setAttribute("x", n.w - 4);
+    icon.setAttribute("y", 13);
+    icon.setAttribute("text-anchor", "end");
+    icon.textContent = "📄";
+    g.appendChild(icon);
+  }
+  return g;
 }
 function state() {
   const q = new URLSearchParams(location.search);
@@ -166,8 +279,15 @@ function findView(id) {
 function requirementsOf(id) {
   const out = [];
   for (const e of model.edges || [])
-    if (e.kind === "satisfy" && e.from === id && byId[e.to] && !out.includes(e.to))
+    if ((e.kind === "satisfy" || e.kind === "verify") && e.from === id && byId[e.to] && !out.includes(e.to))
       out.push(e.to);
+  return out;
+}
+function verifiedBy(id) {
+  const out = [];
+  for (const e of model.edges || [])
+    if (e.kind === "verify" && e.to === id && byId[e.from] && !out.includes(e.from))
+      out.push(e.from);
   return out;
 }
 function satisfiersOf(id) {
@@ -222,11 +342,15 @@ function showSheet(view, id) {
   }
   fillLinks("reqList", "reqHead", requirementsOf(id), view.id);
   fillLinks("byList", "byHead", satisfiersOf(id), view.id);
+  fillLinks("verList", "verHead", verifiedBy(id), view.id);
 }
 function renderHome() {
   document.body.className = "home";
   document.getElementById("back").hidden = true;
   document.getElementById("title").textContent = "Viewer";
+  const legend = document.getElementById("legend");
+  legend.style.display = "none";
+  legend.textContent = "";
   const warn = document.getElementById("warn");
   const warnings = model.warnings || [];
   warn.style.display = warnings.length ? "block" : "none";
@@ -290,6 +414,62 @@ function place(view) {
   }
   return nodes;
 }
+function appendMarkers(svg) {
+  const defs = document.createElementNS(NS, "defs");
+  defs.innerHTML =
+    '<marker id="mTriangle" markerUnits="userSpaceOnUse" markerWidth="16" markerHeight="14" refX="0" refY="7" orient="auto">' +
+      '<path d="M0,0 L14,7 L0,14 Z" fill="#fff" stroke="#555" stroke-width="1.2"/></marker>' +
+    '<marker id="mDiamond" markerUnits="userSpaceOnUse" markerWidth="18" markerHeight="10" refX="0" refY="5" orient="auto">' +
+      '<path d="M0,5 L8,0 L16,5 L8,10 Z" fill="#555"/></marker>' +
+    '<marker id="mOpen" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">' +
+      '<path d="M0,1 L10,6 L0,11" fill="none" stroke="#555" stroke-width="1.2"/></marker>' +
+    '<marker id="mOpenSat" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">' +
+      '<path d="M0,1 L10,6 L0,11" fill="none" stroke="#a08000" stroke-width="1.2"/></marker>' +
+    '<marker id="mBall" markerUnits="userSpaceOnUse" markerWidth="10" markerHeight="10" refX="5" refY="5">' +
+      '<circle cx="5" cy="5" r="4" fill="#2a8f4d"/></marker>';
+  svg.appendChild(defs);
+}
+const LEGEND_ORDER = ["specialization", "composition", "typing", "satisfy", "verify", "connector", "association"];
+const LEGEND_LABELS = {
+  specialization: "kind of",
+  composition: "composition (has part)",
+  typing: "is a",
+  satisfy: "satisfies requirement",
+  verify: "verifies requirement",
+  connector: "connector",
+  association: "association (actor/subject ↔ use case)",
+};
+function legendRow(kind) {
+  const dashed = kind === "typing" || kind === "satisfy" || kind === "verify";
+  const color = kind === "satisfy" ? "#a08000"
+    : kind === "verify" ? "#1a6aa8"
+    : kind === "connector" ? "#2a8f4d"
+    : kind === "association" ? "#6a3fa0"
+    : "#555";
+  let marker = "";
+  if (kind === "specialization") marker = 'marker-end="url(#mTriangle)"';
+  if (kind === "composition") marker = 'marker-start="url(#mDiamond)"';
+  if (kind === "typing") marker = 'marker-end="url(#mOpen)"';
+  if (kind === "satisfy") marker = 'marker-end="url(#mOpenSat)"';
+  if (kind === "verify") marker = 'marker-end="url(#mOpen)"';
+  if (kind === "connector") marker = 'marker-start="url(#mBall)" marker-end="url(#mBall)"';
+  return '<div class="lrow"><svg width="66" height="14">' +
+    '<line x1="2" y1="7" x2="48" y2="7" stroke="' + color + '" stroke-width="1.2" ' +
+    (dashed ? 'stroke-dasharray="5 4" ' : "") + marker + "/></svg>" +
+    "<span>" + LEGEND_LABELS[kind] + "</span></div>";
+}
+function updateLegend(shown) {
+  const box = document.getElementById("legend");
+  const kinds = new Set(shown.map(e => e.kind));
+  const rows = LEGEND_ORDER.filter(k => kinds.has(k));
+  if (!rows.length) {
+    box.style.display = "none";
+    box.textContent = "";
+    return;
+  }
+  box.innerHTML = rows.map(legendRow).join("");
+  box.style.display = "block";
+}
 function renderView(view, selected) {
   document.body.className = "view" + (selected && byId[selected] ? " sheet" : "");
   document.getElementById("back").hidden = false;
@@ -306,9 +486,10 @@ function renderView(view, selected) {
     maxY = Math.max(maxY, n.y + n.h + 32);
   }
   const svg = document.createElementNS(NS, "svg");
-  svg.setAttribute("width", maxX);
-  svg.setAttribute("height", maxY);
   svg.setAttribute("id", "diagram");
+  svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+  appendMarkers(svg);
+  mountCamera(svg, view.id, maxX, maxY);
   const edges = document.createElementNS(NS, "g");
   const layer = document.createElementNS(NS, "g");
   svg.appendChild(edges);
@@ -327,58 +508,158 @@ function renderView(view, selected) {
     const g = document.createElementNS(NS, "g");
     g.setAttribute("class", "edge " + d.kind);
     const line = document.createElementNS(NS, "line");
-    const mx = (p1.x + p2.x) / 2, my = (p1.y + p2.y) / 2;
-    const len = Math.hypot(p2.x - p1.x, p2.y - p1.y) || 1;
-    const ox = -(p2.y - p1.y) / len * off, oy = (p2.x - p1.x) / len * off;
-    line.setAttribute("x1", p1.x + ox); line.setAttribute("y1", p1.y + oy);
-    line.setAttribute("x2", p2.x + ox); line.setAttribute("y2", p2.y + oy);
+    const len0 = Math.hypot(p2.x - p1.x, p2.y - p1.y) || 1;
+    const ox = -(p2.y - p1.y) / len0 * off, oy = (p2.x - p1.x) / len0 * off;
+    let x1 = p1.x + ox, y1 = p1.y + oy, x2 = p2.x + ox, y2 = p2.y + oy;
+    if (d.kind === "specialization") {
+      const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy) || 1;
+      x2 -= dx / len * 14;
+      y2 -= dy / len * 14;
+    }
+    line.setAttribute("x1", x1); line.setAttribute("y1", y1);
+    line.setAttribute("x2", x2); line.setAttribute("y2", y2);
+    if (d.kind === "specialization") line.setAttribute("marker-end", "url(#mTriangle)");
+    if (d.kind === "composition") line.setAttribute("marker-start", "url(#mDiamond)");
+    if (d.kind === "typing") line.setAttribute("marker-end", "url(#mOpen)");
+    if (d.kind === "satisfy") line.setAttribute("marker-end", "url(#mOpenSat)");
+    if (d.kind === "verify") line.setAttribute("marker-end", "url(#mOpen)");
+    if (d.kind === "connector") {
+      line.setAttribute("marker-start", "url(#mBall)");
+      line.setAttribute("marker-end", "url(#mBall)");
+    }
     g.appendChild(line);
-    if (d.label) {
+    // Connector labels and flow guards stay; other labels are off (N5).
+    if (d.label && (d.kind === "connector" || d.kind === "flow")) {
       const t = document.createElementNS(NS, "text");
-      t.setAttribute("x", mx + ox);
-      t.setAttribute("y", my + oy - 4);
+      t.setAttribute("x", (x1 + x2) / 2);
+      t.setAttribute("y", (y1 + y2) / 2 - 4);
       t.textContent = d.label;
       g.appendChild(t);
     }
     edges.appendChild(g);
   }
+  updateLegend(shown);
   for (const n of Object.values(nodes)) {
-    const g = document.createElementNS(NS, "g");
-    g.setAttribute("class", "node"
-      + (n.data.kind.startsWith("requirement") ? " req" : "")
-      + (n.data.kind === "actor def" || n.data.kind === "actor" ? " actor" : "")
-      + (n.data.kind === "use case def" || n.data.kind === "use case" ? " usecase" : "")
-      + (n.data.id === selected ? " sel" : ""));
-    g.dataset.id = n.data.id;
-    g.setAttribute("transform", "translate(" + n.x + " " + n.y + ")");
-    const rect = document.createElementNS(NS, "rect");
-    rect.setAttribute("width", n.w);
-    rect.setAttribute("height", n.h);
-    rect.setAttribute("rx", 6);
-    g.appendChild(rect);
-    const kind = document.createElementNS(NS, "text");
-    kind.setAttribute("class", "kind");
-    kind.setAttribute("x", 12);
-    kind.setAttribute("y", 20);
-    kind.textContent = "«" + n.data.kind + "»";
-    g.appendChild(kind);
-    const name = document.createElementNS(NS, "text");
-    name.setAttribute("class", "name");
-    name.setAttribute("x", 12);
-    name.setAttribute("y", 40);
-    name.textContent = (n.data.shortName ? "«" + n.data.shortName + "» " : "") + n.data.name;
-    g.appendChild(name);
+    const g = drawNode(n, selected);
     g.addEventListener("click", evt => {
       evt.stopPropagation();
       go(view.id, n.data.id, true);
     });
     layer.appendChild(g);
   }
-  svg.addEventListener("click", () => { if (selected) go(view.id, null, true); });
+  svg.addEventListener("click", evt => {
+    if (camera.moved) { evt.stopPropagation(); camera.moved = false; return; }
+    if (selected) go(view.id, null, true);
+  });
+  svg.addEventListener("click", evt => {
+    if (camera.moved) { evt.stopPropagation(); evt.preventDefault(); camera.moved = false; }
+  }, true);
   const canvas = document.getElementById("canvas");
   canvas.textContent = "";
   canvas.appendChild(svg);
   showSheet(view, selected);
+}
+let camera = null;
+function mountCamera(svg, viewId, worldW, worldH) {
+  if (!camera || camera.viewId !== viewId
+      || camera.worldW !== worldW || camera.worldH !== worldH) {
+    camera = {
+      viewId, worldW, worldH,
+      vx: 0, vy: 0, vw: worldW, vh: worldH, moved: false,
+    };
+  }
+  const pointers = new Map();
+  let pinch = 0;
+  let origin = null;
+  function apply() {
+    svg.setAttribute("viewBox",
+      camera.vx + " " + camera.vy + " " + camera.vw + " " + camera.vh);
+  }
+  function metrics() {
+    const rect = svg.getBoundingClientRect();
+    const scale = Math.min(rect.width / camera.vw, rect.height / camera.vh) || 1;
+    return {
+      scale,
+      ox: rect.left + (rect.width - camera.vw * scale) / 2,
+      oy: rect.top + (rect.height - camera.vh * scale) / 2,
+    };
+  }
+  function clamp() {
+    const c = camera;
+    c.vw = Math.min(c.worldW, Math.max(c.worldW / 12, c.vw));
+    c.vh = c.worldH * (c.vw / c.worldW);
+    if (c.vw >= c.worldW - 0.5) { c.vx = 0; c.vw = c.worldW; c.vh = c.worldH; }
+    else c.vx = Math.min(Math.max(c.vx, 0), c.worldW - c.vw);
+    if (c.vh >= c.worldH - 0.5) { c.vy = 0; c.vh = c.worldH; }
+    else c.vy = Math.min(Math.max(c.vy, 0), c.worldH - c.vh);
+  }
+  function zoomAt(clientX, clientY, factor) {
+    const { scale, ox, oy } = metrics();
+    const wx = camera.vx + (clientX - ox) / scale;
+    const wy = camera.vy + (clientY - oy) / scale;
+    const u = (wx - camera.vx) / camera.vw;
+    const v = (wy - camera.vy) / camera.vh;
+    camera.vw *= factor;
+    clamp();
+    camera.vx = wx - u * camera.vw;
+    camera.vy = wy - v * camera.vh;
+    clamp();
+    apply();
+  }
+  function pan(dx, dy) {
+    const { scale } = metrics();
+    camera.vx -= dx / scale;
+    camera.vy -= dy / scale;
+    clamp();
+    apply();
+  }
+  svg.addEventListener("pointerdown", evt => {
+    // Touch pan and pinch are handled on document so a finger on the
+    // detail sheet still zooms, and a finger on the diagram still pans.
+    if (evt.pointerType === "touch") return;
+    svg.setPointerCapture(evt.pointerId);
+    pointers.set(evt.pointerId, { x: evt.clientX, y: evt.clientY });
+    origin = { x: evt.clientX, y: evt.clientY };
+    camera.moved = false;
+    if (pointers.size === 2) {
+      const pts = [...pointers.values()];
+      pinch = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+    }
+  });
+  svg.addEventListener("pointermove", evt => {
+    const prev = pointers.get(evt.pointerId);
+    if (!prev) return;
+    pointers.set(evt.pointerId, { x: evt.clientX, y: evt.clientY });
+    if (origin && Math.hypot(evt.clientX - origin.x, evt.clientY - origin.y) > 8)
+      camera.moved = true;
+    if (pointers.size >= 2) {
+      const pts = [...pointers.values()];
+      const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      if (pinch > 0 && dist > 0) {
+        zoomAt((pts[0].x + pts[1].x) / 2, (pts[0].y + pts[1].y) / 2, pinch / dist);
+        pinch = dist;
+      }
+      return;
+    }
+    if (camera.moved) pan(evt.clientX - prev.x, evt.clientY - prev.y);
+  });
+  function release(evt) {
+    pointers.delete(evt.pointerId);
+    if (pointers.size < 2) pinch = 0;
+  }
+  svg.addEventListener("pointerup", release);
+  svg.addEventListener("pointercancel", release);
+  svg.addEventListener("wheel", evt => {
+    evt.preventDefault();
+    zoomAt(evt.clientX, evt.clientY, evt.deltaY > 0 ? 1.12 : 1 / 1.12);
+  }, { passive: false });
+  camera.zoomAt = zoomAt;
+  camera.pan = pan;
+  camera.fit = () => {
+    camera.vx = 0; camera.vy = 0; camera.vw = camera.worldW; camera.vh = camera.worldH;
+    apply();
+  };
+  apply();
 }
 function borderPoint(n, toward) {
   const cx = n.x + n.w / 2, cy = n.y + n.h / 2;
@@ -396,6 +677,85 @@ function render() {
   if (!view) renderHome();
   else renderView(view, e);
 }
+// Touch gestures live on document, not only the svg: the detail sheet sits
+// on top of the bottom half of the screen, and a pinch is often started
+// there. One finger on the diagram pans; one finger on the sheet scrolls
+// the sheet; two fingers zoom wherever they land.
+function touchDistance(touches) {
+  return Math.hypot(touches[0].clientX - touches[1].clientX,
+                     touches[0].clientY - touches[1].clientY);
+}
+let gesturePinch = 0;
+let gesturePan = null;
+function touchOnDiagram(target) {
+  return !!(target && target.closest && target.closest("#canvas, svg"));
+}
+document.addEventListener("touchstart", evt => {
+  if (!camera || !document.body.classList.contains("view")) return;
+  if (evt.touches.length >= 2) {
+    gesturePan = null;
+    gesturePinch = touchDistance(evt.touches);
+    evt.preventDefault();
+    return;
+  }
+  if (evt.touches.length === 1 && touchOnDiagram(evt.target)) {
+    const t = evt.touches[0];
+    gesturePan = { x: t.clientX, y: t.clientY, moved: false };
+  }
+}, { passive: false });
+document.addEventListener("touchmove", evt => {
+  if (!camera || !document.body.classList.contains("view")) return;
+  if (evt.touches.length >= 2 && gesturePinch > 0) {
+    const dist = touchDistance(evt.touches);
+    if (dist > 0) {
+      camera.zoomAt((evt.touches[0].clientX + evt.touches[1].clientX) / 2,
+                    (evt.touches[0].clientY + evt.touches[1].clientY) / 2,
+                    gesturePinch / dist);
+      gesturePinch = dist;
+      camera.moved = true;
+    }
+    evt.preventDefault();
+    return;
+  }
+  if (!gesturePan || evt.touches.length !== 1) return;
+  const t = evt.touches[0];
+  const dx = t.clientX - gesturePan.x, dy = t.clientY - gesturePan.y;
+  if (!gesturePan.moved && Math.hypot(dx, dy) < 8) return;
+  gesturePan.moved = true;
+  camera.moved = true;
+  camera.pan(dx, dy);
+  gesturePan.x = t.clientX;
+  gesturePan.y = t.clientY;
+  evt.preventDefault();
+}, { passive: false });
+function endTouchGesture(evt) {
+  if (evt.touches.length < 2) gesturePinch = 0;
+  if (evt.touches.length === 0) gesturePan = null;
+}
+document.addEventListener("touchend", endTouchGesture);
+document.addEventListener("touchcancel", endTouchGesture);
+function visibleZoomPoint() {
+  const rect = document.getElementById("diagram").getBoundingClientRect();
+  let bottom = rect.bottom;
+  if (document.body.classList.contains("sheet")) {
+    const sr = document.getElementById("sheet").getBoundingClientRect();
+    if (sr.height > 0 && sr.top < bottom) bottom = Math.max(rect.top + 48, sr.top);
+  }
+  return { x: rect.left + rect.width / 2, y: (rect.top + bottom) / 2 };
+}
+document.getElementById("zoomIn").addEventListener("click", () => {
+  if (!camera || !document.getElementById("diagram")) return;
+  const p = visibleZoomPoint();
+  camera.zoomAt(p.x, p.y, 1 / 1.25);
+});
+document.getElementById("zoomOut").addEventListener("click", () => {
+  if (!camera || !document.getElementById("diagram")) return;
+  const p = visibleZoomPoint();
+  camera.zoomAt(p.x, p.y, 1.25);
+});
+document.getElementById("zoomFit").addEventListener("click", () => {
+  if (camera) camera.fit();
+});
 document.getElementById("back").addEventListener("click", () => go(null, null, true));
 document.getElementById("closeSheet").addEventListener("click", () => {
   const { v } = state();

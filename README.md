@@ -247,70 +247,11 @@ want to experiment.
 
 ## What the viewer simplifies vs. standard SysML notation
 
-To keep diagrams readable, the viewer deliberately deviates from textbook
-SysML rendering. At a glance (all of these are **Display** toggles you can
-turn back on per View, except where noted):
-
-- **Element kind keywords are hidden.** Node headers show just the name,
-  not «part def» / «requirement» / etc.
-- **Parts and part definitions look the same.** A standard BDD often
-  distinguishes usage and definition boxes; here a `part` usage node uses
-  the same white fill (and uncolored tree dot) as a `part def`. Other
-  non-def kinds can still get a tint. To reverse: in
-  [`viewer.html`](src/system_explorer/viewer.html), drop the
-  `&& d.kind !== "part"` / `&& kind !== "part"` guards in `createNodeEl`
-  and `treeDotClass` so parts get `.usage` / `k-usage` again.
-- **Usage node headers omit `: Type`.** SysML often labels a usage
-  `inputTempSensor : Thermistor`; the viewer shows only the role name
-  (`inputTempSensor`). The type remains in the model (`usageType`) and on
-  the typing edge (legend: **is a**). Parts-compartment lines inside a def
-  still show `role : Type`. To reverse: in `buildNodeContent`, append
-  `+ (d.usageType ? " : " + d.usageType : "")` to the name line again.
-- **Singleton part usages collapse onto their part def.** In SysML a usage
-  (`part battery : Battery`) and its definition (`part def Battery`) are two
-  elements. Here, if a part def has **exactly one** usage in the whole
-  model, that usage is hidden from the **element tree** and from **Show
-  usages**, and if both are somehow View members only the **def** is drawn.
-  If the type has **several** usages (e.g. two Thermistors), every usage
-  stays visible. To reverse: remove `singletonPartUsageIds` filtering in
-  `filterTreeNodes` / `relatedGroups`, and `suppressedSingletonUsages` in
-  `buildBddNodesEdges` (`viewer.html`).
-- **Edge labels are hidden.** There are no composition role names or
-  «satisfy» labels on the lines; a **legend** explains the arrow styles
-  instead. Connector edges always keep their label (which connection /
-  ports).
-- **Legend wording is human-friendly, not SysML-textbook.** The edge kinds
-  are still specialization (`:>`) and typing (`: Def`) in the model; the
-  legend just says **kind of** and **is a** so non-engineers can read the
-  diagram:
-
-  | Model / edge kind | SysML idea | Legend text today |
-  |-------------------|------------|-------------------|
-  | `specialization` | specialization (`A :> B`) | `kind of` |
-  | `typing` | typed by (`part x : Def`) | `is a` |
-
-  Labels live in `LEGEND_LABELS` in
-  [`src/system_explorer/viewer.html`](src/system_explorer/viewer.html). To
-  restore textbook wording, set `specialization: "specialization (is a)"`
-  and `typing: "typed by"` (and update the assertion in
-  `test_legend_lists_only_visible_edge_kinds` that checks the typing row
-  text).
-- **Package paths and doc text are hidden** on nodes by default. Open
-  **Display** to show them; documentation *links* still use the marker and
-  context menu.
-- **Satisfy edges are drawn dark yellow**, so they stay distinguishable from
-  typing edges (both dashed, open arrow) without labels.
-- **Actors and use cases are plain boxes** (tinted pale purple and pale
-  green), not stick figures and ellipses. They behave like any other node
-  and can join any View.
-- **Attributes / parts compartments** can be hidden from **Display**.
-- **`perform action` swimlanes** are an explorer-only activity View (see
-  FEATURES.md), not standard `activity def` diagrams.
-- **Only the supported subset is rendered.** Statements with known keywords
-  the tool doesn't draw (`constraint`, `state`, `view`, …) are silently
-  skipped; unknown first words trigger a validation warning.
-- **Comments (`//`, `/* */`) are stripped; `doc` bodies are kept** and can
-  be shown on the node via **Display → docs on node**.
+Diagrams in this tool follow the notation profile in
+[NOTATION.md](NOTATION.md). That file is the normative list: each rule
+states the textbook drawing, what the Explorer draws, what the published
+Viewer draws, and whether a Display option can turn it back. The `.sysml`
+files stay standard SysML v2.
 
 ## Using an LLM coding agent as a modeling assistant
 
@@ -373,6 +314,7 @@ src/system_explorer/
   jamied_check.py    JamieD parser validator (python -m system_explorer.jamied_check)
 tests/test_system_explorer.py
 FEATURES.md          feature reference
+NOTATION.md          graphical notation profile
 ```
 
 Set up with `pip install -e .`. To run the current checkout without

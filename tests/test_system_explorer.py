@@ -6,6 +6,8 @@ Covers the parser, the HTTP API, and (when Microsoft Edge is available)
 end-to-end rendering of the viewer with the compartment filters.
 """
 
+import importlib.util
+import io
 import json
 import os
 import re
@@ -17,6 +19,7 @@ import threading
 import unittest
 import urllib.error
 import urllib.request
+from contextlib import redirect_stdout
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -247,6 +250,36 @@ class ParserTests(unittest.TestCase):
         sats = edges_of(model, "satisfy")
         self.assertEqual([(e["from"], e["to"]) for e in sats],
                          [("P::A", "P::TopReq")])
+        self.assertEqual(model["warnings"], [])
+
+    def test_verification_def_verify_edge_resolves_short_name(self):
+        # a verification case is its own element (not a requirement) and
+        # its `verify` lives in the objective, which is where SysML v2
+        # puts it
+        model = parse_sysml("""
+        package P {
+            requirement def <'REQ-CP-003'> OperationWithoutGroundPower;
+            part def Device;
+            verification def <'VER-CP-003'> InternalElectricalPowerSourceOperatingTime {
+                doc /* Bench test of operating time. */
+                subject device : Device;
+                objective {
+                    doc /* Pass at 30 minutes. */
+                    verify requirement 'REQ-CP-003';
+                }
+            }
+        }
+        """)
+        ver = node(model, "InternalElectricalPowerSourceOperatingTime")
+        self.assertEqual(ver["kind"], "verification def")
+        self.assertEqual(ver["shortName"], "VER-CP-003")
+        self.assertEqual(ver["doc"], "Bench test of operating time.")
+        vers = edges_of(model, "verify")
+        self.assertEqual(
+            [(e["from"], e["to"], e["label"]) for e in vers],
+            [("P::InternalElectricalPowerSourceOperatingTime",
+              "P::OperationWithoutGroundPower", "«verify»")],
+        )
         self.assertEqual(model["warnings"], [])
 
     def test_satisfy_accepts_quoted_short_name(self):
@@ -1167,6 +1200,35 @@ class ServerTests(unittest.TestCase):
         self.assertIn("function renderHome()", page)
         self.assertIn("async function openViewFromHome(id)", page)
 
+    def test_reader_chrome_matches_the_published_viewer(self):
+        # the explorer reads like the published Viewer; Edit is the extra
+        page = self.srv.get("/")
+        self.assertIn('id="viewTitle"', page)
+        self.assertIn('id="zoombar"', page)
+        self.assertIn('id="zoomIn"', page)
+        self.assertIn('id="zoomOut"', page)
+        self.assertIn('id="sheet"', page)
+        self.assertIn('id="sheetName"', page)
+        self.assertIn(">Views<", page)
+        self.assertIn(">Edit<", page)
+        self.assertIn("function showSheet(id)", page)
+        self.assertIn("function zoomBy(factor)", page)
+        self.assertIn("function zoomAtClient(", page)
+        self.assertIn("body:not(.expert) .edit-only", page)
+        # phone: pinch zoom, pan while the detail sheet is open, and the
+        # sheet itself never covers more than half the screen
+        self.assertIn('name="viewport"', page)
+        self.assertIn("touch-action: none", page)
+        self.assertIn("max-height: 50%", page)
+        self.assertIn("max-height: 50dvh", page)
+        self.assertNotIn("72vh", page)
+        self.assertIn("function touchDistance(", page)
+        self.assertIn("gestureMoved", page)
+        for el_id in ("saveBtn", "revertBtn"):
+            m = re.search(r'<button[^>]*id="%s"[^>]*>' % el_id, page)
+            self.assertIsNotNone(m, el_id)
+            self.assertIn("edit-only", m.group(0))
+
     def test_root_serves_doc_link_file_browser(self):
         # "Add documentation link" opens a modal with a folder browser
         # (see openDocDialog/openFileBrowser in viewer.html) instead of a
@@ -2008,9 +2070,9 @@ class ElementTreeRenderingTests(unittest.TestCase):
 
 @unittest.skipUnless(EDGE, "Microsoft Edge not found; skipping rendering tests")
 class ExpertModeRenderingTests(unittest.TestCase):
-    """Expert mode (the toolbar gear) gates the custom-diagram building
-    controls. Off by default, so a first-time reader sees the predefined
-    views and nothing to build with."""
+    """Edit (the header button) gates diagram building. Off by default, so
+    a first-time reader sees the predefined views and nothing to build
+    with."""
 
     EXPERT_ONLY_IDS = ["treeBtn", "newViewBtn", "renameViewBtn",
                        "deleteViewBtn", "unhideBtn"]
@@ -2057,16 +2119,30 @@ class ExpertModeRenderingTests(unittest.TestCase):
             m = re.search(r'<button[^>]*id="%s"[^>]*>' % el_id, dom) or                 re.search(r'<button[^>]*class="[^"]*"[^>]*id="%s"' % el_id, dom)
             self.assertIsNotNone(m, f"{el_id} not found")
             self.assertIn("expert-only", m.group(0), el_id)
-        # the Display menu's wrapper carries the class, not the button
-        self.assertIn('class="menu-wrap expert-only"', dom)
 
-    def test_always_available_controls_are_not_gated(self):
+    def test_reading_controls_stay_available(self):
         dom = self.render()
-        for el_id in ["saveBtn", "revertBtn", "fitBtn", "viewSel",
-                      "reloadBtn"]:
-            m = re.search(r'<(?:button|select)[^>]*id="%s"[^>]*>' % el_id, dom)
+        for el_id in ["fitBtn", "homeBtn", "expertBtn", "zoomIn", "zoomOut",
+                      "displayBtn", "moreBtn"]:
+            m = re.search(r'<button[^>]*id="%s"[^>]*>' % el_id, dom)
             self.assertIsNotNone(m, f"{el_id} not found")
             self.assertNotIn("expert-only", m.group(0), el_id)
+            self.assertNotIn("edit-only", m.group(0), el_id)
+
+    def test_authoring_controls_wait_for_edit(self):
+        dom = self.render()
+        for el_id in ["saveBtn", "revertBtn"]:
+            m = re.search(r'<button[^>]*id="%s"[^>]*>' % el_id, dom)
+            self.assertIsNotNone(m, f"{el_id} not found")
+            self.assertIn("edit-only", m.group(0), el_id)
+        self.assertIn('<label class="edit-only">', dom)
+        self.assertNotIn("expert", self.body_classes(dom))
+        # Display and More stay on the header; their panels are not clipped
+        self.assertIn('id="displayMenu"', dom)
+        self.assertIn('id="moreMenu"', dom)
+        self.assertIn("«part def» keywords", dom)
+        self.assertIn("docs on node", dom)
+        self.assertNotIn("overflow-x: auto", dom)
 
     def test_toggle_button_present_and_reflects_state(self):
         off = self.render()
@@ -2081,7 +2157,7 @@ class ExpertModeRenderingTests(unittest.TestCase):
         with ServerFixture(views=views) as srv:
             srv.layout_path.write_text(json.dumps({"activeView": "v"}),
                                        encoding="utf-8")
-            self.assertIn("expert mode", dump_dom(srv.url))
+            self.assertIn("Turn Edit on to add elements.", dump_dom(srv.url))
 
 
 @unittest.skipUnless(EDGE, "Microsoft Edge not found; skipping rendering tests")
@@ -2797,6 +2873,61 @@ class HomePageTests(unittest.TestCase):
         self.assertNotIn("expert-only", m.group(0))
 
 
+@unittest.skipUnless(EDGE, "Microsoft Edge not found; skipping rendering tests")
+class DetailSheetTests(unittest.TestCase):
+    """A click while reading opens the same detail sheet as the published
+    Viewer. The sheet-filling code runs standalone against a stub model."""
+
+    SHEET_DOM = (
+        '<aside id="sheet"><h2 id="sheetName"></h2>'
+        '<p id="sheetKind"></p><p id="sheetDoc"></p>'
+        '<a id="docLink"></a>'
+        '<h3 id="reqHead"></h3><ul id="reqList"></ul>'
+        '<h3 id="byHead"></h3><ul id="byList"></ul>'
+        '<h3 id="verHead"></h3><ul id="verList"></ul></aside>'
+    )
+
+    def test_sheet_shows_doc_link_and_satisfied_requirements(self):
+        js = viewer_js(
+            "// ------------------------------------------------------- detail sheet",
+            "// ------------------------------------------------------- detail sheet end")
+        setup = "\n".join([
+            'document.body.insertAdjacentHTML("beforeend", '
+            + json.dumps(self.SHEET_DOM) + ");",
+            "let model = " + json.dumps({
+                "nodes": [
+                    {"id": "P::Motor", "name": "Motor", "kind": "part def",
+                     "doc": "Spins."},
+                    {"id": "P::Fast", "name": "Fast", "kind": "requirement",
+                     "doc": "Must be fast."},
+                ],
+                "edges": [{"kind": "satisfy", "from": "P::Motor",
+                           "to": "P::Fast"}],
+            }) + ";",
+            "let layout = { docs: { 'P::Motor': 'motor.pdf' } };",
+            "let nodes = {};",
+            "function selectNode() {}",
+            "function centerOn() {}",
+            js,
+            "showSheet('P::Motor');",
+            "const reqs = [...document.querySelectorAll('#reqList button')]"
+            ".map(b => b.textContent);",
+        ])
+        got = run_js(setup, "({ name: document.getElementById('sheetName').textContent,"
+                     " doc: document.getElementById('sheetDoc').textContent,"
+                     " href: document.getElementById('docLink').getAttribute('href'),"
+                     " link: document.getElementById('docLink').textContent,"
+                     " open: document.body.classList.contains('sheet'),"
+                     " reqs })")
+        self.assertTrue(got["open"])
+        self.assertEqual(got["name"], "Motor")
+        self.assertEqual(got["doc"], "Spins.")
+        self.assertIn("api/doc", got["href"])
+        self.assertIn("motor.pdf", got["href"])
+        self.assertIn("motor.pdf", got["link"])
+        self.assertTrue(any(r.startswith("Fast") for r in got["reqs"]))
+
+
 # ----------------------------------------------------------------------
 # Hosted (cloud) mode
 # ----------------------------------------------------------------------
@@ -3262,6 +3393,24 @@ class PublishedViewerTests(unittest.TestCase):
         self.assertIn("Architecture", dom)
         self.assertNotIn("Flow", dom)
 
+    def test_sheet_covers_at_most_half_the_screen(self):
+        dom = dump_published(
+            self.url + "/index.html?v=context&e=TestPkg::Motor")
+        self.assertIn("max-height: 50%", dom)
+        self.assertIn("max-height: 50dvh", dom)
+        self.assertNotIn("72vh", dom)
+        self.assertIn("function touchDistance(", dom)
+        self.assertIn("gesturePinch", dom)
+
+    def test_view_opens_fitted_with_zoom_controls(self):
+        dom = dump_published(self.url + "/index.html?v=context")
+        self.assertIn('id="zoomIn"', dom)
+        self.assertIn('id="zoomOut"', dom)
+        self.assertIn('id="zoomFit"', dom)
+        self.assertIn('id="diagram"', dom)
+        self.assertIn('preserveAspectRatio="xMidYMid meet"', dom)
+        self.assertRegex(dom, r'id="diagram"[^>]*viewBox="0 0 [\d.]+ [\d.]+"')
+
     def test_view_renders_saved_positions(self):
         dom = dump_published(self.url + "/index.html?v=context")
         # saved (40, 80) and (280, 80) are shifted so the top-left node
@@ -3285,7 +3434,90 @@ class PublishedViewerTests(unittest.TestCase):
         self.assertNotIn('data-id="TestPkg::robot1"', dom)
         # a position above/left of the origin is shifted onto the page
         self.assertIn('transform="translate(24 24)"', dom)
+        diagram = dom.split('id="diagram"')[1].split("</svg>")[0]
+        self.assertIn("drive : BigMotor", diagram)
+        self.assertIn("length = 55.0", diagram)
+        self.assertNotIn("«part def»", diagram)
 
+    def test_context_view_matches_explorer_notation(self):
+        dom = dump_published(self.url + "/index.html?v=context")
+        diagram = dom.split('id="diagram"')[1].split("</svg>")[0]
+        self.assertIn(">Motor</text>", diagram)
+        self.assertIn("torque : Real", diagram)
+        self.assertIn("R-1 Fast", diagram)
+        self.assertNotIn("«part def»", diagram)
+        self.assertNotIn("«satisfy»", diagram)
+        self.assertNotIn("«requirement", diagram)
+        legend = dom.split('id="legend"')[1].split('id="canvas"')[0]
+        self.assertIn("satisfies requirement", legend)
+        self.assertIn('class="docicon"', diagram)
+
+
+class NotationProfileTests(unittest.TestCase):
+    """The values NOTATION.md names, so the profile cannot drift from the pages."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.explorer = VIEWER_HTML.read_text(encoding="utf-8")
+        cls.published = (
+            SRC / "system_explorer" / "publish_viewer.html"
+        ).read_text(encoding="utf-8")
+
+    def test_display_defaults_match_the_profile(self):
+        # N1, N5, N7, N9: keywords / edge labels / packages / docs off;
+        # attribute and parts compartments on.
+        block = re.search(
+            r"const DISPLAY_DEFAULTS = \{([^}]+)\}", self.explorer).group(1)
+        defaults = dict(re.findall(r"(\w+):\s*(true|false)", block))
+        self.assertEqual(defaults, {
+            "attrs": "true",
+            "parts": "true",
+            "keywords": "false",
+            "edgeLabels": "false",
+            "packages": "false",
+            "docsOnNode": "false",
+        })
+
+    def test_legend_wording_matches_the_profile(self):
+        # N6: specialization is "kind of", typing is "is a".
+        block = re.search(
+            r"const LEGEND_LABELS = \{([^}]+)\}", self.explorer).group(1)
+        labels = dict(re.findall(r'(\w+):\s*"([^"]*)"', block))
+        self.assertEqual(labels["specialization"], "kind of")
+        self.assertEqual(labels["typing"], "is a")
+
+    def test_usage_header_omits_type(self):
+        # N3: the name line is the role name. `usageType` stays on the
+        # model; it is not appended to the header.
+        body = viewer_js("function buildNodeContent(d)", "function fontFor")
+        start = body.index('cls: "name"')
+        name_line = body[body.rindex("header.push({ text:", 0, start):start]
+        self.assertIn("d.name", name_line)
+        self.assertNotIn("usageType", name_line)
+
+    def test_singleton_collapse_is_applied(self):
+        # N4: the tree drops singleton part usages; the canvas drops one
+        # only when its part def is also a member (suppressedSingletonUsages).
+        tree = viewer_js("function filterTreeNodes", "function renderTreeElem")
+        self.assertIn("singletonPartUsageIds()", tree)
+        canvas = viewer_js("function buildBddNodesEdges()", "function packageTree")
+        self.assertIn("suppressedSingletonUsages(vis)", canvas)
+
+    def test_published_viewer_uses_explorer_defaults(self):
+        # N1, N3, N4, N5, N6, N9 on the published page: no «kind» header,
+        # role name only, singleton collapse, connector/flow labels only,
+        # the same legend words, attribute and parts compartments.
+        self.assertIn("function suppressedSingletonUsages(vis)", self.published)
+        self.assertNotIn('"«" + n.data.kind + "»"', self.published)
+        self.assertNotIn("usageType", self.published)
+        self.assertIn('d.kind === "connector" || d.kind === "flow"', self.published)
+        self.assertIn("d.attributes", self.published)
+        self.assertIn("d.parts", self.published)
+        block = re.search(
+            r"const LEGEND_LABELS = \{([^}]+)\}", self.published).group(1)
+        labels = dict(re.findall(r'(\w+):\s*"([^"]*)"', block))
+        self.assertEqual(labels["specialization"], "kind of")
+        self.assertEqual(labels["typing"], "is a")
 
 if __name__ == "__main__":
     unittest.main()

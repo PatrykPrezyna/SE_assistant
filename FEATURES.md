@@ -100,6 +100,10 @@ Relationships extracted as edges:
   several models are loaded; an unresolved reference drops the edge and
   emits a validation warning. An edge only renders when both endpoints are
   members of the active View (see Views below).
+- **verify** (`verify requirement 'REQ-123';` inside `objective { }` on a
+  `verification def`, or as a direct statement) — dashed blue line, open
+  arrow at the requirement, «verify» label. Same name resolution as satisfy.
+  A verification case is a design-verification method, not a requirement.
 - **association** (use case ↔ actor / subject) — plain purple line, no
   arrowhead, from an `actor x : ActorDef` / `subject x : SubjectDef` usage
   nested in a `use case def` (the SysML v2 spelling — e.g. CoolSpine's
@@ -127,7 +131,7 @@ besides the owner→def composition edge, every part usage also gets:
 - a **node** of its own, id `Owner::role` (e.g.
   `CoolSpineSystem::FluidReservoir::inputTempSensor`), header showing
   only the role name (not `role : Type` — type is on the typing edge;
-  see README "What the viewer simplifies"), carrying that usage's own
+  see [NOTATION.md](NOTATION.md) N3), carrying that usage's own
   `doc` and its `:>>` attribute redefinitions. It reports `usageOwner`
   (the def that declares it) and `usageType` (the type name as written).
   Canvas fill and tree-dot color match `part def` (no usage tint).
@@ -147,7 +151,7 @@ Both levels coexist, and a View picks whichever it wants:
 - **Singleton collapse (viewer only):** if a part def has exactly one
   usage in the model, that usage is omitted from the element tree and
   **Show usages**; if both are View members, only the def box is drawn
-  (see README "What the viewer simplifies"). Multi-usage types still
+  (see [NOTATION.md](NOTATION.md) N4). Multi-usage types still
   show each member usage in the tree and on the canvas.
 - A type-level edge is dropped from the canvas as soon as the usage node it
   stands for is **drawn** (not merely a View member), since
@@ -239,7 +243,9 @@ diagnostics use the validators listed under CLI above.
 
 ## Viewer (`viewer.html`)
 
-- drag elements to arrange them; drag the background to pan; mouse wheel zooms
+- drag elements to arrange them; drag to pan; mouse wheel zooms. On a
+  touch screen a one-finger drag pans and a two-finger pinch zooms, including
+  when the drag starts on an element and when the detail sheet is open
 - **Click to highlight**: left-clicking an element outlines it (red) and
   outlines every connection touching it plus the elements on the other end
   (blue) — a quick way to trace what's wired to what. Left-clicking a
@@ -261,61 +267,81 @@ diagnostics use the validators listed under CLI above.
   command: once a View is arranged by hand, the saved positions are the
   authored content, and a single click that throws them all away is a
   bigger foot-gun than it is a convenience
-- **Fit** zooms to the whole diagram
+- **+**, **−**, and **Fit** sit on the diagram, as on the published Viewer.
+  **+** and **−** zoom around the center of the diagram that is still
+  visible; **Fit** zooms to the whole diagram. The wheel still zooms toward
+  the pointer, and a drag pans. The buttons stay above the detail sheet, and
+  below the header when the header wraps onto a second line (a phone)
 - **Reload model** (under **More**) re-parses the folder's `.sysml` files
   without losing the arrangement (positions are keyed by qualified element
   name)
+- **Display ▾** and **More ▾** stay on the header while reading. **Edit**
+  does not hide them. The menus open below the header.
 - **Display ▾** menu (per View, saved in the View's `options`):
   - **attributes** / **parts** — hide the respective compartments.
     Attribute redefinitions nested under a part (e.g. `.length = 120.0`)
     follow *attributes*, and are also hidden when *parts* is off.
-  - **keywords** — show «part def» / «requirement» / … in node headers
-    (off by default)
+  - **«part def» keywords** — show «part def» / «requirement» / … in node
+    headers (off by default)
   - **edge labels** — show composition role names and «satisfy» text on
     lines (off by default; **connector** edges always keep their label)
   - **package paths** — show the package line under the name (off by default)
   - **docs on node** — show `doc` body text in a compartment (off by default;
     documentation *links* still use the 📄 marker / context menu)
-- Toolbar is split into primary controls (⌂ Home, Tree, view switcher,
-  Save, Revert, Fit) and overflow (**Display ▾**, **More ▾**). It carries no app title and no
-  version label — the view switcher already names what is on screen, so the
-  left edge stays free of chrome that repeats it. The *browser tab* title
-  still tracks the active View.
+- The page chrome matches the published Viewer: a white header, the view
+  name, a **Views** button back to the card list, a light grid on the
+  canvas, and the same zoom buttons. It carries no app title and no
+  version label. The *browser tab* title still tracks the active View.
+- **Edit** (the header button, `expertMode` in `layout.json`) is the extra
+  option. Off, the page is for reading. On, it reveals Tree, the view
+  switcher, **+**, **Save**, and **Revert**, and elements can be dragged.
+  **Display ▾** and **More ▾** stay available either way. A tap while
+  reading opens the detail
+  sheet (the element's `doc`, its documentation link, **Requirements**,
+  **Satisfied by**, and **Verified by**) instead of starting a drag. The
+  sheet covers at most the bottom half of the screen and scrolls inside
+  that half. Dragging the diagram does not close it, so the diagram can
+  still be panned and pinched while the sheet is open. A tap on empty
+  canvas, or **×**, closes it.
 - An empty View shows a centered hint: check elements in the tree to add them.
 - parse errors are shown in a banner instead of a broken page
 - A **legend** (bottom-left) explains the arrow styles for edge kinds
   currently visible. Human-friendly labels: specialization → **kind of**,
-  typing → **is a** (model edge kinds unchanged; see README "What the
-  viewer simplifies" to reverse). Satisfy edges are drawn dark yellow so
-  they stay distinguishable from typing without labels.
-
-(A reader-friendly summary of how these defaults deviate from standard
-SysML notation is in the README, "What the viewer simplifies".)
+  typing → **is a** (model edge kinds unchanged; [NOTATION.md](NOTATION.md)
+  N6). Satisfy edges are drawn dark yellow so they stay distinguishable
+  from typing without labels.
+- The graphical deviations from textbook SysML are the notation profile in
+  [NOTATION.md](NOTATION.md). That file is normative for how the Explorer
+  and the published Viewer draw; this page describes behavior and points
+  at the rule ids.
 
 ## Expert mode (`viewer.html`)
 
 Building a diagram by hand — picking elements out of the tree, creating
-Views, hiding connections, changing what nodes show — is a power-user
-activity. It lives behind the **⚙ toggle** at the right of the toolbar
-so the main screen stays the predefined Views.
+Views, hiding connections, changing what nodes show, saving — is the
+editing option. It lives behind the **Edit** button in the header so the
+page otherwise matches the published Viewer.
 
 - **Off by default.** A folder with no `layout.json`, or one saved before
-  this existed, opens with expert mode off.
-- **What the toggle gates** (everything marked `expert-only` in the
-  toolbar markup, hidden by `body:not(.expert) .expert-only`):
-  **Tree**, the **+** new-View button, **Display ▾**, and **Rename
-  view** / **Delete view** / **Unhide connections** under **More ▾**.
-- **What stays available to everyone**: the home page and its **⌂ Home**
-  button, the view switcher, **Save**,
-  **Revert**, **Fit**, **Reload model**, dragging elements, pan/zoom,
-  click-to-highlight, the right-click element menu (including **Remove
-  from view**) and the activity Views.
-- The element tree is on screen only when expert mode is on *and* the
-  tree is open. `treeOpen` stays the user's own preference while expert
-  mode is off, so unlocking it restores the panel as it was
-  (`treeVisible()` in `viewer.html`).
-- The empty-View hint adapts: it says to check elements in the tree in
-  expert mode, and to turn expert mode on otherwise.
+  this existed, opens with Edit off.
+- **What Edit gates.** Custom-diagram controls are marked `expert-only`
+  and hidden by `body:not(.expert) .expert-only`: **Tree**, the **+**
+  new-View button, and **Rename view** / **Delete view** /
+  **Unhide connections** under **More ▾**. The rest of the authoring
+  chrome is marked `edit-only` and hidden by the same rule: the view
+  switcher, **Save**, and **Revert**. Dragging an element and the
+  right-click menu also wait for Edit. **Display ▾** (including
+  **«part def» keywords** and **docs on node**) and **More ▾** stay
+  on the header while reading.
+- **What stays available while reading**: the home page and its **Views**
+  button, **Display ▾**, **More ▾**, **+** / **−** / **Fit**, pan, the
+  detail sheet, click-to-highlight, and activity Views.
+- The element tree is on screen only when Edit is on *and* the tree is
+  open. `treeOpen` stays the user's own preference while Edit is off, so
+  turning Edit on restores the panel as it was (`treeVisible()` in
+  `viewer.html`).
+- The empty-View hint adapts: it says to check elements in the tree while
+  Edit is on, and to turn Edit on otherwise.
 - The state is saved in the layout file as `expertMode` (toggling it
   marks the layout dirty, like the Tree button does).
 
@@ -335,11 +361,12 @@ comes back gets a table of contents.
 - **View cards** show the View's name, its `description` (see below) and its
   element count (or **Activity diagram** for an activity View). Clicking
   one switches to that View and leaves the home page. With no Views at
-  all the grid says so and points at expert mode.
-- **`⌂ Home`** (first button in the toolbar, always available — not
-  expert-only) toggles the page back on. It is an *overlay* over the canvas,
-  not a separate screen: going Home and back never disturbs the diagram
-  underneath or its pan/zoom.
+  all the grid says so and points at Edit.
+- **Views** (first button in the header, always available — not
+  hidden with Edit) brings the page back. It is hidden on the home page
+  itself, matching the published Viewer. The page is an *overlay* over the
+  canvas, not a separate screen: leaving and coming back never disturbs
+  the diagram underneath or its pan/zoom.
 - **Optional `description`** in a View file (`views/<id>.json`) is the card's
   blurb — one sentence on what the View is for. There is no UI to edit it
   (it is authored content, like the element arrangement); a View without one
@@ -566,14 +593,30 @@ On the page, the home screen lists those Views. Opening one draws its
 members at the saved positions (elements with no saved position stack in a
 column underneath). The whole View is then shifted so its top-left
 sits on the page; relative placement is unchanged. A single usage of a part def is hidden when that def is
-also on the View, matching the Explorer. Edges between visible members are
+also on the View, matching the Explorer. Nodes follow the Explorer's
+default notation ([NOTATION.md](NOTATION.md)): the name only, attribute and
+parts compartments on, no package line and no doc body, edge labels off
+except connector labels and flow guards. A legend names the visible edge
+kinds (**kind of**, **is a**, and the rest). Satisfy edges are dark yellow.
+A documentation link shows the marker on the node. Edges between visible members are
 drawn, except hidden edges and the type-level edges the Explorer already
 suppresses when the usage nodes are on the diagram. A tap opens a panel
 with the element's `doc` text, an **Open documentation** link when one was
 published, **Requirements** (every element it `satisfy`s, with that
 requirement's `doc`), and **Satisfied by** when the element is itself a
-requirement. Positions cannot be changed. `?v=<view id>&e=<element id>`
-opens that View and panel directly.
+requirement. The panel covers at most the bottom half of the screen and
+scrolls inside that half, so the rest of the diagram stays visible. A drag
+on the diagram pans it while the panel stays open; a pinch zooms even when
+the fingers start on the panel. **+** and **−** stay above the panel and
+zoom the visible part of the diagram. Positions cannot be changed.
+`?v=<view id>&e=<element id>` opens that View and panel directly.
+
+The diagram opens fitted to the screen, including a phone, so the whole View
+is visible without scrolling the page. **+**, **−**, and **Fit** zoom around
+the center of the diagram that is still visible; **Fit** returns to the
+whole View. A pinch does the same, the mouse wheel zooms toward the pointer,
+and a drag pans once the View is zoomed in. The page itself does not scroll
+or browser-zoom.
 
 With `--check`, warnings are printed and the site is not written when there
 are any.

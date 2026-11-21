@@ -132,7 +132,7 @@ def _warn_if_unknown(header, warn):
 
 RE_PACKAGE = re.compile(r"^package\s+(?:<'([^']*)'>\s*)?(\w+)$")
 RE_PART_DEF = re.compile(
-    r"^(abstract\s+)?(part|requirement|item|action|port|actor|use\s+case)\s+def\s+"
+    r"^(abstract\s+)?(part|requirement|verification|item|action|port|actor|use\s+case)\s+def\s+"
     r"(?:<'([^']*)'>\s*)?(\w+)"
     r"(?:\s*:>\s*(.+))?$"
 )
@@ -152,6 +152,11 @@ RE_DOC = re.compile(r"^doc\s+§(\d+)§$")
 # one the official SysML v2 parser accepts
 RE_SATISFY = re.compile(
     r"^satisfy\s+(?:requirement\s+)?(?:'([^']+)'|([\w:.\-]+))(?:\s+by\s+.+)?$"
+)
+# same reference spelling as satisfy; lives in an `objective { }` on a
+# verification def (SysML v2), and is also accepted as a direct statement
+RE_VERIFY = re.compile(
+    r"^verify\s+(?:requirement\s+)?(?:'([^']+)'|([\w:.\-]+))(?:\s+by\s+.+)?$"
 )
 # connection statement forms (endpoints may be dotted part paths):
 #   connect a.b to c.d                              (standard SysML v2)
@@ -434,6 +439,34 @@ def _interpret_def(block, model, pkg_path, warn):
                     "label": "«satisfy»",
                 }
             )
+            continue
+        vf = RE_VERIFY.match(header)
+        if vf:
+            model.edges.append(
+                {
+                    "kind": "verify",
+                    "from": node["id"],
+                    "to_name": vf.group(1) or vf.group(2),
+                    "label": "«verify»",
+                }
+            )
+            continue
+        if header == "objective" or header.startswith("objective "):
+            for sub in child["children"] or []:
+                nested = RE_VERIFY.match(sub["header"])
+                if nested:
+                    model.edges.append(
+                        {
+                            "kind": "verify",
+                            "from": node["id"],
+                            "to_name": nested.group(1) or nested.group(2),
+                            "label": "«verify»",
+                        }
+                    )
+                    continue
+                if sub["header"].startswith("doc"):
+                    continue
+                _warn_if_unknown(sub["header"], warn)
             continue
         conn = _match_connection(header)
         if conn:
