@@ -70,6 +70,8 @@ class Settings:
         port,
         chat_path,
         auth,
+        auth_user,
+        auth_password,
     ):
         self.base_url = (base_url or "").rstrip("/")
         self.api_key = api_key or ""
@@ -81,6 +83,8 @@ class Settings:
         self.port = int(port)
         self.chat_path = chat_path if chat_path.startswith("/") else "/" + chat_path
         self.auth = auth or DEFAULT_AUTH
+        self.auth_user = auth_user or ""
+        self.auth_password = auth_password or ""
 
     def configuration_error(self):
         """A message when the provider is not ready. Never includes the key."""
@@ -117,20 +121,26 @@ def load_settings(environ=None, overrides=None, files=None):
             return files[name]
         return default
 
+    port = get("PORT") or get("ASSISTANT_PORT", str(DEFAULT_PORT))
+    
+    data_dir = get("SE_DATA_DIR") or get("MODEL_FOLDER")
+    
     values = {
         "base_url": get("ASSISTANT_BASE_URL"),
         "api_key": get("ASSISTANT_API_KEY"),
         "model": get("ASSISTANT_MODEL"),
-        "model_folder": get("MODEL_FOLDER"),
+        "model_folder": data_dir,
         "explorer_url": get("EXPLORER_URL", DEFAULT_EXPLORER_URL),
         "methodology": get(
             "ASSISTANT_METHODOLOGY",
             str(repo_root() / "methodology" / "product-development.yaml"),
         ),
         "host": get("ASSISTANT_HOST", "127.0.0.1"),
-        "port": get("ASSISTANT_PORT", str(DEFAULT_PORT)),
+        "port": port,
         "chat_path": get("ASSISTANT_CHAT_PATH", DEFAULT_CHAT_PATH),
         "auth": get("ASSISTANT_AUTH", DEFAULT_AUTH),
+        "auth_user": get("SE_AUTH_USER"),
+        "auth_password": get("SE_AUTH_PASSWORD"),
     }
     if overrides:
         for key, value in overrides.items():

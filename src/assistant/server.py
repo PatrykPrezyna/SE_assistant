@@ -1,7 +1,10 @@
 """Local chat page. Binds to 127.0.0.1 unless ASSISTANT_HOST says otherwise."""
 
 import argparse
+import base64
 import json
+import os
+import shutil
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -15,6 +18,38 @@ PAGE = Path(__file__).resolve().parent / "chat.html"
 MAX_BODY = 1_000_000
 MAX_MESSAGES = 40
 MAX_CHARS = 8000
+
+
+def check_basic_auth(auth_header, username, password):
+    """Check HTTP Basic Auth credentials. Returns True if authorized."""
+    if not username or not password:
+        return True
+    if not auth_header or not auth_header.startswith("Basic "):
+        return False
+    try:
+        encoded = auth_header[6:]
+        decoded = base64.b64decode(encoded).decode("utf-8")
+        provided_user, _, provided_pass = decoded.partition(":")
+        return provided_user == username and provided_pass == password
+    except Exception:
+        return False
+
+
+def seed_model_folder(target_path):
+    """Copy the example model to target_path if it's empty."""
+    target = Path(target_path)
+    if target.exists() and any(target.iterdir()):
+        return
+    target.mkdir(parents=True, exist_ok=True)
+    repo_root = Path(__file__).resolve().parents[2]
+    example = repo_root / "methodology" / "example"
+    if not example.is_dir():
+        return
+    for item in example.iterdir():
+        if item.is_file():
+            shutil.copy2(item, target / item.name)
+        elif item.is_dir():
+            shutil.copytree(item, target / item.name, dirs_exist_ok=True)
 
 
 def safe_explorer_url(url):
@@ -54,15 +89,20 @@ def session_payload(settings):
         shown = str(folder)
     else:
         greeting = (
-            "Set MODEL_FOLDER to the model directory, then start the assistant again."
+            "Set MODEL_FOLDER or SE_DATA_DIR to the model directory, then restart the assistant."
         )
         shown = ""
+    
+    problem = settings.configuration_error()
+    if not settings.base_url or not settings.model:
+        problem = "AI assistant disabled. Set ASSISTANT_BASE_URL and ASSISTANT_MODEL to enable chat features."
+    
     return {
         "messages": [{"role": "assistant", "content": greeting}],
         "explorerUrl": safe_explorer_url(settings.explorer_url),
         "modelFolder": shown,
-        "configured": settings.configuration_error() is None,
-        "configMessage": settings.configuration_error() or "",
+        "configured": problem is None,
+        "configMessage": problem or "",
     }
 
 
@@ -85,8 +125,29 @@ def chat_payload(body, settings, complete_fn=None):
 
 def make_handler(settings, complete_fn=None):
     class Handler(BaseHTTPRequestHandler):
+        def _check_auth(self):
+            """Check Basic Auth if configured. Returns True if authorized."""
+            if not settings.auth_user or not settings.auth_password:
+                return True
+            auth_header = self.headers.get("Authorization", "")
+            if check_basic_auth(auth_header, settings.auth_user, settings.auth_password):
+                return True
+            self.send_response(401)
+            self.send_header("WWW-Authenticate", 'Basic realm="SE Assistant"')
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            body = json.dumps({"error": "Authentication required"}).encode("utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return False
+
         def do_GET(self):
             path = urlparse(self.path).path
+            if path == "/healthz":
+                self._json(200, {"status": "ok"})
+                return
+            if not self._check_auth():
+                return
             if path == "/api/session":
                 self._json(200, session_payload(settings))
                 return
@@ -101,6 +162,8 @@ def make_handler(settings, complete_fn=None):
             self._json(404, {"error": "not found"})
 
         def do_POST(self):
+            if not self._check_auth():
+                return
             path = urlparse(self.path).path
             if path != "/api/chat":
                 self._json(404, {"error": "not found"})
@@ -136,6 +199,9 @@ def make_handler(settings, complete_fn=None):
 
 
 def serve(settings, complete_fn=None):
+    if settings.model_folder:
+        seed_model_folder(settings.model_folder)
+    
     server = ThreadingHTTPServer((settings.host, settings.port), make_handler(settings, complete_fn))
     url = f"http://{settings.host}:{settings.port}/"
     print(f"SE assistant at {url}")
@@ -143,10 +209,14 @@ def serve(settings, complete_fn=None):
     print(f"Diagram: {safe_explorer_url(settings.explorer_url)}")
     if settings.base_url and settings.model:
         print(f"Provider: {settings.base_url}{settings.chat_path} model {settings.model}")
+    else:
+        print("AI assistant disabled: set ASSISTANT_BASE_URL and ASSISTANT_MODEL to enable")
     print("API key: " + ("set" if settings.api_key else "not set"))
+    if settings.auth_user and settings.auth_password:
+        print("HTTP Basic Auth: enabled")
     problem = settings.configuration_error()
     if problem:
-        print(problem)
+        print(f"Warning: {problem}")
     print("Press Ctrl+C to stop.")
     try:
         server.serve_forever()

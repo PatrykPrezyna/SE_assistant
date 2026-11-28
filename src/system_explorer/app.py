@@ -22,6 +22,7 @@ Without installing, from a checkout of this repo:
 import argparse
 import json
 import mimetypes
+import os
 import re
 import sys
 import threading
@@ -32,6 +33,8 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 from .version import __version__
+
+# Assistant imports are done on-demand to avoid circular dependencies
 
 # ----------------------------------------------------------------------
 # Parsing
@@ -766,7 +769,7 @@ def _slugify(name, existing):
     return slug
 
 
-def make_handler(folder: Path, layout_path: Path, cloud=None):
+def make_handler(folder: Path, layout_path: Path, cloud=None, assistant_settings=None):
     """Build the request handler class for `folder`.
 
     `cloud` is None for the local tool. When the server is hosted (see
@@ -775,6 +778,8 @@ def make_handler(folder: Path, layout_path: Path, cloud=None):
     checkout the folder lives in and every write is committed and pushed
     (`cloud.sync`), and linked documentation may not leave the checkout
     (`cloud.repo_root`).
+    
+    `assistant_settings` enables the SE assistant chat routes when set.
     """
     views_dir = folder / "views"
 
@@ -888,12 +893,51 @@ def make_handler(folder: Path, layout_path: Path, cloud=None):
                 return None  # path traversal outside the model folder
             return target if target.is_dir() else None
 
+        def _check_assistant_auth(self):
+            """Check Basic Auth for assistant in local mode. Returns True if authorized."""
+            # Cloud mode: use GitHub session
+            if cloud is not None:
+                return self.user is not None
+            # Local mode: check Basic Auth if configured
+            if not assistant_settings:
+                return True  # No settings = no auth required
+            if not assistant_settings.auth_user or not assistant_settings.auth_password:
+                return True  # Auth not configured
+            try:
+                from assistant.server import check_basic_auth
+                auth_header = self.headers.get("Authorization", "")
+                return check_basic_auth(auth_header, assistant_settings.auth_user, assistant_settings.auth_password)
+            except (ImportError, ModuleNotFoundError):
+                return False
+        
         def do_GET(self):
             if self._gate():
                 return
             path = self.path.split("?")[0]
             if path == "/":
                 self._send(VIEWER.read_text(encoding="utf-8"), "text/html")
+            elif path == "/assistant_panel.css":
+                css_path = Path(__file__).parent / "assistant_panel.css"
+                if css_path.is_file():
+                    self._send(css_path.read_text(encoding="utf-8"), "text/css")
+                else:
+                    self.send_error(404)
+            elif path == "/assistant_panel.js":
+                js_path = Path(__file__).parent / "assistant_panel.js"
+                if js_path.is_file():
+                    self._send(js_path.read_text(encoding="utf-8"), "application/javascript")
+                else:
+                    self.send_error(404)
+            elif path == "/api/session" and assistant_settings:
+                if not self._check_assistant_auth():
+                    self.send_error(401, "Authentication required")
+                    return
+                try:
+                    from assistant.server import session_payload
+                    payload = session_payload(assistant_settings)
+                    self._send(json.dumps(payload))
+                except (ImportError, ModuleNotFoundError):
+                    self.send_error(503, "Assistant not available")
             elif path == "/api/model":
                 try:
                     model, model_paths = load_folder(folder)
@@ -985,11 +1029,47 @@ def make_handler(folder: Path, layout_path: Path, cloud=None):
         def _read_json_body(self):
             length = int(self.headers.get("Content-Length", 0))
             return json.loads(self.rfile.read(length).decode("utf-8"))
+        
+        def _assistant_complete(self, messages, tools):
+            """Wrapper for assistant complete that handles model writes in hosted mode."""
+            from assistant.provider import complete
+            result = complete(messages, assistant_settings, tools)
+            return result
 
         def do_POST(self):
             if self._gate():
                 return
             path = self.path.split("?")[0]
+            if path == "/api/chat" and assistant_settings:
+                if not self._check_assistant_auth():
+                    self.send_error(401, "Authentication required")
+                    return
+                try:
+                    body = self._read_json_body()
+                except (ValueError, json.JSONDecodeError):
+                    self._send(json.dumps({"error": "request body must be JSON"}))
+                    return
+                try:
+                    from assistant.server import chat_payload
+                except (ImportError, ModuleNotFoundError):
+                    self.send_error(503, "Assistant not available")
+                    return
+                payload = chat_payload(body, assistant_settings, self._assistant_complete)
+                # If assistant wrote model files, commit them in hosted mode
+                if cloud is not None and payload.get("notes"):
+                    sysml_files = list(folder.glob("*.sysml"))
+                    if sysml_files:
+                        cloud.sync.commit_and_push(sysml_files, "Assistant: update model", self.user)
+                status = 200 if not payload.get("error") else 400
+                if payload.get("error") and assistant_settings.configuration_error():
+                    status = 503
+                data = json.dumps(payload).encode("utf-8")
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+                return
             if path == "/api/layout":
                 data = self._read_json_body()  # validate before writing
                 layout_path.write_text(

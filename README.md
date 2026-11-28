@@ -304,28 +304,50 @@ pump. Open that folder with `system-explorer` to see the stakeholders, the
 three categories, and the needs. Details are in
 [FEATURES.md](FEATURES.md) under *Stakeholder analysis*.
 
-## SE assistant (local chat)
+## SE assistant (AI chat)
 
-The chat is a separate program from the explorer. It asks the team what
-they are building, calls the stakeholder tool, and links to the diagram.
-The model provider is an OpenAI-compatible chat endpoint, so a cloud
-subscription and a later local model are the same client with different
-settings.
+The SE assistant is integrated into the System Explorer viewer as a chat panel. It guides teams through the product-development methodology, captures stakeholder needs, and generates SysML models.
+
+**How it works:**
+- Click the "Chat" button in the toolbar to open the assistant panel
+- The panel slides in from the right, showing your conversation history
+- When the assistant generates `.sysml` files, they appear in the viewer automatically
+- In hosted mode, assistant-created files are committed and pushed to git (just like manual edits)
+
+**Local use:**
 
 Copy [`.env.example`](.env.example) to `.env` (gitignored) and set
-`ASSISTANT_BASE_URL`, `ASSISTANT_API_KEY`, `ASSISTANT_MODEL`, and
-`MODEL_FOLDER`. Then, from this repo:
+`ASSISTANT_BASE_URL`, `ASSISTANT_API_KEY`, and `ASSISTANT_MODEL`. Then run System Explorer normally:
+
+```
+system-explorer <folder>
+```
+
+The chat button appears in the toolbar. If the assistant env vars are not set, clicking it shows "Assistant not configured" and the explorer continues to work normally.
+
+**Hosted mode (Render):**
+
+Add these environment variables to your `system-explorer` service (the main explorer, not a separate service):
+
+```
+ASSISTANT_BASE_URL=https://api.openai.com/v1   # or your provider
+ASSISTANT_API_KEY=sk-...                        # sync: false in render.yaml
+ASSISTANT_MODEL=gpt-4                           # or another model
+```
+
+The assistant is then available to everyone who signs in. Files it writes are committed as the signed-in user and pushed to the repo.
+
+**Standalone assistant (optional):**
+
+The standalone `python -m assistant` server is still available for local testing:
 
 ```
 python -m assistant
 ```
 
-Open http://127.0.0.1:8201/ and keep System Explorer open on the same
-`MODEL_FOLDER`. `EXPLORER_URL` is the "Open the diagram" link. Put the
-API key only in `.env` or the environment, never in the model files.
-How to run it, and a picture of the repository, are in
-[src/assistant/README.md](src/assistant/README.md). Behavior details are in
-[FEATURES.md](FEATURES.md) under *SE assistant*.
+It runs at http://127.0.0.1:8201/ and uses the same env vars. Standalone deployment to Render is documented in `render-assistant.yaml`, but the integrated assistant (above) is recommended for most users.
+
+Behavior details are in [FEATURES.md](FEATURES.md) under *SE assistant*.
 
 ## Troubleshooting
 

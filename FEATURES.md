@@ -750,50 +750,77 @@ saves a register the team has confirmed.
 
 ## SE assistant (`src/assistant/`)
 
-A local chat page, separate from the explorer. It binds to
-`127.0.0.1:8201` unless `ASSISTANT_HOST` / `ASSISTANT_PORT` say otherwise.
+An AI-powered modeling assistant integrated into the System Explorer viewer
+as a collapsible chat panel. The assistant guides teams through the
+product-development methodology, helps capture stakeholder needs, and
+generates SysML models.
 
-```
-python -m assistant
-python -m assistant say "We are starting a portable infusion pump."
-```
+**UI.** A "Chat" button in the toolbar opens a side panel with the
+assistant conversation. The panel slides in from the right and can be
+toggled or closed. When the assistant is not configured (missing
+`ASSISTANT_BASE_URL` or `ASSISTANT_MODEL`), the panel displays a clear
+message and the explorer continues to work normally.
 
-`--model-folder`, `--port`, and `--explorer-url` override the environment
-for one run. Settings are read from the environment first, then from a
-`.env` file in the current directory or the repo root. `.env` is
-gitignored. The names are listed in `.env.example`.
+**Routes.** `GET /api/session` returns the opening message, configuration
+status, and model folder. `POST /api/chat` takes `{"messages": [{"role",
+"content"}]}` of user and assistant turns and returns the updated
+transcript plus short notes for tools that ran. The transcript is kept in
+the browser. Both routes require authentication: GitHub session in hosted
+mode, HTTP Basic Auth in local mode (when `SE_AUTH_USER` and
+`SE_AUTH_PASSWORD` are set).
 
-**Provider.** `POST {ASSISTANT_BASE_URL}{ASSISTANT_CHAT_PATH}` with a JSON
-chat-completions body. The default path is `/chat/completions`.
-`ASSISTANT_AUTH=bearer` (default) sends `Authorization: Bearer`.
+**Provider.** `POST {ASSISTANT_BASE_URL}{ASSISTANT_CHAT_PATH}` with an
+OpenAI-compatible `/chat/completions` JSON body. `ASSISTANT_AUTH=bearer`
+(default) sends `Authorization: Bearer {ASSISTANT_API_KEY}`.
 `ASSISTANT_AUTH=api-key` sends the key in the `api-key` header instead.
-The key is not written to the page, the transcript, or the model folder.
-A missing base URL, model name, or model folder is reported on the page
-and the provider is not called. A local server that speaks the same
-protocol is the same settings with a different base URL and an empty key.
+The key is never written to the page, transcript, or model files. Set
+`ASSISTANT_BASE_URL`, `ASSISTANT_API_KEY`, and `ASSISTANT_MODEL` to enable
+the assistant; leave them unset to run the explorer without AI features.
 
 **First message.** A model folder with no `process/state.yaml` starts with
 the fixed greeting (what the project is, and whether documents already
 exist). An open activity continues that activity and names the unmet exit
 rules. A finished activity says so and waits for a review or a change.
 
-**Tools.** The model may call only `stakeholder_check` and
-`stakeholder_apply`. Anything else is rejected. `check` does not write.
-`apply` with a register argument validates it, writes
-`process/stakeholders.yaml`, then generates the SysML. A register that
-fails validation is not written. `apply` without arguments regenerates
-from the register already in the folder. The prompt tells the model to
-call `apply` only after the team confirms the list. After four tool
-rounds without a final answer, the turn stops.
+**Tools.** The assistant may call only `stakeholder_check` and
+`stakeholder_apply`. `check` does not write. `apply` with a register
+argument validates it, writes `process/stakeholders.yaml`, then generates
+the SysML files. A register that fails validation is not written. `apply`
+without arguments regenerates from the register already in the folder. The
+prompt tells the model to call `apply` only after the team confirms the
+list. After four tool rounds without a final answer, the turn stops.
+
+**Model writes.** When the assistant generates or updates `.sysml` files
+(via `stakeholder_apply`), they go into the explorer's model folder. In
+hosted mode, these files are automatically committed and pushed to the git
+repo (authored as the signed-in GitHub user), just like manual View saves.
+The viewer refreshes to show the new elements.
 
 **Documents.** Text files (`.txt`, `.md`, `.csv`) in the model folder are
 included in the prompt, up to a size cap. PDFs are named and not parsed.
 `.env` is never read into the prompt.
 
-**Page.** `GET /` is the chat. `GET /api/session` returns the opening
-messages, the model folder, and the diagram link (`EXPLORER_URL`, only
-`http` and `https` are accepted). `POST /api/chat` takes
-`{"messages": [{"role", "content"}]}` of user and assistant turns and
-returns the transcript plus short notes for tools that ran. The
-transcript is kept in the browser for the session.
+**Hosted mode environment variables** (add these to `render.yaml` for the
+`system-explorer` service):
+
+- `ASSISTANT_BASE_URL` — provider endpoint (e.g. `https://api.openai.com/v1`), sync: false
+- `ASSISTANT_API_KEY` — provider API key, sync: false
+- `ASSISTANT_MODEL` — model name (e.g. `gpt-4`), sync: false
+
+When these are unset, the explorer runs normally and the chat panel shows
+"Assistant not configured."
+
+**Standalone mode.** The standalone `python -m assistant` server is still
+available for local testing but is not needed for normal use:
+
+```
+python -m assistant
+python -m assistant say "We are starting a portable infusion pump."
+```
+
+It binds to `127.0.0.1:8201` unless `ASSISTANT_HOST` / `ASSISTANT_PORT`
+say otherwise. Settings are read from the environment first, then from a
+`.env` file in the current directory or the repo root (`.env.example`
+lists all names). Use `SE_AUTH_USER` / `SE_AUTH_PASSWORD` for HTTP Basic
+Auth on the standalone server.
 

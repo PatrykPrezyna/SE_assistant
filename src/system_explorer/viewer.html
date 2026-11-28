@@ -252,6 +252,7 @@
     background: none; font-size: 22px; line-height: 1; padding: 8px; color: #666;
     cursor: pointer; }
 </style>
+<link rel="stylesheet" href="/assistant_panel.css">
 </head>
 <body>
 <div id="toolbar">
@@ -288,6 +289,7 @@
     </div>
   </div>
   <span class="grow"></span>
+  <button id="assistantToggle" title="Open the SE assistant chat">Chat</button>
   <button id="expertBtn" aria-pressed="false" title="Edit — move elements and change views">Edit</button>
   <button id="warnBtn" style="display:none" title="Model validation warnings — click to show/hide"></button>
   <span id="status"></span>
@@ -364,7 +366,22 @@
   <ul id="byList"></ul>
   <h3 id="verHead">Verified by</h3>
   <ul id="verList"></ul>
+  <ul id="sheetEdges"></ul>
 </aside>
+
+<!-- SE Assistant Chat Panel -->
+<div id="assistantPanel">
+  <div id="assistantHeader">
+    <h3>SE Assistant</h3>
+    <button id="assistantClose" aria-label="Close">×</button>
+  </div>
+  <div id="assistantMessages"></div>
+  <div id="assistantInput">
+    <textarea id="assistantInputText" placeholder="Ask the assistant..." rows="2"></textarea>
+    <button id="assistantSend">Send</button>
+  </div>
+</div>
+
 <svg id="canvas">
   <defs>
     <marker id="mTriangle" markerUnits="userSpaceOnUse" markerWidth="16" markerHeight="14"
@@ -2541,5 +2558,6 @@ window.addEventListener("beforeunload", evt => {
 
 init();
 </script>
+<script src="/assistant_panel.js"></script>
 </body>
 </html>
