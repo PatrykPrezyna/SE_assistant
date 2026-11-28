@@ -40,6 +40,8 @@ def run_tool(name, arguments, settings):
         ))
     if name == "add_model_element":
         return _add_model_element(arguments, settings)
+    if name == "edit_activity":
+        return _edit_activity(arguments, settings)
     return f"Rejected unknown tool '{name}'."
 
 
@@ -97,6 +99,47 @@ def _clean_stakeholders(raw):
             person["description"] = description.strip()
         people.append(person)
     return people
+
+
+def activity_brief(folder):
+    """A short list of activities, so the chat can name the use case it edits."""
+    folder = Path(folder)
+    paths = sorted(folder.glob("*.sysml"), key=lambda p: p.name)
+    if not paths:
+        return "(none yet)"
+    try:
+        from system_explorer.app import parse_models
+        model = parse_models(
+            [p.read_text(encoding="utf-8") for p in paths],
+            [p.name for p in paths],
+        )
+    except (OSError, ValueError):
+        return "(the model could not be read)"
+    lines = []
+    for act in model.get("activities") or []:
+        owner = act.get("owner") or ""
+        label = owner.split("::")[-1]
+        lanes = []
+        for lane in act.get("lanes") or []:
+            who = lane.get("type") or lane.get("role")
+            if who and who not in lanes:
+                lanes.append(who)
+        steps = [a.get("name") for a in act.get("actions") or [] if a.get("name")]
+        lines.append(
+            f"- {label} (owner {owner}); "
+            f"lanes: {', '.join(lanes) or 'none'}; "
+            f"steps: {', '.join(steps) or 'none'}"
+        )
+    return "\n".join(lines[:12]) if lines else "(none yet)"
+
+
+def _edit_activity(arguments, settings):
+    from system_explorer.activity_edit import ActivityEditError, apply_edit
+    try:
+        result = apply_edit(settings.model_folder, arguments)
+    except ActivityEditError as exc:
+        return "Not written. Ask the user this before trying again: " + str(exc)
+    return result.get("message") or "Updated the activity in the SysML model."
 
 
 def _report(result):

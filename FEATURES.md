@@ -71,17 +71,21 @@ Pragmatic regex/brace-based parser (not a full KerML grammar). Supported:
 - `actor x : Def` / `subject x : Def` nested in a `use case def` — the
   use case's participants; each becomes an **association** edge (see
   below).
+- A `use case def` or `action def` body can be the activity itself.
+  Steps are `action` usages. Who performs a step is `perform <step>;`
+  inside that person's `actor` (or `part`) usage — one swimlane per
+  person. Order is `first <step> then <step>;`. A choice is `decide` /
+  `merge` with `if <guard> then` / `else`. Parallel work is `fork` /
+  `join`: the `then`s that follow a fork all leave the fork. An item
+  handed from one step to the next is `flow source.item to target.item`
+  with `out item` / `in item` on those actions. See Activity diagrams.
 - `perform action Name { action a { doc /*…*/ } first start; then a; then done; }`
-  nested inside a `part def` or `use case def` — declares an activity for that
-  def (a swimlane activity View; see Activity diagrams). Role usages elsewhere in
-  the same def may assign actions to lanes with `perform Name.action;` on
-  `part`, `ref part`, `actor`, or `subject` (all but plain `part` are
-  reference usages — swimlane-only, no usage node and no composition
-  edge; see Reference usages). Branching uses SysML v2 `then decide;`
-  followed by `if <guard> then <target>;` / `else <target>;` (and `then`
-  right after an `action` declaration continues that action's path). The
-  parser emits `edges: [{from,to,label}]` plus `decisions` for diamond
-  nodes; a linear `first`/`then` chain still works (edges inferred).
+  nested inside a `part def` or `use case def` — the older way to declare
+  an activity for that def. Role usages elsewhere in the same def may
+  assign actions to lanes with `perform Name.action;` on `part`,
+  `ref part`, `actor`, or `subject` (all but plain `part` are reference
+  usages — swimlane-only, no usage node and no composition edge; see
+  Reference usages). Still read, so existing models keep their diagrams.
 
 Relationships extracted as edges:
 
@@ -197,7 +201,9 @@ rejects these constructs the explorer accepts:
 - unquoted hyphenated satisfy references (`satisfy REQ-201;` — the standard
   grammar requires `satisfy 'REQ-201';`)
 - `perform action …` / `perform activity.action;` swimlane activity blocks
-  (explorer-only; the spec has no first-class swimlane syntax)
+  (explorer-only; the spec has no first-class swimlane syntax). New
+  activity edits write the standard forms above instead (`perform` inside
+  the actor, `first`/`then`, `fork`/`join`, `decide`/`merge`, `flow`)
 
 When writing models meant to pass the official parser, use only standard
 syntax; the explorer accepts both spellings of `satisfy`.
@@ -507,30 +513,47 @@ typically from the element tree.
 
 ## Activity diagrams (`viewer.html`)
 
-- A `perform action Name { ... }` block nested in a `part def` or
-  `use case def` is a first-class **View**, listed next to Context /
-  Decomposition in the view dropdown and on the home-page cards — not a
-  submenu on the use case. The owner def still carries a 🎬 marker on the
-  block definition diagram.
+- Opening a use case (double-click, the 🎬 marker, or **Open activity**
+  on the node menu) shows its process. A `perform action` block still
+  opens the same kind of View. The View is listed next to Context /
+  Decomposition in the view dropdown and on the home-page cards.
 - Each activity View file has `"kind": "activity"` and `"activityOwner"`
-  (the owning def's id). Positions and pan/zoom are stored on that View
-  like any other. If none exists yet, the explorer creates one named
-  **Activity — &lt;owner&gt;** on startup.
-- Selecting the View switches the canvas to **activity mode**: a swimlane
-  layout of the nested `action` usages. Each `part` / `actor` / `subject`
-  role is a **vertical column** (top → bottom); succession order advances
-  **downward**. A `decide` node renders as a diamond; `if <guard> then` /
-  `else` become outgoing edges labeled with the guard (and `no` for
-  `else`). Control endpoints `start` / `done` render as rounded nodes
-  centered across the lanes. Flow edge guards are always shown (not gated
-  by the edge-labels Display toggle).
-- Dragging an action only moves it vertically — its swimlane (x) is fixed
-  from the `perform` assignment, so actions cannot be moved between lanes.
-- Switch away with the view dropdown or Home, same as any other View; a
-  saved session reopens it through `activeView` in `layout.json`.
-- Explorer dialect (not standard SysML v2) — see Dialect notes above.
-  Spec-level `activity def` as a first-class definition kind is still not
-  parsed as its own diagram type.
+  (the owning def's id, or `<owner>::sub::<step>` for a sub-activity).
+  Positions and pan/zoom are stored on that View like any other. If none
+  exists yet, the explorer creates one named **Activity — &lt;owner&gt;**
+  on startup, including for a use case that has no steps yet.
+- The canvas is a swimlane diagram. Each stakeholder is a **vertical
+  column** labeled with their type (Nurse, not the role name `nurse`).
+  Succession goes **downward** on orthogonal arrows. Steps are rounded
+  rectangles. `start` is a filled circle and `done` is a bullseye, both
+  centered across the lanes. `decide` is a white diamond and `merge` a
+  smaller grey diamond; the guard is the label on the yes arrow and
+  `else` is labeled `no`. `fork` and `join` are black bars spanning the
+  lanes they touch. An item `flow` is a dashed arrow, separate from the
+  succession. Layout is automatic: a new step takes the next free row in
+  its lane, so the picture stays readable as it grows. Flow guards and
+  item names are always shown (not gated by the edge-labels Display toggle).
+- With **Edit** on, an activity bar sits along the bottom of the canvas:
+  **Add stakeholder** (a new lane, and a `part def` if that person is not
+  in the model yet), **New activity** (a new use case), and, with a step
+  selected, **Rename**, **Delete**, **Connect** (then click the next
+  step), **Decision**, **Fork**, and **Item flow**. Clicking an empty
+  part of a lane and typing a name adds a step in that lane. A selected
+  step is the one it follows; otherwise it follows the last step in the
+  lane, or the current end of the flow. Right-click a step for **Make
+  sub-activity**; opening that step shows its own start-to-end diagram.
+  Every edit is `POST /api/activity` and is written into the `.sysml`
+  file. The same edits are available to the embedded chat as the
+  `edit_activity` tool. If a person, a place in the flow, or one of a
+  decision's outcomes is missing, the tool does not write and the chat
+  asks. A successful edit reloads the model and shows the activity.
+- Dragging a node only moves it vertically until the next edit, which
+  lays the diagram out again. Switch away with the view dropdown or
+  Home, same as any other View; a saved session reopens it through
+  `activeView` in `layout.json`.
+- There is no `activity` keyword and no `perform … by`. The older
+  `perform action` blocks are still read (see Dialect notes). New edits
+  write the standard forms.
 
 ## Version
 

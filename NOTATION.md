@@ -173,15 +173,22 @@ published Viewer has no Display menu, so both stay on.
 
 ## N10 — Activity Views
 
-**Standard.** Behavior is drawn as an `activity def` diagram.
+**Standard.** SysML v2 has no `activity` keyword. A process is an action
+usage owned by a use case (or by another action). Who does a step is
+`perform` inside that person's part. Order is `first`/`then`. `fork`,
+`join`, `decide`, and `merge` are control nodes. An item handed on is
+`flow`.
 
-**Explorer.** A `perform action` block nested in a part is drawn as
-swimlanes. That diagram is an Explorer View; see [FEATURES.md](FEATURES.md).
+**Explorer.** Opening a use case draws that process as swimlanes, one
+column per actor. The older `perform action` block is still drawn the
+same way. The diagram is an Explorer View; see [FEATURES.md](FEATURES.md).
 
 **Published Viewer.** Activity Views are left out of the published site.
 Block Views are published.
 
-**Model.** Unchanged.
+**Model.** Edits from the activity bar and from the chat write the
+standard forms into the `.sysml` files. The older `perform action` blocks
+are left as they are until someone edits that activity.
 
 **Override.** Fixed.
 

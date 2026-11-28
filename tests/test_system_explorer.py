@@ -775,6 +775,172 @@ class ActivityParserTests(unittest.TestCase):
         self.assertEqual(model["warnings"], [])
 
 
+class StandardActivityTests(unittest.TestCase):
+    """A use case owns its process: perform inside each actor, first/then
+    for order, fork/join and decide/merge for control, flow for an item."""
+
+    SAMPLE = """
+    package Surgery {
+        part def Surgeon;
+        part def Nurse;
+        use case def PerformSurgery {
+            actor surgeon : Surgeon {
+                perform 'Assess Patient';
+                perform 'Perform Surgery';
+            }
+            actor nurse : Nurse {
+                perform 'Prepare OR';
+            }
+            action 'Prepare OR';
+            action 'Assess Patient';
+            action 'Perform Surgery';
+            action 'Monitor Vital Signs';
+            fork fork1;
+            join join1;
+            decide decide1;
+            merge merge1;
+            attribute stable : Boolean;
+            first start then 'Prepare OR';
+            first 'Prepare OR' then 'Assess Patient';
+            first 'Assess Patient' then decide1;
+            if stable then 'Perform Surgery';
+            else 'Monitor Vital Signs';
+            first 'Perform Surgery' then merge1;
+            first 'Monitor Vital Signs' then merge1;
+            first merge1 then fork1;
+            first fork1 then 'Perform Surgery';
+            first fork1 then 'Monitor Vital Signs';
+            first 'Perform Surgery' then join1;
+            first 'Monitor Vital Signs' then join1;
+            first join1 then done;
+            flow 'Assess Patient'.payload to 'Perform Surgery'.payload;
+        }
+    }
+    """
+
+    def test_lanes_fork_decision_and_flow(self):
+        model = parse_sysml(self.SAMPLE)
+        self.assertEqual(model["warnings"], [])
+        act = model["activities"][0]
+        self.assertEqual(act["owner"], "Surgery::PerformSurgery")
+        self.assertEqual(act["forks"], ["fork1"])
+        self.assertEqual(act["joins"], ["join1"])
+        self.assertEqual(act["decisions"], ["decide1"])
+        self.assertEqual(act["merges"], ["merge1"])
+        edges = {(e["from"], e["to"], e["label"]) for e in act["edges"]}
+        self.assertIn(("fork1", "Perform Surgery", ""), edges)
+        self.assertIn(("fork1", "Monitor Vital Signs", ""), edges)
+        self.assertIn(("decide1", "Perform Surgery", "stable"), edges)
+        self.assertIn(("decide1", "Monitor Vital Signs", "no"), edges)
+        self.assertEqual(act["flows"][0]["from"], "Assess Patient")
+        self.assertEqual(act["flows"][0]["to"], "Perform Surgery")
+        self.assertIn(("nurse", "Nurse", "Prepare OR"),
+                      {(l["role"], l["type"], l["action"]) for l in act["lanes"]})
+
+    def test_editor_builds_the_surgery_scenario_and_check_is_clean(self):
+        from system_explorer.activity_edit import apply_edit
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            (folder / "surgery.sysml").write_text(
+                "package Surgery {\n    use case def PerformSurgery {}\n}\n",
+                encoding="utf-8",
+            )
+            owner = "PerformSurgery"
+            steps = [
+                {"op": "add-lane", "owner": owner, "name": "Surgeon"},
+                {"op": "add-lane", "owner": owner, "name": "Nurse"},
+                {"op": "add-lane", "owner": owner, "name": "Anesthesiologist"},
+                {"op": "add-action", "owner": owner, "name": "Prepare OR",
+                 "lane": "Nurse", "after": "start", "splice": True},
+                {"op": "add-action", "owner": owner, "name": "Assess Patient",
+                 "lane": "Surgeon", "after": "Prepare OR", "splice": True},
+                {"op": "add-action", "owner": owner, "name": "Administer Anesthesia",
+                 "lane": "Anesthesiologist", "after": "Assess Patient", "splice": True},
+                {"op": "add-fork", "owner": owner, "after": "Administer Anesthesia",
+                 "branches": [
+                     {"name": "Perform Surgery", "lane": "Surgeon"},
+                     {"name": "Monitor Vital Signs", "lane": "Anesthesiologist"},
+                 ]},
+                {"op": "add-action", "owner": owner, "name": "Request Instrument",
+                 "lane": "Surgeon", "after": "Perform Surgery", "splice": True},
+                {"op": "add-action", "owner": owner, "name": "Provide Instrument",
+                 "lane": "Nurse", "after": "Request Instrument", "splice": True},
+                {"op": "add-action", "owner": owner, "name": "Close Incision",
+                 "lane": "Surgeon", "after": "join1", "splice": True},
+                {"op": "add-action", "owner": owner, "name": "Recover Patient",
+                 "lane": "Nurse", "after": "Close Incision", "splice": True},
+                {"op": "add-flow", "owner": owner, "source": "Request Instrument",
+                 "target": "Provide Instrument"},
+                {"op": "add-decision", "owner": owner, "after": "Assess Patient",
+                 "guard": "stable", "yes": "Administer Anesthesia",
+                 "no": "Stabilise Patient", "yesLane": "Anesthesiologist",
+                 "noLane": "Surgeon"},
+            ]
+            for step in steps:
+                apply_edit(folder, step)
+            text = (folder / "surgery.sysml").read_text(encoding="utf-8")
+            self.assertIn("actor surgeon : Surgeon", text)
+            self.assertIn("perform 'Perform Surgery'", text)
+            self.assertIn("first fork1 then 'Perform Surgery'", text)
+            self.assertIn("first fork1 then 'Monitor Vital Signs'", text)
+            self.assertIn("if stable then 'Administer Anesthesia'", text)
+            self.assertIn("else 'Stabilise Patient'", text)
+            self.assertIn("first merge1 then fork1", text)
+            self.assertNotIn("perform 'Administer Anesthesia' by", text)
+            self.assertNotIn("activity def", text)
+            model = parse_sysml(text)
+            self.assertEqual(model["warnings"], [])
+            edges = {(e["from"], e["to"]) for e in model["activities"][0]["edges"]}
+            self.assertIn(("merge1", "fork1"), edges)
+            self.assertNotIn(("Administer Anesthesia", "fork1"), edges)
+            env = dict(os.environ, PYTHONPATH=str(SRC))
+            out = subprocess.run(
+                [sys.executable, "-m", "system_explorer", str(folder), "--check"],
+                capture_output=True, text=True, timeout=30, env=env,
+            )
+            self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+
+    def test_editor_asks_when_the_lane_is_missing(self):
+        from system_explorer.activity_edit import ActivityEditError, apply_edit
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            (folder / "surgery.sysml").write_text(
+                "package Surgery {\n    use case def PerformSurgery {}\n}\n",
+                encoding="utf-8",
+            )
+            with self.assertRaises(ActivityEditError) as ctx:
+                apply_edit(folder, {
+                    "op": "add-action", "owner": "PerformSurgery",
+                    "name": "Prepare OR",
+                })
+            self.assertIn("Who does", str(ctx.exception))
+            self.assertNotIn("perform", (folder / "surgery.sysml").read_text())
+
+    def test_http_edit_writes_the_file_and_rejects_a_vague_step(self):
+        text = "package Surgery {\n    use case def PerformSurgery {}\n}\n"
+        srv = ServerFixture(text, views={})
+        try:
+            created = json.loads(srv.post("/api/activity", {
+                "op": "add-action", "owner": "PerformSurgery",
+                "name": "Prepare OR", "lane": "Nurse",
+                "after": "start", "splice": True,
+            }))
+            self.assertTrue(created["ok"])
+            written = (srv.folder / "model.sysml").read_text(encoding="utf-8")
+            self.assertIn("perform 'Prepare OR'", written)
+            self.assertIn("part def Nurse", written)
+            with self.assertRaises(urllib.error.HTTPError) as ctx:
+                srv.post("/api/activity", {
+                    "op": "add-action", "owner": "PerformSurgery",
+                    "name": "Next step",
+                })
+            self.assertEqual(ctx.exception.code, 400)
+            body = json.loads(ctx.exception.read().decode())
+            self.assertIn("Who does", body["error"])
+        finally:
+            srv.close()
+
+
 class ValidationTests(unittest.TestCase):
     """Parser validation warnings: syntax trouble, name collisions, and
     unresolved references are reported under model["warnings"] instead of
@@ -2293,7 +2459,9 @@ class ActivityRenderingTests(unittest.TestCase):
         dom = self.render(self.ACTIVITY_LAYOUT)
         self.assertIn(">stepOne</text>", dom)
         self.assertIn(">stepTwo</text>", dom)
-        self.assertIn(">▶ start</text>", dom)
+        self.assertIn('class="node start"', dom)
+        self.assertIn('class="node end"', dom)
+        self.assertNotIn(">▶ start</text>", dom)
         self.assertNotIn(">Interaction</text>", dom)
 
     def test_flow_edges_connect_the_succession_chain(self):
@@ -2331,8 +2499,8 @@ class ActivityRenderingTests(unittest.TestCase):
 
     def test_lane_labels_shown_for_performing_roles(self):
         dom = self.render(self.ACTIVITY_LAYOUT)
-        self.assertIn(">alice<", dom)
-        self.assertIn(">bob<", dom)
+        self.assertIn(">Alice<", dom)
+        self.assertIn(">Bob<", dom)
 
     def test_lanes_are_vertical_columns(self):
         # each swimlane is a tall column (height > width), not a wide row
@@ -4201,6 +4369,55 @@ class AssistantTests(unittest.TestCase):
             seed_model_folder(target)
             self.assertTrue(existing.exists())
             self.assertFalse((target / "stakeholders.sysml").exists())
+
+    def test_edit_activity_tool_writes_and_asks(self):
+        from assistant.tools import run_tool
+        from assistant.agent import run_turn
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            (folder / "surgery.sysml").write_text(
+                "package Surgery {\n    use case def PerformSurgery {}\n}\n",
+                encoding="utf-8",
+            )
+            settings = self.settings(folder)
+            missing = run_tool("edit_activity", {
+                "op": "add-decision", "owner": "PerformSurgery",
+                "after": "Assess Patient",
+            }, settings)
+            self.assertTrue(missing.startswith("Not written"))
+            self.assertNotIn("decide", (folder / "surgery.sysml").read_text())
+
+            def fake(messages, tools):
+                names = [t["function"]["name"] for t in tools]
+                self.assertIn("edit_activity", names)
+                if not any(m.get("role") == "tool" for m in messages):
+                    return {
+                        "content": "",
+                        "tool_calls": [{
+                            "id": "1",
+                            "name": "edit_activity",
+                            "arguments": {
+                                "op": "add-action",
+                                "owner": "PerformSurgery",
+                                "name": "Assess Patient",
+                                "lane": "Surgeon",
+                                "after": "start",
+                                "splice": True,
+                            },
+                        }],
+                    }
+                return {"content": "Assess Patient is on the diagram.", "tool_calls": []}
+
+            updated, notes = run_turn(
+                [{"role": "user", "content":
+                  "In PerformSurgery, the surgeon assesses the patient first."}],
+                settings, fake,
+            )
+            self.assertIn("Assess Patient is on the diagram.", updated[-1]["content"])
+            self.assertTrue(any("sysml" in note.lower() for note in notes))
+            written = (folder / "surgery.sysml").read_text(encoding="utf-8")
+            self.assertIn("perform 'Assess Patient'", written)
+            self.assertIn("part def Surgeon", written)
 
 
 class EmbeddedAssistantTests(unittest.TestCase):
