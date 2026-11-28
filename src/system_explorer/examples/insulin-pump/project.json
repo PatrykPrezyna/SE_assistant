@@ -1,0 +1,6 @@
+{
+  "id": "example",
+  "name": "Insulin pump",
+  "kind": "example",
+  "readOnly": true
+}

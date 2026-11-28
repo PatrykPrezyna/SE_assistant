@@ -32,7 +32,8 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlsplit
 
-from .app import _sysml_files, make_handler
+from .app import make_handler
+from .projects import ProjectLibrary, project_cookie_header
 from .version import __version__
 
 # Assistant imports are done on-demand to avoid circular dependencies
@@ -196,6 +197,9 @@ class GitHubAuth:
         self.token = token
         self.allowed = {u.strip().lower() for u in (allowed_users or [])
                         if u.strip()}
+        # Set by cloud_main: called with the GitHub user after a successful
+        # sign-in. Returns extra Set-Cookie headers (the new project).
+        self.on_login = None
 
     # -- session cookie -------------------------------------------------
 
@@ -314,11 +318,24 @@ class GitHubAuth:
                   f"collaborator on {_esc(self.repo)}. Ask the repo owner "
                   f"to add you.</p>")
             return
+        extra_cookies = []
+        if self.on_login is not None:
+            try:
+                extra_cookies = list(self.on_login(user) or [])
+            except Exception as exc:
+                print(f"warning: could not open a project: {exc}",
+                      file=sys.stderr)
+                _page(h, 502, "Sign-in failed",
+                      "<p>A new project could not be created. "
+                      "<a href=\"/auth/login\">Try again</a></p>")
+                return
         h.send_response(302)
         h.send_header("Location", "/")
         h.send_header("Set-Cookie", self._cookie(
             SESSION_COOKIE, self.make_session(user), SESSION_SECONDS))
         h.send_header("Set-Cookie", self._cookie(STATE_COOKIE, "", 0))
+        for cookie in extra_cookies:
+            h.send_header("Set-Cookie", cookie)
         h.end_headers()
 
 
@@ -393,8 +410,13 @@ def cloud_main():
         folder.relative_to(work_dir.resolve())
     except ValueError:
         sys.exit(f"MODEL_PATH escapes the repository: {model_path}")
-    if not folder.is_dir() or not _sysml_files(folder):
-        sys.exit(f"no .sysml files directly in {model_path} on {branch}")
+    if not folder.is_dir():
+        sys.exit(f"MODEL_PATH is not a directory: {model_path}")
+    # The folder is a workspace. Projects live under projects/ and are
+    # committed with GitSync. .sysml files already in the folder (the
+    # spine-cooling model, in the deployment) are not the landing project
+    # and are never rewritten. See docs/adr/0001-git-backed-projects.md.
+    library = ProjectLibrary(folder)
 
     if _env("ALLOW_ANONYMOUS") == "1":
         auth = None
@@ -409,6 +431,15 @@ def cloud_main():
             repo=repo, token=token,
             allowed_users=(_env("ALLOWED_USERS", "") or "").split(","),
         )
+
+        def _open_new_project(user, _library=library, _sync=sync, _auth=auth):
+            info = _library.create_empty(owner=user.get("login"))
+            _sync.commit_and_push(
+                info["files"], f"Create project '{info['name']}'", user
+            )
+            return [project_cookie_header(info["id"], secure=_auth.secure)]
+
+        auth.on_login = _open_new_project
 
     # Assistant configuration (optional). The methodology file ships with
     # this tool. The cloned model repo does not contain it.
@@ -433,9 +464,10 @@ def cloud_main():
     
     handler = make_handler(folder, folder / "layout.json",
                            CloudContext(sync, auth, work_dir),
-                           assistant_settings)
+                           assistant_settings, library=library)
     server = ThreadingHTTPServer(("0.0.0.0", port), handler)
-    print(f"Serving {repo}:{model_path} on port {port}", flush=True)
+    print(f"Serving workspace {repo}:{model_path} on port {port}", flush=True)
+    print("Each sign-in starts a new project under projects/.", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

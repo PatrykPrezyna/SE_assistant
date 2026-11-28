@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "name": "Needs",
+  "description": "User needs, the requirements derived from them, and one verification.",
+  "elements": [
+    "InsulinPumpNeeds::UserNeed",
+    "InsulinPumpNeeds::SteadyBasal",
+    "InsulinPumpNeeds::MealBolus",
+    "InsulinPumpNeeds::PrescribedRatio",
+    "InsulinPumpNeeds::OcclusionAlarm",
+    "InsulinPumpNeeds::MarketEvidence",
+    "InsulinPumpNeeds::SimpleReset",
+    "InsulinPumpRequirements::SystemRequirement",
+    "InsulinPumpRequirements::DeliverBasalRate",
+    "InsulinPumpRequirements::ConfirmedBolus",
+    "InsulinPumpRequirements::StopOnOcclusion",
+    "InsulinPumpVerification::BasalRateBenchTest"
+  ],
+  "nodes": {},
+  "hiddenEdges": [],
+  "view": null,
+  "options": {"edgeLabels": true}
+}

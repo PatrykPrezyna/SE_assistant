@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "name": "Occlusion alarm",
+  "description": "Swimlanes for the pump, the patient, and the caregiver, with one decision.",
+  "kind": "activity",
+  "activityOwner": "InsulinPumpUseCases::HandleOcclusionAlarm",
+  "elements": [],
+  "nodes": {},
+  "hiddenEdges": [],
+  "view": null,
+  "options": {}
+}

@@ -150,6 +150,10 @@
       let data = null;
       try { data = JSON.parse(raw); } catch (err) { data = null; }
 
+      if (data && data.switchedProject && typeof leaveProject === "function") {
+        leaveProject();
+        return;
+      }
       if (!res.ok || !data) {
         const message = (data && data.error) ||
           ("The assistant could not reply (" + res.status + ").");

@@ -52,8 +52,20 @@ a pre-commit or CI gate. `--print` dumps the parsed model as JSON.
 
 ## Example model (for testing)
 
-This repo ships the tool only — there is no sample model here. Use the
-CoolSpine medical-device model to try System Explorer:
+The installed package includes a small insulin-pump model (stakeholders,
+needs, requirements, three use cases, and one activity). In the explorer,
+**Example** in the toolbar opens it. The files live at
+`system_explorer/examples/insulin-pump/` inside the package, so a
+`pip install` of this tool carries them. The button does not modify that
+copy. In a workspace, the first edit saves a copy under `projects/`.
+
+`system-explorer <folder>` still opens `<folder>` when it already contains
+`.sysml` files. `system-explorer <folder> --workspace`, and a folder with
+no `.sysml` files yet, starts a new empty project and keeps earlier ones
+under `projects/`. Hosted mode does that on every sign-in. The details are
+in [FEATURES.md](FEATURES.md) under *Projects*.
+
+The CoolSpine medical-device model is the large reference model:
 
 ```
 git clone https://github.com/PatrykPrezyna/cool-spine-model.git
@@ -173,8 +185,12 @@ call the `validate` tool with `{ "code": "<file contents>" }`.
 The same explorer can run in the cloud, so teammates just open a URL and
 sign in with GitHub, with nothing to install. The container clones the
 *model* repo, pulls teammates' pushes about every 30 s, and turns every View
-save into a commit on `main` authored by whoever saved it. *Hosted mode* in
-[FEATURES.md](FEATURES.md) describes how it behaves. The setup below uses
+save into a commit on `main` authored by whoever saved it. Each sign-in
+starts a new project under `projects/` in that repo. Files already in the
+repo (the spine-cooling model, in the current deployment) are left as they
+are and stay reachable as a read-only repository model. *Hosted mode* and
+*Projects* in
+[FEATURES.md](FEATURES.md) describe how it behaves. The setup below uses
 [Render](https://render.com) via the blueprint in `render.yaml`. Any platform
 that runs a Dockerfile works the same way (Fly.io, Azure Container Apps,
 Cloud Run) with the same environment variables.
