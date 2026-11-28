@@ -1,0 +1,55 @@
+# Render blueprint for SE Assistant (the AI-powered modeling chat)
+# See "SE assistant (local chat)" in README.md
+#
+# This deploys the assistant chat interface. For the hosted System Explorer
+# (team collaboration on a git-backed model), use render.yaml instead.
+
+services:
+  - type: web
+    name: se-assistant
+    runtime: python3
+    plan: free
+    buildCommand: pip install .
+    startCommand: python -m assistant
+    healthCheckPath: /healthz
+    envVars:
+      # Where model files are stored. On the free plan, this is ephemeral
+      # (edits are lost on restart/redeploy). Seed from the example model
+      # on first start if empty. For persistent storage, attach a disk (paid plan).
+      - key: SE_DATA_DIR
+        value: /var/data/se-models
+      
+      # Optional: HTTP Basic Auth to protect the public endpoint
+      # Leave empty to disable auth (not recommended for public deployment)
+      - key: SE_AUTH_USER
+        sync: false
+      - key: SE_AUTH_PASSWORD
+        sync: false
+      
+      # AI model provider (OpenAI-compatible API)
+      # Leave empty to run without AI features (assistant disabled)
+      - key: ASSISTANT_BASE_URL
+        sync: false
+      - key: ASSISTANT_API_KEY
+        sync: false
+      - key: ASSISTANT_MODEL
+        sync: false
+      
+      # Optional: customize the explorer URL shown in the chat
+      - key: EXPLORER_URL
+        value: http://127.0.0.1:8199/
+      
+      # Host must be 0.0.0.0 for Render (PORT is set automatically by Render)
+      - key: ASSISTANT_HOST
+        value: 0.0.0.0
+
+# Optional: persistent disk for model storage (requires paid plan)
+# Uncomment and adjust as needed:
+#
+# disks:
+#   - name: se-models
+#     mountPath: /var/data/se-models
+#     sizeGB: 1
+#
+# Note: With a persistent disk, model edits survive restarts/redeploys.
+# Without it (free plan), edits are lost and the example model is re-seeded.
