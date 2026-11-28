@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from .provider import complete
-from .tools import folder_context, run_tool, stakeholder_module
+from .tools import activity_brief, folder_context, run_tool, stakeholder_module
 
 GREETING = (
     "Hi, I am your SE assistant. What kind of project are you working on? "
@@ -111,12 +111,86 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "edit_activity",
+            "description": (
+                "Change a use-case activity diagram: lanes, steps, successions, "
+                "decisions, forks, and item flows. Writes standard SysML v2. "
+                "Call it only when the user has named the use case and every "
+                "detail the operation needs. If something is missing, ask one "
+                "question and do not call the tool in that turn."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "op": {
+                        "type": "string",
+                        "enum": [
+                            "add-lane", "add-action", "connect", "add-decision",
+                            "add-fork", "add-flow", "rename", "delete",
+                            "add-subactivity", "add-activity",
+                        ],
+                    },
+                    "owner": {
+                        "type": "string",
+                        "description": "Use case name, or its id from the activity list.",
+                    },
+                    "name": {"type": "string"},
+                    "newName": {"type": "string"},
+                    "lane": {
+                        "type": "string",
+                        "description": "Stakeholder who performs the step, such as Nurse.",
+                    },
+                    "after": {
+                        "type": "string",
+                        "description": "Step this one follows. Use start for the first step.",
+                    },
+                    "splice": {
+                        "type": "boolean",
+                        "description": "Insert between that step and whatever follows it.",
+                    },
+                    "source": {"type": "string"},
+                    "target": {"type": "string"},
+                    "guard": {
+                        "type": "string",
+                        "description": "Condition on the yes path, one word such as stable.",
+                    },
+                    "yes": {"type": "string", "description": "Step when the guard is true."},
+                    "no": {"type": "string", "description": "Step otherwise."},
+                    "yesLane": {"type": "string"},
+                    "noLane": {"type": "string"},
+                    "item": {"type": "string"},
+                    "actors": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Stakeholders for a new activity.",
+                    },
+                    "branches": {
+                        "type": "array",
+                        "description": "Parallel steps after a fork. At least two.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "name": {"type": "string"},
+                                "lane": {"type": "string"},
+                            },
+                            "required": ["name", "lane"],
+                        },
+                    },
+                },
+                "required": ["op"],
+            },
+        },
+    },
 ]
 
 _NOTES = {
     "stakeholder_check": "Checked the stakeholder register.",
     "stakeholder_apply": "Updated the model from the stakeholder register.",
     "add_model_element": "Added a new element to the model.",
+    "edit_activity": "Updated the activity in the SysML model.",
 }
 
 
@@ -160,6 +234,7 @@ def system_message(settings):
     else:
         state = "(no process state yet)"
     documents = folder_context(Path(settings.model_folder))
+    activities = activity_brief(Path(settings.model_folder))
     content = f"""You are the SE assistant for a small engineering team.
 Guide them through the product-development methodology. Ask one question at a time.
 The opening message is already in the transcript. Do not repeat it.
@@ -172,6 +247,9 @@ Process state:
 
 Files in the model folder (quote a text file when you use it; PDFs are names only):
 {documents}
+
+Activities already in the model:
+{activities}
 
 Rules:
 - Do not invent stakeholders, needs, or categories the team did not state.
@@ -195,6 +273,23 @@ Rules:
 - Use stakeholder_check to see which exit rules are still open.
 - After a successful apply or add_model_element, tell the team the diagram
   updates on its own. The explorer is at {settings.explorer_url}
+- A process step, lane, decision, fork, or item flow is an activity edit.
+  Use edit_activity. Do not paste SysML in the chat.
+- If the use case, who does the step, where it goes, or either outcome of a
+  decision was not said, ask one short question and do not call edit_activity
+  in that turn. Do not invent a step, a person, or a second outcome.
+- A complete request is enough. "Add a decision after Assess Patient: if
+  stable, administer anesthesia, else stabilise patient" names the step, the
+  guard, and both outcomes. Call edit_activity. Put both outcomes in the same
+  lane as the step they follow unless the user named someone else.
+- op add-decision needs owner, after, guard, yes, no, yesLane, and noLane.
+  The guard is one identifier such as stable, not a sentence.
+- op add-action needs owner, name, lane, and after. Set splice to true when
+  the new step should sit between that step and whatever already follows it.
+- op add-fork needs owner, after, and branches (at least two, each with a
+  name and a lane). The join is added for you.
+- op add-lane needs owner and name (the stakeholder, such as Nurse).
+- op add-flow needs owner, source, target, and optionally item.
 """
     return {"role": "system", "content": content}
 
@@ -238,7 +333,10 @@ def run_turn(messages, settings, complete_fn=None):
         })
         for call in calls:
             output = run_tool(call["name"], call["arguments"], settings)
-            notes.append(_NOTES.get(call["name"], f"Rejected {call['name']}."))
+            if output.startswith("Not written"):
+                notes.append("Need a detail before changing the diagram.")
+            else:
+                notes.append(_NOTES.get(call["name"], f"Rejected {call['name']}."))
             working.append({
                 "role": "tool",
                 "tool_call_id": call["id"],

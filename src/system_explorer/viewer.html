@@ -99,14 +99,38 @@
   body.expert .node { cursor: move; }
   .node text.docicon { font-size: 11px; }
   .node text.activityicon { font-size: 11px; }
-  .node.action rect.body { fill: #fff7e6; }
-  .node.control rect.body { fill: #eee; rx: 10; ry: 10; }
-  .node.decision polygon.body { fill: #fff; stroke: #333; stroke-width: 1.2; }
-  .lane rect { stroke: none; }
-  .lane text { fill: #888; font-size: 11px; font-weight: 600;
+  .node.action rect.body { fill: #fff; stroke: #243044; stroke-width: 1.5; }
+  .node.control rect.body { fill: #eee; }
+  .node.decision polygon.body { fill: #fff; stroke: #243044; stroke-width: 1.6; }
+  .node.merge polygon.body { fill: #e7edf4; stroke: #243044; stroke-width: 1.6; }
+  .node.start circle { fill: #1c2430; }
+  .node.end circle.ring { fill: #fff; stroke: #1c2430; stroke-width: 2.6; }
+  .node.end circle.dot { fill: #1c2430; }
+  .node.fork rect.bar, .node.join rect.bar { fill: #1c2430; stroke: none; }
+  .node.submark { font-size: 11px; fill: #5b6b7c; }
+  .lane rect.lane-body { stroke: #d5dbe3; stroke-width: 1; rx: 12; }
+  .lane text { fill: #1c2430; font-size: 13px; font-weight: 650;
     text-anchor: middle; dominant-baseline: hanging; }
-  .edge.flow line.wire { stroke: #1a6fd4; stroke-width: 1.4; }
-  .edge.flow text { fill: #1a6fd4; }
+  .edge.flow path.wire { stroke: #243044; stroke-width: 1.6; fill: none; }
+  .edge.flow text { fill: #243044; font-size: 11px; font-weight: 650; }
+  .edge.itemflow path.wire { stroke: #0f766e; stroke-width: 1.5; fill: none;
+    stroke-dasharray: 5 4; }
+  .edge.itemflow text { fill: #0f766e; font-size: 11px; font-weight: 650; }
+  #activityBar { position: fixed; bottom: 16px; left: 16px; top: auto;
+    z-index: 16; display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+    max-width: min(720px, calc(100% - 80px));
+    background: rgba(255,255,255,.96); border: 1px solid #d5dbe3;
+    border-radius: 12px; padding: 6px; box-shadow: 0 2px 10px rgba(20,30,50,.08); }
+  #activityBar.hidden, body:not(.expert) #activityBar { display: none; }
+  #activityBar button { font: inherit; font-size: 13px; min-height: 32px;
+    padding: 4px 10px; border-radius: 8px; border: 1px solid #d5d8de;
+    background: #fff; cursor: pointer; }
+  #activityBar button:hover { background: #f4f7fb; }
+  #activityBar button:disabled { color: #9aa3ad; cursor: default; }
+  #activityHint { color: #5c6b7a; font-size: 12px; padding: 0 6px; }
+  #actInline { position: fixed; z-index: 24; font: inherit; font-size: 14px;
+    padding: 6px 8px; border-radius: 8px; border: 1px solid #1a6bbf;
+    min-width: 160px; box-shadow: 0 4px 16px rgba(20,30,50,.16); }
   .edge { cursor: pointer; }
   .edge line.hit { stroke: transparent; stroke-width: 14; pointer-events: stroke; }
   .edge line.wire, .edge path { stroke: #555; stroke-width: 1.2; fill: none; }
@@ -270,6 +294,18 @@
   <button id="warnBtn" style="display:none" title="Model validation warnings — click to show/hide"></button>
   <span id="status"></span>
 </div>
+<div id="activityBar" class="hidden">
+  <button type="button" id="addLaneBtn">Add stakeholder</button>
+  <button type="button" id="addActivityBtn">New activity</button>
+  <button type="button" id="actRenameBtn" disabled>Rename</button>
+  <button type="button" id="actDeleteBtn" disabled>Delete</button>
+  <button type="button" id="actConnectBtn" disabled>Connect</button>
+  <button type="button" id="actDecisionBtn" disabled>Decision</button>
+  <button type="button" id="actForkBtn" disabled>Fork</button>
+  <button type="button" id="actFlowBtn" disabled>Item flow</button>
+  <span id="activityHint">Click a lane to add a step</span>
+</div>
+<input id="actInline" type="text" hidden>
 <div id="error"></div>
 <div id="warnings"></div>
 <div id="emptyHint" class="hidden">This view is empty. Check elements in the tree to add them.</div>
@@ -353,6 +389,14 @@
     <marker id="mBall" markerUnits="userSpaceOnUse" markerWidth="10" markerHeight="10"
             refX="5" refY="5">
       <circle cx="5" cy="5" r="4" fill="#2a8f4d"/>
+    </marker>
+    <marker id="mArrow" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12"
+            refX="10" refY="6" orient="auto">
+      <path d="M0,1 L11,6 L0,11 Z" fill="#243044"/>
+    </marker>
+    <marker id="mArrowTeal" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12"
+            refX="10" refY="6" orient="auto">
+      <path d="M0,1 L11,6 L0,11 Z" fill="#0f766e"/>
     </marker>
   </defs>
   <g id="world">
@@ -571,6 +615,45 @@ function fontFor(item) {
   return "12px " + family;
 }
 
+function finishControlNode(g, n, kind) {
+  const svgNS = svg.namespaceURI;
+  if (kind === "start") {
+    const c = document.createElementNS(svgNS, "circle");
+    c.setAttribute("cx", 14); c.setAttribute("cy", 14); c.setAttribute("r", 13);
+    g.appendChild(c);
+    n.w = 28; n.h = 28;
+  } else if (kind === "end") {
+    const ring = document.createElementNS(svgNS, "circle");
+    ring.setAttribute("class", "ring");
+    ring.setAttribute("cx", 16); ring.setAttribute("cy", 16); ring.setAttribute("r", 15);
+    const dot = document.createElementNS(svgNS, "circle");
+    dot.setAttribute("class", "dot");
+    dot.setAttribute("cx", 16); dot.setAttribute("cy", 16); dot.setAttribute("r", 7);
+    g.appendChild(ring); g.appendChild(dot);
+    n.w = 32; n.h = 32;
+  } else if (kind === "merge") {
+    const size = 28;
+    const poly = document.createElementNS(svgNS, "polygon");
+    poly.setAttribute("class", "body");
+    poly.setAttribute("points",
+      `${size / 2},0 ${size},${size / 2} ${size / 2},${size} 0,${size / 2}`);
+    g.appendChild(poly);
+    n.w = size; n.h = size;
+  } else {
+    const bar = document.createElementNS(svgNS, "rect");
+    bar.setAttribute("class", "bar");
+    bar.setAttribute("width", 72);
+    bar.setAttribute("height", 8);
+    bar.setAttribute("rx", 2);
+    g.appendChild(bar);
+    n.w = 72; n.h = 8;
+    n.bar = bar;
+  }
+  n.el = g;
+  g.setAttribute("transform", `translate(${n.x},${n.y})`);
+  return g;
+}
+
 function createNodeEl(n) {
   const d = n.data;
   const { header, compartments } = buildNodeContent(d);
@@ -580,6 +663,7 @@ function createNodeEl(n) {
   for (const comp of compartments)
     for (const item of comp) w = Math.max(w, textWidth(item.text, fontFor(item)) + 2 * PAD);
   w = Math.ceil(w);
+  if (d.kind === "action") w = Math.max(w, 156);
 
   const g = document.createElementNS(svg.namespaceURI, "g");
   g.classList.add("node");
@@ -589,10 +673,23 @@ function createNodeEl(n) {
   if (d.kind === "action") g.classList.add("action");
   if (d.kind === "control") g.classList.add("control");
   if (d.kind === "decision") g.classList.add("decision");
+  if (d.kind === "start") g.classList.add("start");
+  if (d.kind === "end") g.classList.add("end");
+  if (d.kind === "fork") g.classList.add("fork");
+  if (d.kind === "join") g.classList.add("join");
+  if (d.kind === "merge") g.classList.add("merge");
   // Parts look the same as part defs (no usage tint). Other non-def
   // kinds still get `.usage` unless they have their own class above.
-  if (!d.kind.endsWith("def") && d.kind !== "part") g.classList.add("usage");
+  const activityShape = ["action", "control", "decision", "start", "end",
+    "fork", "join", "merge"].includes(d.kind);
+  if (!d.kind.endsWith("def") && d.kind !== "part" && !activityShape)
+    g.classList.add("usage");
   g.dataset.id = d.id;
+
+  if (d.kind === "start" || d.kind === "end" || d.kind === "fork"
+      || d.kind === "join" || d.kind === "merge") {
+    return finishControlNode(g, n, d.kind);
+  }
 
   // decision nodes are empty diamonds (UML/SysML activity control node)
   if (d.kind === "decision") {
@@ -611,7 +708,7 @@ function createNodeEl(n) {
 
   const rect = document.createElementNS(svg.namespaceURI, "rect");
   rect.setAttribute("class", "body");
-  rect.setAttribute("rx", "6");
+  rect.setAttribute("rx", d.kind === "action" ? "16" : "6");
   g.appendChild(rect);
 
   let y = PAD + 12;
@@ -652,13 +749,27 @@ function createNodeEl(n) {
     t.textContent = "📄";
     g.appendChild(t);
   }
-  if (activityTargetFor(d.id)) {
+  if (d.subOwner) {
+    const t = document.createElementNS(svg.namespaceURI, "text");
+    t.setAttribute("class", "submark");
+    t.setAttribute("x", 8);
+    t.setAttribute("y", 14);
+    t.textContent = "▣";
+    g.appendChild(t);
+  }
+  const activityTarget = d.subOwner || activityTargetFor(d.id);
+  if (activityTarget) {
     const t = document.createElementNS(svg.namespaceURI, "text");
     t.setAttribute("class", "activityicon");
-    t.setAttribute("x", 4);
-    t.setAttribute("y", 13);
-    t.setAttribute("text-anchor", "start");
+    t.setAttribute("x", w - 16);
+    t.setAttribute("y", 14);
+    t.setAttribute("text-anchor", "end");
     t.textContent = "🎬";
+    t.addEventListener("pointerdown", evt => {
+      evt.stopPropagation();
+      evt.preventDefault();
+      openActivity(activityTarget);
+    });
     g.appendChild(t);
   }
   n.w = w; n.h = h; n.el = g;
@@ -676,9 +787,42 @@ function rectAnchor(n, tx, ty) {
   return { x: cx + dx * t, y: cy + dy * t };
 }
 
+function activityRoute(a, b) {
+  const x1 = a.x + a.w / 2;
+  const y1 = a.y + a.h;
+  const x2 = b.x + b.w / 2;
+  const y2 = b.y;
+  if (y2 >= y1 + 10) {
+    const mid = y1 + Math.max(16, (y2 - y1) / 2);
+    return {
+      d: `M ${x1} ${y1} L ${x1} ${mid} L ${x2} ${mid} L ${x2} ${y2}`,
+      lx: (x1 + x2) / 2, ly: mid - 6,
+    };
+  }
+  const side = x2 >= x1 ? Math.max(a.x + a.w, b.x + b.w) + 18
+                         : Math.min(a.x, b.x) - 18;
+  const top = y2 - 16;
+  const bot = y1 + 16;
+  return {
+    d: `M ${x1} ${y1} L ${x1} ${bot} L ${side} ${bot} L ${side} ${top} L ${x2} ${top} L ${x2} ${y2}`,
+    lx: side + (x2 >= x1 ? 8 : -8), ly: (bot + top) / 2,
+  };
+}
+
 function updateEdge(e) {
   const a = nodes[e.data.from], b = nodes[e.data.to];
   if (!a || !b) return;
+  if (e.path) {
+    const route = activityRoute(a, b);
+    e.path.setAttribute("d", route.d);
+    e.hit.setAttribute("d", route.d);
+    if (e.label) {
+      e.label.setAttribute("x", route.lx);
+      e.label.setAttribute("y", route.ly);
+      e.label.setAttribute("text-anchor", "middle");
+    }
+    return;
+  }
   let ax = a.x + a.w / 2, ay = a.y + a.h / 2;
   let bx = b.x + b.w / 2, by = b.y + b.h / 2;
   if (e.off) {
@@ -707,11 +851,21 @@ function createEdgeEl(data) {
   const g = document.createElementNS(svg.namespaceURI, "g");
   g.setAttribute("class", "edge " + data.kind);
   g.dataset.key = edgeKey(data);
-  const hit = document.createElementNS(svg.namespaceURI, "line");
+  const routed = data.kind === "flow" || data.kind === "itemflow";
+  const hit = document.createElementNS(svg.namespaceURI, routed ? "path" : "line");
   hit.setAttribute("class", "hit");
   g.appendChild(hit);
   const line = document.createElementNS(svg.namespaceURI, "line");
   line.setAttribute("class", "wire");
+  let path = null;
+  if (routed) {
+    path = document.createElementNS(svg.namespaceURI, "path");
+    path.setAttribute("class", "wire");
+    path.setAttribute("marker-end",
+      data.kind === "itemflow" ? "url(#mArrowTeal)" : "url(#mArrow)");
+    g.appendChild(path);
+    line.setAttribute("display", "none");
+  }
   if (data.kind === "specialization") line.setAttribute("marker-end", "url(#mTriangle)");
   if (data.kind === "composition") line.setAttribute("marker-start", "url(#mDiamond)");
   if (data.kind === "typing") line.setAttribute("marker-end", "url(#mOpen)");
@@ -730,12 +884,12 @@ function createEdgeEl(data) {
   // stay exempt from the edge-labels Display toggle below. Flow guards
   // (yes/no after a decide) are also always shown.
   if (data.label && (displayOpts().edgeLabels || data.kind === "connector"
-      || data.kind === "flow")) {
+      || data.kind === "flow" || data.kind === "itemflow")) {
     label = document.createElementNS(svg.namespaceURI, "text");
     label.textContent = data.label;
     g.appendChild(label);
   }
-  return { data, el: g, hit, line, label, off: 0 };
+  return { data, el: g, hit, line, path, label, off: 0 };
 }
 
 function updateAllEdges() { for (const e of edges) updateEdge(e); }
@@ -907,26 +1061,62 @@ async function saveIfDirty() {
 // type — this tool's own reading of the pattern used in the CoolSpine
 // example model.
 
+let laneBoxes = [];
+let connectFrom = null;
+
 function activityFor(ownerId) {
-  return (model.activities || []).find(a => a.owner === ownerId) || null;
+  const parsed = (model.activities || []).find(a => a.owner === ownerId);
+  if (parsed) return parsed;
+  const owner = (model.nodes || []).find(n => n.id === ownerId);
+  if (!owner || owner.kind !== "use case def") return null;
+  const lanes = [];
+  const seen = new Set();
+  for (const e of model.edges || []) {
+    if (e.kind !== "association" || e.from !== ownerId) continue;
+    const other = (model.nodes || []).find(n => n.id === e.to);
+    const typeName = other ? other.name : String(e.to || "").split("::").pop();
+    const role = e.label || typeName;
+    if (!role || seen.has(role)) continue;
+    seen.add(role);
+    lanes.push({ role, type: typeName, action: "" });
+  }
+  return {
+    owner: ownerId, name: owner.name, actions: [],
+    decisions: [], forks: [], joins: [], merges: [],
+    flow: ["start", "done"],
+    edges: [{ from: "start", to: "done", label: "" }],
+    flows: [], lanes, synthetic: true,
+  };
 }
 
 // the def whose activity diagram can be opened from element `id`, or null
 function activityTargetFor(id) {
-  return activityFor(id) ? id : null;
+  if ((model.activities || []).some(a => a.owner === id)) return id;
+  const owner = (model.nodes || []).find(n => n.id === id);
+  if (owner && owner.kind === "use case def") return id;
+  return null;
 }
 
 function activityNodeId(ownerId, name) { return ownerId + "::act::" + name; }
 
+function activityStepName(node) {
+  if (!node || !activityOwner) return null;
+  const prefix = activityOwner + "::act::";
+  if (!String(node.data.id).startsWith(prefix)) return null;
+  return node.data.id.slice(prefix.length);
+}
+
 function activityLaneInfo(act) {
   const laneOfAction = {};
   const laneOrder = [];
-  for (const l of act.lanes) {
+  const labelOf = {};
+  for (const l of act.lanes || []) {
     if (!laneOrder.includes(l.role)) laneOrder.push(l.role);
-    laneOfAction[l.action] = l.role;
+    if (!labelOf[l.role]) labelOf[l.role] = l.type || l.role;
+    if (l.action) laneOfAction[l.action] = l.role;
   }
-  if (act.actions.some(a => !(a.name in laneOfAction))) laneOrder.push("");
-  return { laneOfAction, laneOrder };
+  if ((act.actions || []).some(a => !(a.name in laneOfAction))) laneOrder.push("");
+  return { laneOfAction, laneOrder, labelOf };
 }
 
 function applyViewKind(v) {
@@ -939,11 +1129,14 @@ function applyViewKind(v) {
     activityOwner = null;
     hiddenEdges = new Set((v && v.hiddenEdges) || []);
   }
+  connectFrom = null;
 }
 
 function activityViewName(ownerId) {
-  const owner = model.nodes.find(n => n.id === ownerId);
-  return "Activity — " + (owner ? owner.name : ownerId.split("::").pop());
+  const owner = (model.nodes || []).find(n => n.id === ownerId);
+  const act = (model.activities || []).find(a => a.owner === ownerId);
+  const name = owner ? owner.name : (act && act.name) || ownerId.split("::").pop();
+  return "Activity — " + name;
 }
 
 async function ensureActivityView(ownerId) {
@@ -970,99 +1163,103 @@ async function openActivity(ownerId) {
   await switchToView(v.id);
 }
 
-// vertical swimlanes: each role is a column; succession advances downward
-const ACT_COL_W = 200, ACT_ROW_H = 110, ACT_MARGIN = 20;
-const ACT_LANE_HEADER = 28, ACT_NODE_INSET = 20;
+// vertical swimlanes: each stakeholder is a column; succession goes downward
+const ACT_COL_W = 220, ACT_ROW_H = 108, ACT_MARGIN = 24;
+const ACT_LANE_HEADER = 44, ACT_NODE_INSET = 28;
+const LANE_COLORS = ["#e7f0fb", "#e7f6ee", "#fbf3e0", "#f3eefe", "#fdecea", "#e7f7f6"];
+const LANE_HEADS = ["#c5daf6", "#c6ead4", "#f3e2b8", "#ddd4f6", "#f6d0cb", "#c9ebe6"];
 
 function activityLaneX(col) {
   return ACT_MARGIN + col * ACT_COL_W + ACT_NODE_INSET;
 }
 
-function activityDecisions(act) {
-  return new Set(act.decisions || []);
-}
-
-function activityNodeKind(name, actionNames, decisions) {
-  if (actionNames.has(name)) return "action";
-  if (decisions.has(name)) return "decision";
+function activityNodeKind(name, act) {
+  if (name === "start") return "start";
+  if (name === "done") return "end";
+  if ((act.actions || []).some(a => a.name === name)) return "action";
+  if ((act.decisions || []).includes(name)) return "decision";
+  if ((act.merges || []).includes(name)) return "merge";
+  if ((act.forks || []).includes(name)) return "fork";
+  if ((act.joins || []).includes(name)) return "join";
   return "control";
 }
 
-// longest-path depth from start (for top-to-bottom placement with branches)
+// longest-path depth from start (top to bottom, including branches)
 function activityDepths(act) {
   const outs = {};
   for (const e of act.edges || []) {
     (outs[e.from] || (outs[e.from] = [])).push(e.to);
   }
   const depths = {};
-  const visit = (n, d) => {
+  const limit = (act.flow || []).length + 2;
+  const visit = (n, d, stack) => {
+    if (d > limit || stack.has(n)) return;
     if (depths[n] != null && depths[n] >= d) return;
     depths[n] = d;
-    for (const t of outs[n] || []) visit(t, d + 1);
+    stack.add(n);
+    for (const t of outs[n] || []) visit(t, d + 1, stack);
+    stack.delete(n);
   };
-  if ((act.flow || []).includes("start")) visit("start", 0);
+  if ((act.flow || []).includes("start")) visit("start", 0, new Set());
   for (const n of act.flow || []) {
     if (depths[n] == null) depths[n] = 0;
   }
   return depths;
 }
 
-// the parser always fills `edges` (inferring a linear chain when needed)
 function activityFlowEdges(act) {
   return act.edges || [];
 }
 
-// action boxes + control/decision nodes, and succession edges
 function buildActivityNodesEdges() {
   const act = activityFor(activityOwner);
   if (!act) return;
-  const actionNames = new Set(act.actions.map(a => a.name));
-  const decisions = activityDecisions(act);
-  const { laneOfAction } = activityLaneInfo(act);
-
-  const docByName = {};
-  for (const a of act.actions) docByName[a.name] = a.doc;
-
-  for (const name of act.flow) {
+  const byName = {};
+  for (const a of act.actions || []) byName[a.name] = a;
+  for (const name of act.flow || []) {
     const id = activityNodeId(activityOwner, name);
-    const kind = activityNodeKind(name, actionNames, decisions);
+    const kind = activityNodeKind(name, act);
+    const action = byName[name];
     const d = {
       id,
-      name: kind === "action" ? name
-        : kind === "decision" ? name
-        : (name === "start" ? "▶ start" : "⏹ " + name),
+      name: kind === "action" ? name : "",
       kind, shortName: null, abstract: false,
-      package: kind === "action" ? (laneOfAction[name] || "") : "",
+      package: "",
       attributes: [], parts: [],
-      doc: kind === "action" ? docByName[name] : null,
+      doc: action ? action.doc : null,
+      subOwner: action && action.sub ? action.sub : null,
     };
-    const saved = posMap()[id];
-    const n = { data: d, x: saved ? saved.x : 0, y: saved ? saved.y : 0, w: 0, h: 0,
-                laneX: null };
+    const n = { data: d, x: 0, y: 0, w: 0, h: 0, laneX: null };
     nodes[id] = n;
     nodeLayer.appendChild(createNodeEl(n));
   }
   for (const fe of activityFlowEdges(act)) {
     const from = activityNodeId(activityOwner, fe.from);
     const to = activityNodeId(activityOwner, fe.to);
+    if (!nodes[from] || !nodes[to]) continue;
     const e = createEdgeEl({ kind: "flow", from, to, label: fe.label || "" });
     edges.push(e);
     edgeLayer.appendChild(e.el);
   }
-  autoPlaceActivity(false);
+  for (const fe of act.flows || []) {
+    const from = activityNodeId(activityOwner, fe.from);
+    const to = activityNodeId(activityOwner, fe.to);
+    if (!nodes[from] || !nodes[to]) continue;
+    const e = createEdgeEl({
+      kind: "itemflow", from, to, label: fe.item || "",
+    });
+    edges.push(e);
+    edgeLayer.appendChild(e.el);
+  }
+  autoPlaceActivity();
 }
 
-// grid layout: columns are swimlanes, rows follow succession depth —
-// only fills in y positions that aren't already saved, unless force.
-// Lane (x) is always snapped so actions cannot sit in the wrong column.
-// Decision nodes sit in the same lane as their unique predecessor action
-// when possible. Also (re)draws the lane backgrounds.
-function autoPlaceActivity(force) {
+// Columns are swimlanes. Rows follow succession depth, and two steps that
+// land in the same cell step down so the picture stays readable.
+function autoPlaceActivity() {
   const act = activityFor(activityOwner);
   if (!act) return;
-  const actionNames = new Set(act.actions.map(a => a.name));
-  const decisions = activityDecisions(act);
-  const { laneOfAction, laneOrder } = activityLaneInfo(act);
+  const { laneOfAction, laneOrder, labelOf } = activityLaneInfo(act);
   const colOf = {};
   laneOrder.forEach((role, i) => { colOf[role] = i; });
   const controlCol = laneOrder.length ? (laneOrder.length - 1) / 2 : 0;
@@ -1071,61 +1268,368 @@ function autoPlaceActivity(force) {
   for (const e of activityFlowEdges(act)) {
     (preds[e.to] || (preds[e.to] = [])).push(e.from);
   }
-
   const colFor = (name) => {
-    const kind = activityNodeKind(name, actionNames, decisions);
+    const kind = activityNodeKind(name, act);
     if (kind === "action") return colOf[laneOfAction[name] || ""] ?? 0;
-    if (kind === "decision") {
-      const ps = preds[name] || [];
-      if (ps.length === 1 && actionNames.has(ps[0])) {
-        return colOf[laneOfAction[ps[0]] || ""] ?? controlCol;
-      }
-      return controlCol;
+    if (kind === "decision" || kind === "merge") {
+      const ps = (preds[name] || []).filter(p => activityNodeKind(p, act) === "action");
+      if (ps.length) return colOf[laneOfAction[ps[0]] || ""] ?? controlCol;
     }
     return controlCol;
   };
 
+  const occupied = {};
+  const placedDepth = {};
   let maxDepth = 0;
-  for (const name of act.flow) {
+  const ordered = [...(act.flow || [])].sort((a, b) =>
+    (depths[a] || 0) - (depths[b] || 0) || String(a).localeCompare(String(b)));
+  for (const name of ordered) {
+    const kind = activityNodeKind(name, act);
+    let depth = depths[name] || 0;
+    if (kind === "action" || kind === "decision" || kind === "merge") {
+      const col = colFor(name);
+      while (occupied[col + ":" + depth]) depth += 1;
+      occupied[col + ":" + depth] = name;
+    }
+    placedDepth[name] = depth;
+    maxDepth = Math.max(maxDepth, depth);
+  }
+
+  for (const name of act.flow || []) {
     const id = activityNodeId(activityOwner, name);
     const n = nodes[id];
     if (!n) continue;
-    const depth = depths[name] || 0;
-    maxDepth = Math.max(maxDepth, depth);
-    const laneX = activityLaneX(colFor(name));
-    n.laneX = laneX;
-    n.el.dataset.laneX = String(laneX);
-    n.x = laneX;
-    if (force || !(id in posMap())) {
-      n.y = ACT_MARGIN + ACT_LANE_HEADER + depth * ACT_ROW_H;
-    } else {
-      n.y = posMap()[id].y;
+    const kind = activityNodeKind(name, act);
+    let laneX = activityLaneX(colFor(name));
+    if (kind === "start" || kind === "end") {
+      const mid = laneOrder.length
+        ? (ACT_MARGIN - 8) + (laneOrder.length * ACT_COL_W) / 2
+        : ACT_MARGIN + 90;
+      laneX = mid - n.w / 2;
     }
+    n.laneX = laneX;
+    n.x = laneX;
+    n.y = ACT_MARGIN + ACT_LANE_HEADER + (placedDepth[name] || 0) * ACT_ROW_H;
+    if (kind === "fork" || kind === "join") n.y += 16;
+    n.el.dataset.laneX = String(laneX);
     n.el.setAttribute("transform", `translate(${n.x},${n.y})`);
-    posMap()[id] = { x: n.x, y: n.y };
+  }
+
+  for (const name of act.flow || []) {
+    const kind = activityNodeKind(name, act);
+    if (kind !== "fork" && kind !== "join") continue;
+    const n = nodes[activityNodeId(activityOwner, name)];
+    if (!n) continue;
+    const cols = [];
+    for (const e of act.edges || []) {
+      const other = e.from === name ? e.to : e.to === name ? e.from : null;
+      if (!other) continue;
+      const otherKind = activityNodeKind(other, act);
+      if (otherKind === "action" || otherKind === "decision" || otherKind === "merge")
+        cols.push(colFor(other));
+    }
+    if (cols.length < 2) continue;
+    const left = Math.min(...cols);
+    const right = Math.max(...cols);
+    const x = activityLaneX(left);
+    const w = Math.max(72, activityLaneX(right) + 148 - x);
+    n.x = x;
+    n.w = w;
+    n.laneX = x;
+    if (n.bar) n.bar.setAttribute("width", String(w));
+    n.el.dataset.laneX = String(x);
+    n.el.setAttribute("transform", `translate(${n.x},${n.y})`);
   }
 
   laneLayer.innerHTML = "";
+  laneBoxes = [];
   if (!laneOrder.length) return;
-  const height = ACT_MARGIN + ACT_LANE_HEADER
-    + Math.max(1, maxDepth + 1) * ACT_ROW_H;
+  const height = ACT_MARGIN + ACT_LANE_HEADER + (maxDepth + 1) * ACT_ROW_H + 48;
   laneOrder.forEach((role, i) => {
+    const x = ACT_MARGIN + i * ACT_COL_W - 8;
+    const y = ACT_MARGIN - 8;
     const g = document.createElementNS(svg.namespaceURI, "g");
     g.setAttribute("class", "lane");
     const rect = document.createElementNS(svg.namespaceURI, "rect");
-    rect.setAttribute("x", ACT_MARGIN + i * ACT_COL_W - 8);
-    rect.setAttribute("y", ACT_MARGIN - 8);
+    rect.setAttribute("class", "lane-body");
+    rect.setAttribute("x", x);
+    rect.setAttribute("y", y);
     rect.setAttribute("width", ACT_COL_W);
     rect.setAttribute("height", height);
-    rect.setAttribute("fill", i % 2 === 0 ? "#f7f9fc" : "#eef2f7");
+    rect.setAttribute("fill", LANE_COLORS[i % LANE_COLORS.length]);
     g.appendChild(rect);
+    const head = document.createElementNS(svg.namespaceURI, "rect");
+    head.setAttribute("class", "lane-head");
+    head.setAttribute("x", x);
+    head.setAttribute("y", y);
+    head.setAttribute("width", ACT_COL_W);
+    head.setAttribute("height", 36);
+    head.setAttribute("fill", LANE_HEADS[i % LANE_HEADS.length]);
+    g.appendChild(head);
     const label = document.createElementNS(svg.namespaceURI, "text");
-    label.setAttribute("x", ACT_MARGIN + i * ACT_COL_W + ACT_COL_W / 2 - 8);
-    label.setAttribute("y", ACT_MARGIN);
-    label.textContent = role || "(unassigned)";
+    label.setAttribute("x", x + ACT_COL_W / 2);
+    label.setAttribute("y", y + 11);
+    label.textContent = labelOf[role] || "(unassigned)";
     g.appendChild(label);
     laneLayer.appendChild(g);
+    laneBoxes.push({
+      role, label: labelOf[role] || role,
+      x, y, w: ACT_COL_W, h: height,
+    });
   });
+  updateAllEdges();
+}
+
+function selectedStep() {
+  if (!selection || selection.type !== "node") return null;
+  const n = nodes[selection.id];
+  return n ? activityStepName(n) : null;
+}
+
+function syncActivityBar() {
+  const bar = document.getElementById("activityBar");
+  if (!bar) return;
+  bar.classList.toggle("hidden", !(mode === "activity" && expertMode));
+  const step = selectedStep();
+  const editable = !!step && step !== "start" && step !== "done";
+  const set = (id, on) => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = !on;
+  };
+  set("actRenameBtn", editable);
+  set("actDeleteBtn", editable);
+  set("actConnectBtn", !!step);
+  set("actDecisionBtn", editable);
+  set("actForkBtn", editable);
+  set("actFlowBtn", editable);
+  const hint = document.getElementById("activityHint");
+  if (hint) {
+    hint.textContent = connectFrom
+      ? "Click the step this connects to"
+      : "Click a lane to add a step";
+  }
+}
+
+function laneOfStep(name) {
+  const act = activityFor(activityOwner);
+  if (!act) return "";
+  const info = activityLaneInfo(act);
+  const role = info.laneOfAction[name];
+  return (role && info.labelOf[role]) || role || "";
+}
+
+async function activityEdit(body) {
+  let data = {};
+  let res;
+  try {
+    res = await fetch("/api/activity", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    data = await res.json();
+  } catch (err) {
+    flash("Could not update the diagram");
+    return;
+  }
+  if (!res.ok || data.error) {
+    flash(data.error || "Could not update the diagram");
+    return;
+  }
+  connectFrom = null;
+  await loadModel();
+  if (data.owner) {
+    const v = await ensureActivityView(data.owner);
+    if (!activeView || activeView.id !== v.id) await switchToView(v.id);
+    else fitView();
+  }
+  flash("saved ✓");
+}
+
+function formModal(title, fields, onSubmit) {
+  modalHead.textContent = title;
+  modalBody.innerHTML = fields.map(f =>
+    `<label style="display:block;margin:8px 0 4px">${escapeHtml(f.label)}</label>`
+    + `<input type="text" id="fld-${f.id}" value="${escapeHtml(f.value || "")}">`
+  ).join("");
+  modalFoot.innerHTML =
+    `<button type="button" id="formCancel">Cancel</button>`
+    + `<button type="button" id="formOk">OK</button>`;
+  const submit = () => {
+    const values = {};
+    for (const f of fields) {
+      values[f.id] = document.getElementById("fld-" + f.id).value.trim();
+    }
+    closeModal();
+    onSubmit(values);
+  };
+  document.getElementById("formCancel").onclick = closeModal;
+  document.getElementById("formOk").onclick = submit;
+  for (const f of fields) {
+    const input = document.getElementById("fld-" + f.id);
+    input.addEventListener("focus", () => input.select());
+    input.addEventListener("keydown", evt => { if (evt.key === "Enter") submit(); });
+  }
+  modalOverlay.classList.remove("hidden");
+  const first = document.getElementById("fld-" + fields[0].id);
+  if (first) first.focus();
+}
+
+function afterForNewStep(role) {
+  const act = activityFor(activityOwner);
+  if (!act) return "start";
+  if (selection && selection.type === "node") {
+    const name = activityStepName(nodes[selection.id]);
+    if (name && name !== "done") return name;
+  }
+  let best = null;
+  let bestY = -1;
+  for (const lane of act.lanes || []) {
+    if (lane.role !== role || !lane.action) continue;
+    const n = nodes[activityNodeId(activityOwner, lane.action)];
+    if (n && n.y >= bestY) { best = lane.action; bestY = n.y; }
+  }
+  if (best) return best;
+  const intoDone = (act.edges || []).filter(e => e.to === "done" && !e.label);
+  if (intoDone.length === 1) return intoDone[0].from;
+  return "start";
+}
+
+function beginLaneStep(box, clientX, clientY, follow) {
+  const input = document.getElementById("actInline");
+  input.hidden = false;
+  input.value = "";
+  input.style.left = Math.max(12, clientX - 20) + "px";
+  input.style.top = Math.max(12, clientY - 16) + "px";
+  input.dataset.lane = box.label || box.role;
+  input.dataset.after = follow || "";
+  input.focus();
+}
+
+function commitLaneStep() {
+  const input = document.getElementById("actInline");
+  if (!input || input.hidden) return;
+  const name = input.value.trim();
+  const lane = input.dataset.lane;
+  const follow = input.dataset.after;
+  input.hidden = true;
+  input.value = "";
+  input.dataset.after = "";
+  if (!name || !activityOwner || !lane) return;
+  const role = (laneBoxes.find(b => (b.label || b.role) === lane) || {}).role;
+  activityEdit({
+    op: "add-action", owner: activityOwner, name, lane,
+    after: follow || afterForNewStep(role),
+    splice: true,
+  });
+}
+
+function wireActivityEditing() {
+  document.getElementById("addLaneBtn").addEventListener("click", () => {
+    formModal("Add stakeholder", [
+      { id: "name", label: "Name (this becomes the lane)" },
+    ], values => {
+      if (!values.name) return;
+      activityEdit({ op: "add-lane", owner: activityOwner, name: values.name });
+    });
+  });
+  document.getElementById("addActivityBtn").addEventListener("click", () => {
+    formModal("New activity", [
+      { id: "name", label: "Use case name" },
+      { id: "actors", label: "Stakeholders, separated by commas (optional)" },
+    ], values => {
+      if (!values.name) return;
+      const actors = values.actors
+        ? values.actors.split(",").map(s => s.trim()).filter(Boolean) : [];
+      activityEdit({ op: "add-activity", name: values.name, actors });
+    });
+  });
+  document.getElementById("actRenameBtn").addEventListener("click", () => {
+    const step = selectedStep();
+    if (!step) return;
+    formModal("Rename step", [
+      { id: "name", label: "New name", value: step },
+    ], values => {
+      if (!values.name || values.name === step) return;
+      activityEdit({
+        op: "rename", owner: activityOwner, name: step, newName: values.name,
+      });
+    });
+  });
+  document.getElementById("actDeleteBtn").addEventListener("click", () => {
+    const step = selectedStep();
+    if (!step) return;
+    activityEdit({ op: "delete", owner: activityOwner, name: step });
+  });
+  document.getElementById("actConnectBtn").addEventListener("click", () => {
+    connectFrom = selectedStep();
+    syncActivityBar();
+  });
+  document.getElementById("actDecisionBtn").addEventListener("click", () => {
+    const step = selectedStep();
+    if (!step) return;
+    const lane = laneOfStep(step);
+    formModal("Decision after " + step, [
+      { id: "guard", label: "If this is true…" },
+      { id: "yes", label: "…do this" },
+      { id: "yesLane", label: "Who does that", value: lane },
+      { id: "no", label: "Otherwise do this" },
+      { id: "noLane", label: "Who does that", value: lane },
+    ], values => {
+      if (!values.guard || !values.yes || !values.no) {
+        flash("A decision needs a condition and both outcomes");
+        return;
+      }
+      activityEdit({
+        op: "add-decision", owner: activityOwner, after: step,
+        guard: values.guard, yes: values.yes, no: values.no,
+        yesLane: values.yesLane || lane, noLane: values.noLane || lane,
+      });
+    });
+  });
+  document.getElementById("actForkBtn").addEventListener("click", () => {
+    const step = selectedStep();
+    if (!step) return;
+    const lane = laneOfStep(step);
+    formModal("Parallel steps after " + step, [
+      { id: "a", label: "First step" },
+      { id: "aLane", label: "Who does it", value: lane },
+      { id: "b", label: "Second step, at the same time" },
+      { id: "bLane", label: "Who does it", value: lane },
+    ], values => {
+      if (!values.a || !values.b || !values.aLane || !values.bLane) {
+        flash("A fork needs two steps and who does each one");
+        return;
+      }
+      activityEdit({
+        op: "add-fork", owner: activityOwner, after: step,
+        branches: [
+          { name: values.a, lane: values.aLane },
+          { name: values.b, lane: values.bLane },
+        ],
+      });
+    });
+  });
+  document.getElementById("actFlowBtn").addEventListener("click", () => {
+    const step = selectedStep();
+    if (!step) return;
+    formModal("Item handed on from " + step, [
+      { id: "target", label: "To which step" },
+      { id: "item", label: "What is handed over", value: "payload" },
+    ], values => {
+      if (!values.target) return;
+      activityEdit({
+        op: "add-flow", owner: activityOwner,
+        source: step, target: values.target, item: values.item || "payload",
+      });
+    });
+  });
+  const input = document.getElementById("actInline");
+  input.addEventListener("keydown", evt => {
+    if (evt.key === "Enter") { evt.preventDefault(); commitLaneStep(); }
+    if (evt.key === "Escape") { input.hidden = true; input.value = ""; }
+  });
+  input.addEventListener("blur", () => { setTimeout(commitLaneStep, 0); });
 }
 
 // ---------------------------------------------------------------- build
@@ -1372,6 +1876,7 @@ function setExpertMode(on) {
   chromeTop();
   applyTreePanel();
   updateEmptyHint();
+  syncActivityBar();
 }
 
 function updateEmptyHint() {
@@ -1395,7 +1900,7 @@ function rebuild() {
     ? `Unhide connections (${hiddenEdges.size})` : "Unhide connections";
   unhideBtn.disabled = mode !== "bdd" || !hiddenEdges.size;
   updateLegend();
-  autoPlace(false);
+  if (mode !== "activity") autoPlace(false);
   updateAllEdges();
   applySelection();
   renderTree();
@@ -1415,7 +1920,7 @@ function clearHighlightClasses() {
 
 function applySelection() {
   clearHighlightClasses();
-  if (!selection) return;
+  if (!selection) { syncActivityBar(); return; }
   if (selection.type === "node") {
     const n = nodes[selection.id];
     if (!n) { selection = null; return; }
@@ -1434,11 +1939,16 @@ function applySelection() {
     if (a) a.el.classList.add("hl");
     if (b) b.el.classList.add("hl");
   }
+  syncActivityBar();
 }
 
 function selectNode(id) { selection = { type: "node", id }; applySelection(); }
 function selectEdge(key) { selection = { type: "edge", key }; applySelection(); }
-function clearSelection() { selection = null; clearHighlightClasses(); }
+function clearSelection() {
+  selection = null;
+  clearHighlightClasses();
+  syncActivityBar();
+}
 
 // ---------------------------------------------------------------- interaction
 
@@ -1457,12 +1967,20 @@ function toWorld(evt) {
 
 function finishDrag() {
   if (!drag) return;
+  const finished = drag;
   if (drag.kind === "node") drag.n.el.classList.remove("dragging");
   // A drag pans and leaves the detail sheet up. A tap (no movement) falls
   // through to the click handler, which opens or closes the sheet.
   if (drag.kind === "pan" && drag.moved) {
     gestureMoved = true;
     setTimeout(() => { gestureMoved = false; }, 700);
+  } else if (finished.kind === "pan" && !finished.moved
+      && expertMode && mode === "activity") {
+    const worldPoint = toWorld({ clientX: finished.sx, clientY: finished.sy });
+    const box = laneBoxes.find(b =>
+      worldPoint.x >= b.x && worldPoint.x <= b.x + b.w
+      && worldPoint.y >= b.y && worldPoint.y <= b.y + b.h);
+    if (box && box.role) beginLaneStep(box, finished.sx, finished.sy, finished.follow);
   }
   svg.classList.remove("panning");
   drag = null;
@@ -1480,6 +1998,16 @@ svg.addEventListener("pointerdown", evt => {
   }
   const nodeEl = evt.target.closest(".node");
   if (nodeEl) {
+    if (expertMode && mode === "activity" && connectFrom) {
+      const target = activityStepName(nodes[nodeEl.dataset.id]);
+      const source = connectFrom;
+      connectFrom = null;
+      syncActivityBar();
+      if (target && target !== source) {
+        activityEdit({ op: "connect", owner: activityOwner, source, target });
+      }
+      return;
+    }
     if (!expertMode) {
       // Reading: a tap opens the sheet, a drag pans — even when it starts
       // on a node, which is most of the screen on a phone. The sheet stays
@@ -1511,10 +2039,11 @@ svg.addEventListener("pointerdown", evt => {
     selectEdge(edgeEl.dataset.key);
     return;
   }
+  const follow = (expertMode && mode === "activity") ? selectedStep() : null;
   if (expertMode) { clearSelection(); hideSheet(); }
   drag = { kind: "pan", pointerId: evt.pointerId, pointerType: evt.pointerType,
            sx: evt.clientX, sy: evt.clientY, tx: view.tx, ty: view.ty,
-           moved: false };
+           moved: false, follow };
 });
 
 window.addEventListener("pointermove", evt => {
@@ -1572,6 +2101,17 @@ function releasePointer(evt, cancelled) {
 }
 window.addEventListener("pointerup", evt => releasePointer(evt, false));
 window.addEventListener("pointercancel", evt => releasePointer(evt, true));
+svg.addEventListener("dblclick", evt => {
+  const nodeEl = evt.target.closest(".node");
+  if (!nodeEl) return;
+  const n = nodes[nodeEl.dataset.id];
+  if (!n) return;
+  if (n.data.subOwner) { openActivity(n.data.subOwner); return; }
+  if (mode === "bdd") {
+    const target = activityTargetFor(n.data.id);
+    if (target) openActivity(target);
+  }
+});
 svg.addEventListener("click", evt => {
   if (gestureMoved) {
     gestureMoved = false;
@@ -1917,6 +2457,27 @@ function relatedMenuItems(id) {
 // future element actions (linked specification, internal diagram, ...) go here
 function nodeMenuItems(id) {
   const items = [];
+  const n = nodes[id];
+  const sub = n && n.data.subOwner;
+  const target = activityTargetFor(id);
+  if (sub || (target && mode === "bdd")) {
+    items.push({
+      label: "Open activity",
+      action: () => openActivity(sub || target),
+    });
+  }
+  if (mode === "activity" && n && !sub) {
+    const step = activityStepName(n);
+    if (step && step !== "start" && step !== "done") {
+      items.push({
+        label: "Make sub-activity",
+        action: () => activityEdit({
+          op: "add-subactivity", owner: activityOwner, name: step,
+          lane: laneOfStep(step) || step,
+        }),
+      });
+    }
+  }
   if (mode === "bdd") {
     items.push({ sep: true });
     items.push(...relatedMenuItems(id));
@@ -2284,8 +2845,21 @@ async function loadModel() {
 // file is shown on the context view, next to the people already there.
 async function refreshAfterAssistantEdit() {
   const before = new Set((model && model.nodes || []).map(n => n.id));
+  const beforeActs = {};
+  for (const act of (model && model.activities) || []) {
+    beforeActs[act.owner] = JSON.stringify(act);
+  }
   await loadModel();
   if (!model) return;
+  const changed = (model.activities || []).find(
+    act => beforeActs[act.owner] !== JSON.stringify(act)
+  );
+  if (changed) {
+    const v = await ensureActivityView(changed.owner);
+    if (!activeView || activeView.id !== v.id) await switchToView(v.id);
+    else fitView();
+    return;
+  }
   const added = model.nodes.filter(n => !before.has(n.id) && !n.usageOwner);
   if (!added.length) return;
   const inContext = added.some(n => /Context::/i.test(n.id));
@@ -2389,6 +2963,7 @@ async function init() {
   updateTitle();
   rebuild();
   restoreViewTransform();
+  wireActivityEditing();
 }
 
 document.getElementById("expertBtn").addEventListener("click", () => {

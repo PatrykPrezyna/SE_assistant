@@ -172,15 +172,33 @@ RE_CONNECTION = re.compile(
     r"|(?:\s*:\s*[\w:]+)?\s+connect\s+([\w.]+)\s+to\s+([\w.]+))$"
 )
 
-# activity diagram (swimlane style): `perform action <name> { ... }` nested
-# inside a `part def` / `use case def` declares an activity — its body holds
-# nested `action` usages and a `first .. then .. then done;` succession chain.
-# Elsewhere in the same def, swimlane roles are assigned with
-# `perform <activity>.<action>;` on `part`, `actor`, or `subject` usages.
-# Not standard SysML v2 syntax (the spec has no first-class "swimlane");
-# see FEATURES.md dialect notes.
+# Activity diagrams. Two spellings are read.
+#
+# Standard SysML v2 (what the editor writes): actions, `first`/`then`
+# successions, `decide`/`merge`/`fork`/`join`, and `flow <pin> to <pin>`
+# live in a use case def or an action def. A lane is an actor (or part)
+# whose body says `perform <action>;`. There is no `activity` keyword and
+# `perform <action> by <part>` is not valid SysML v2.
+#
+# Older models use `perform action <name> { ... }` plus
+# `perform <activity>.<action>;` on a part, actor, or subject. Still read
+# so those diagrams keep working. See specs/0002-activity-diagram.md.
+_NAME = r"(?:'([^']*)'|([A-Za-z_]\w*))"
+_STEP = r"(?:'[^']+'|[A-Za-z_]\w*)"
 RE_PERFORM_ACTION = re.compile(r"^perform\s+action\s+(\w+)$")
 RE_PERFORM_LANE = re.compile(r"^perform\s+(\w+)\.(\w+)$")
+RE_PERFORM_LOCAL = re.compile(rf"^perform\s+{_NAME}$")
+RE_ACTION_USAGE = re.compile(
+    rf"^action\s+(?!def\b){_NAME}(?:\s*:\s*([\w][\w:]*))?$"
+)
+RE_FIRST_THEN = re.compile(rf"^first\s+{_NAME}\s+then\s+{_NAME}$")
+RE_CONTROL = re.compile(rf"^(fork|join|decide|merge)(?:\s+{_NAME})?$")
+RE_THEN_CONTROL = re.compile(
+    rf"^then\s+(fork|join|decide|merge)(?:\s+{_NAME})?$"
+)
+RE_FLOW = re.compile(
+    rf"^flow\s+(?:from\s+)?({_STEP}(?:\.{_STEP})*)\s+to\s+({_STEP}(?:\.{_STEP})*)$"
+)
 # actor / subject / `ref part` usages — swimlane roles only; not treated as
 # nested parts / composition. `ref part` (SysML v2 reference usage) names an
 # instance that some other element composes, so it must not add a second node
@@ -190,13 +208,48 @@ RE_REFERENCE_USAGE = re.compile(
     r"(?:\s*:\s*([\w][\w:]*))?"
     r"(?:\s*(\[[^\]]+\]))?$"
 )
-RE_FIRST = re.compile(r"^first\s+(\w+)$")
-RE_THEN = re.compile(r"^then\s+(\w+)$")
+RE_FIRST = re.compile(rf"^first\s+{_NAME}$")
+RE_THEN = re.compile(rf"^then\s+{_NAME}$")
 # conditional successions after a decide node (SysML v2):
 #   if <guard> then <target>;
 #   else <target>;
-RE_IF_THEN = re.compile(r"^if\s+(.+?)\s+then\s+(\w+)$")
-RE_ELSE = re.compile(r"^else\s+(\w+)$")
+RE_IF_THEN = re.compile(rf"^if\s+(.+?)\s+then\s+{_NAME}$")
+RE_ELSE = re.compile(rf"^else\s+{_NAME}$")
+
+
+def _name_at(groups, index):
+    """A name written as `'Prepare OR'` or `prepareOR` occupies two groups."""
+    quoted, bare = groups[index], groups[index + 1]
+    return quoted if quoted is not None else bare
+
+
+def _step_head(path):
+    """First segment of `action.pin` or `'Prepare OR'.payload`."""
+    if path.startswith("'"):
+        return path[1:path.index("'", 1)]
+    return path.split(".", 1)[0]
+
+
+def _step_tail(path):
+    if path.startswith("'"):
+        rest = path[path.index("'", 1) + 1:]
+        return rest[1:] if rest.startswith(".") else rest
+    return path.split(".", 1)[1] if "." in path else path
+
+
+def _is_behavior_header(header):
+    """A statement that belongs to an action flow, not to the block structure."""
+    return bool(
+        RE_ACTION_USAGE.match(header)
+        or RE_FIRST_THEN.match(header)
+        or RE_FIRST.match(header)
+        or RE_THEN_CONTROL.match(header)
+        or RE_THEN.match(header)
+        or RE_CONTROL.match(header)
+        or RE_IF_THEN.match(header)
+        or RE_ELSE.match(header)
+        or RE_FLOW.match(header)
+    )
 
 
 def _match_connection(header):
@@ -275,23 +328,48 @@ def _collect_doc(children, model):
     return None
 
 
-def _interpret_activity(name, children, model, warn):
-    """Parse a `perform action <name> { ... }` body: nested `action` usages
-    and succession control (`first` / `then` / `decide` / `if … then` /
-    `else`). Returns
-    `{"name", "actions", "decisions", "flow", "edges"}` where:
-      - `flow` is every node name in encounter order (for layout / compat)
-      - `edges` is `[{"from","to","label"}]` (label empty, or a guard like
-        "yes" / "no")
-      - `decisions` lists decide-node names (rendered as diamonds)
-    `then` immediately after an `action` declaration is a succession *from
-    that action* (SysML v2); other `then`s continue the `first`/`then`
-    chain. `if`/`else` branch from the most recent `decide`."""
+def _lanes_in(children):
+    """Actor and part usages in an action body, and the steps each performs."""
+    lanes = []
+    for sub in children or []:
+        asu = RE_REFERENCE_USAGE.match(sub["header"])
+        um = RE_USAGE.match(sub["header"])
+        if asu:
+            role, typ = asu.group(3), asu.group(4) or ""
+        elif um and um.group(1) == "part":
+            role, typ = um.group(4), um.group(5) or ""
+        else:
+            continue
+        found = False
+        for inner in sub["children"] or []:
+            pm = RE_PERFORM_LOCAL.match(inner["header"])
+            if not pm:
+                continue
+            lanes.append({
+                "role": role, "type": typ,
+                "action": pm.group(1) or pm.group(2),
+            })
+            found = True
+        if not found and role:
+            lanes.append({"role": role, "type": typ, "action": ""})
+    return lanes
+
+
+def _read_behavior(name, children, model, warn):
+    """Read an action body: actions, successions, control nodes, item flows.
+
+    `then` right after an action declaration leaves that action (standard
+    shorthand). Consecutive `then`s after a fork all leave the fork, which
+    is how the language writes a parallel split. `if` / `else` leave the
+    most recent `decide`. A bare `else` is the "no" branch."""
     actions = []
-    decisions = []
+    decisions, forks, joins, merges = [], [], [], []
     flow = []
     edges = []
+    flows = []
+    subs = []
     seen = set()
+    control_kind = {}
 
     def add_node(n):
         if n not in seen:
@@ -303,24 +381,89 @@ def _interpret_activity(name, children, model, warn):
         add_node(to)
         edges.append({"from": frm, "to": to, "label": label})
 
-    last_chain = None       # current end of first/then chain
-    last_action = None      # most recently declared action (for its `then`)
-    current_decide = None
-    prev_kind = None        # "action" | "chain" | "branch" | None
+    def declare(kind, explicit):
+        if explicit:
+            cname = explicit
+        elif kind not in control_kind:
+            cname = kind
+        else:
+            n = 2
+            while f"{kind}{n}" in control_kind:
+                n += 1
+            cname = f"{kind}{n}"
+        control_kind[cname] = kind
+        add_node(cname)
+        bucket = {"fork": forks, "join": joins,
+                  "decide": decisions, "merge": merges}[kind]
+        if cname not in bucket:
+            bucket.append(cname)
+        return cname
 
-    for child in children:
+    last_chain = None
+    last_action = None
+    current_decide = None
+    prev_kind = None
+    fork_fanout = None
+
+    def note_target(target):
+        nonlocal current_decide, fork_fanout
+        kind = control_kind.get(target)
+        if kind == "decide" or target == "decide":
+            current_decide = target
+            if target not in decisions:
+                decisions.append(target)
+        if kind == "fork":
+            fork_fanout = target
+        else:
+            fork_fanout = None
+
+    def link_then(target):
+        nonlocal last_chain, last_action, prev_kind, current_decide
+        if fork_fanout and prev_kind == "chain":
+            # Every `then` written under a fork leaves the fork, until the
+            # next action or `first`. The source does not advance.
+            add_edge(fork_fanout, target)
+            last_action = None
+            prev_kind = "chain"
+            if control_kind.get(target) == "decide" or target == "decide":
+                current_decide = target
+            return
+        if prev_kind == "action" and last_action:
+            add_edge(last_action, target)
+        elif last_chain is not None:
+            add_edge(last_chain, target)
+        else:
+            add_node(target)
+        last_chain = target
+        last_action = None
+        prev_kind = "chain"
+        note_target(target)
+
+    for child in children or []:
         header = child["header"]
+        ft = RE_FIRST_THEN.match(header)
+        if ft:
+            src = _name_at(ft.groups(), 0)
+            dst = _name_at(ft.groups(), 2)
+            add_edge(src, dst)
+            last_chain = dst
+            last_action = None
+            prev_kind = "chain"
+            fork_fanout = None
+            note_target(dst)
+            continue
         fm = RE_FIRST.match(header)
         if fm:
-            last_chain = fm.group(1)
+            last_chain = _name_at(fm.groups(), 0)
             add_node(last_chain)
             last_action = None
             prev_kind = "chain"
+            fork_fanout = None
             continue
         im = RE_IF_THEN.match(header)
         if im:
-            guard, target = im.groups()
-            guard = guard.strip()
+            guard = im.group(1).strip()
+            target = _name_at(im.groups(), 1)
             if not current_decide:
                 warn(f"activity '{name}': 'if … then' without a preceding decide")
             else:
@@ -328,10 +471,11 @@ def _interpret_activity(name, children, model, warn):
             last_chain = target
             last_action = None
             prev_kind = "branch"
+            fork_fanout = None
             continue
         em = RE_ELSE.match(header)
         if em:
-            target = em.group(1)
+            target = _name_at(em.groups(), 0)
             if not current_decide:
                 warn(f"activity '{name}': 'else' without a preceding decide")
             else:
@@ -339,37 +483,61 @@ def _interpret_activity(name, children, model, warn):
             last_chain = target
             last_action = None
             prev_kind = "branch"
+            fork_fanout = None
+            continue
+        tc = RE_THEN_CONTROL.match(header)
+        if tc:
+            explicit = tc.group(2) or tc.group(3)
+            target = declare(tc.group(1), explicit)
+            link_then(target)
             continue
         tm = RE_THEN.match(header)
         if tm:
-            target = tm.group(1)
-            if prev_kind == "action" and last_action:
-                add_edge(last_action, target)
-            elif last_chain is not None:
-                add_edge(last_chain, target)
-            else:
-                add_node(target)
-            last_chain = target
-            if target == "decide":
-                current_decide = target
-                if target not in decisions:
-                    decisions.append(target)
-            last_action = None
-            prev_kind = "chain"
+            link_then(_name_at(tm.groups(), 0))
             continue
-        am = RE_USAGE.match(header)
-        if am and am.group(1) == "action":
-            _, _, _short, aname, _typ, _mult = am.groups()
-            actions.append(
-                {"name": aname, "doc": _collect_doc(child["children"], model)}
-            )
+        cm = RE_CONTROL.match(header)
+        if cm:
+            declare(cm.group(1), cm.group(2) or cm.group(3))
+            last_action = None
+            prev_kind = "decl"
+            fork_fanout = None
+            continue
+        fl = RE_FLOW.match(header)
+        if fl:
+            src, dst = fl.group(1), fl.group(2)
+            flows.append({
+                "from": _step_head(src),
+                "to": _step_head(dst),
+                "item": _step_tail(src) or _step_tail(dst),
+                "label": f"{_step_tail(src)} → {_step_tail(dst)}",
+            })
+            continue
+        am = RE_ACTION_USAGE.match(header)
+        if am:
+            aname = am.group(1) or am.group(2)
+            nested = child["children"] or []
+            sub_name = None
+            if any(_is_behavior_header(sub["header"]) for sub in nested):
+                sub = _read_behavior(aname, nested, model, warn)
+                sub["lanes"] = _lanes_in(nested)
+                sub_name = aname
+                subs.append(sub)
+            actions.append({
+                "name": aname,
+                "doc": _collect_doc(nested, model),
+                "sub": sub_name,
+            })
             last_action = aname
             prev_kind = "action"
+            fork_fanout = None
+            continue
+        if (header.startswith(("in ", "out ", "doc ")) or header == "doc"
+                or header.startswith("attribute ")
+                or RE_REFERENCE_USAGE.match(header)
+                or RE_USAGE.match(header)):
             continue
         _warn_if_unknown(header, warn)
 
-    # linear first/then with no explicit edges yet (shouldn't happen if
-    # first+then were seen, but keep a fallback from consecutive flow)
     if not edges and len(flow) >= 2:
         for a, b in zip(flow, flow[1:]):
             edges.append({"from": a, "to": b, "label": ""})
@@ -378,9 +546,21 @@ def _interpret_activity(name, children, model, warn):
         "name": name,
         "actions": actions,
         "decisions": decisions,
+        "forks": forks,
+        "joins": joins,
+        "merges": merges,
         "flow": flow,
         "edges": edges,
+        "flows": flows,
+        "subs": subs,
     }
+
+
+def _interpret_activity(name, children, model, warn):
+    """A `perform action <name> { ... }` body. Same graph as a use-case flow."""
+    behavior = _read_behavior(name, children, model, warn)
+    behavior.pop("subs", None)
+    return behavior
 
 
 def _interpret_def(block, model, pkg_path, warn):
@@ -408,6 +588,10 @@ def _interpret_def(block, model, pkg_path, warn):
     # block is reached. Assumes the role usages appear before the activity
     # block in source order, as in the ClinicalCoolingInteraction pattern.
     lanes_by_activity = {}
+    local_lanes = []
+    actor_roles = []
+    behavior_children = []
+    owns_flow = keyword in ("use case", "action")
 
     def _collect_lane_performs(uname, utype, children):
         for sub in children or []:
@@ -417,8 +601,18 @@ def _interpret_def(block, model, pkg_path, warn):
                 lanes_by_activity.setdefault(act_name, []).append(
                     {"role": uname, "type": utype or "", "action": action_name}
                 )
+                continue
+            pm = RE_PERFORM_LOCAL.match(sub["header"])
+            if pm:
+                local_lanes.append({
+                    "role": uname, "type": utype or "",
+                    "action": pm.group(1) or pm.group(2),
+                })
 
     for child in block["children"] or []:
+        if owns_flow and _is_behavior_header(child["header"]):
+            behavior_children.append(child)
+            continue
         header = child["header"]
         am = RE_ATTR.match(header)
         if am:
@@ -482,6 +676,8 @@ def _interpret_def(block, model, pkg_path, warn):
         if asu:
             role_kw, _short, uname, utype, _mult = asu.groups()
             _collect_lane_performs(uname, utype, child["children"])
+            if owns_flow and role_kw == "actor":
+                actor_roles.append((uname, utype or ""))
             # actor/subject nested in a use case def is the SysML v2 way of
             # saying who participates — surface that as an association to
             # the role's type so the BDD can show use case ↔ actor/subject.
@@ -557,7 +753,29 @@ def _interpret_def(block, model, pkg_path, warn):
                 )
             continue
         _warn_if_unknown(header, warn)
+
+    if owns_flow and behavior_children:
+        behavior = _read_behavior(name, behavior_children, model, warn)
+        lanes = list(local_lanes)
+        seen_roles = {lane["role"] for lane in lanes}
+        for role, typ in actor_roles:
+            if role not in seen_roles:
+                lanes.append({"role": role, "type": typ, "action": ""})
+                seen_roles.add(role)
+        behavior["lanes"] = lanes
+        _emit_behavior(model, node["id"], behavior)
     return node, super_names
+
+
+def _emit_behavior(model, owner, behavior):
+    """Attach an activity and any sub-activities nested inside its steps."""
+    for sub in behavior.pop("subs", None) or []:
+        sub_owner = f"{owner}::sub::{sub['name']}"
+        for action in behavior["actions"]:
+            if action.get("sub") == sub["name"]:
+                action["sub"] = sub_owner
+        _emit_behavior(model, sub_owner, sub)
+    model.activities.append({"owner": owner, **behavior})
 
 
 def _interpret_usage(header, children, model, pkg_path, warn):
@@ -1116,6 +1334,33 @@ def make_handler(folder: Path, layout_path: Path, cloud=None, assistant_settings
                                        "elementCount": 0,
                                        "kind": kind,
                                        "activityOwner": activity_owner}))
+            elif path == "/api/activity":
+                try:
+                    body = self._read_json_body()
+                except (ValueError, json.JSONDecodeError):
+                    self.send_error(400, "request body must be JSON")
+                    return
+                from .activity_edit import ActivityEditError, apply_edit
+                try:
+                    result = apply_edit(folder, body)
+                except ActivityEditError as exc:
+                    data = json.dumps({"error": str(exc)}).encode("utf-8")
+                    self.send_response(400)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Content-Length", str(len(data)))
+                    self.end_headers()
+                    self.wfile.write(data)
+                    return
+                written = [
+                    folder / name for name in result.get("files") or [result["file"]]
+                ]
+                self._saved(written, result.get("message") or "Update activity")
+                self._send(json.dumps({
+                    "ok": True,
+                    "owner": result.get("owner"),
+                    "file": result.get("file"),
+                    "message": result.get("message"),
+                }))
             else:
                 self.send_error(404)
 
