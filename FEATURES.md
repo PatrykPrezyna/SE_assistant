@@ -26,13 +26,13 @@ system-explorer <folder> [--port 8199] [--no-open]
 
 Each View is saved to `<folder>/views/<id>.json` (including activity
 Views); everything else (documentation links, the element tree panel, the
-active View, expert mode, whether the home page is open) is saved to
+active View, expert mode) is saved to
 `<folder>/layout.json`. Both formats carry a `version` field (currently
 `1`); older files without it are treated as version 1 on load. Keys older
 versions wrote to `layout.json` (`ibdOwner`, `mode`, `ucdOwner`,
 `activityOwner`, `drilldownNodes`, `drilldownHiddenEdges`, `drilldownView`)
 are ignored on load and dropped on the next save (`STALE_LAYOUT_KEYS` in
-`viewer.html`).
+`viewer.html`), as is a leftover `home` flag.
 
 Validators that ship with the package (setup in README.md, *Setting up the
 validation parsers*):
@@ -234,7 +234,8 @@ model is. Checked:
   package is flagged; resolution keeps the first definition. A fully
   qualified reference (`B::M`) always resolves exactly and is never
   ambiguous. Exact duplicates (same qualified name twice) are flagged too.
-- **unresolved references** — a `satisfy`, specialization (`:>`), typing,
+- **unresolved references** — a `satisfy`, `verify`, `stakeholder`,
+  derivation (`#derivation dependency`), specialization (`:>`), typing,
   composition, or association target that doesn't resolve to any element.
   The edge is still dropped, but with a warning.
 
@@ -257,17 +258,36 @@ diagnostics use the validators listed under CLI above.
   (blue) — a quick way to trace what's wired to what. Left-clicking a
   connection instead outlines that connection and its two endpoint elements.
   Click the background, or press Esc, to clear the highlight. It's a
-  transient view aid, not saved to the layout file.
+  transient view aid, not saved to the layout file. On a **traceability
+  view** (the view's name or id contains "trace", and it is not an activity
+  view) the same click walks the whole thread instead of one hop: the
+  selected element, every element reachable through satisfy, verify, derive,
+  stakeholder, or association edges, and those edges, stay bright, and
+  everything else on the canvas is dimmed. The detail sheet stays closed
+  there, because the thread is already on the diagram. Other views keep the
+  one-hop highlight.
 - **Save** (or Ctrl+S) persists the active View (membership, positions,
   pan/zoom, display options) and the global state (docs, tree panel, active
-  View) in one action; unsaved changes are flagged and warned on close
+  View) in one action; unsaved changes are flagged and warned on close.
+  The toolbar status stays visible: **Saving…** while a write is in
+  flight, **Saved** when it landed, **Error** when it did not, and
+  **Unsaved** when the diagram has edits Save has not written yet.
+- **Undo** and **Redo** sit on the toolbar (also Ctrl+Z and Ctrl+Shift+Z,
+  or Command on a Mac). One step is one edit: a move, a membership change,
+  a display option, a documentation link, hiding a connection, one
+  interview quick-add, or one activity-bar edit (a step, a lane, a
+  decision, a fork, a rename, a delete, an item flow). Undoing a quick-add
+  or an activity edit puts the `.sysml` text back as well as the view.
+  The shortcuts do nothing while the cursor is in a text field. The stack
+  lives in the browser tab (about forty steps) and is cleared on reload.
+  Creating, renaming, or deleting a view is not on it.
 - **Revert** goes back to the last saved version: it discards every unsaved
   edit and re-reads `layout.json` and `views/*.json` from disk (by re-running
   the viewer's normal boot path), so the canvas, the active View and the
   display options all return to what **Save** last wrote. The button is **disabled while there is nothing to go back to**
   (`setDirty` drives it), and asks for confirmation before throwing work
-  away. Deliberately not an undo stack — Save is the single commit point,
-  so one step back to it covers the "I made a mess, start over" case.
+  away. Revert is the "start over from the last Save" action; Undo is the
+  step-by-step one.
 - auto-layout for elements without a saved position (layered: parents above
   children, wholes above parts). There is no manual "re-layout everything"
   command: once a View is arranged by hand, the saved positions are the
@@ -301,10 +321,12 @@ diagnostics use the validators listed under CLI above.
 - **Edit** (the header button, `expertMode` in `layout.json`) is the extra
   option. Off, the page is for reading. On, it reveals Tree, the view
   switcher, **+**, **Save**, and **Revert**, and elements can be dragged.
-  **Display ▾** and **More ▾** stay available either way. A tap while
+  **Display ▾** and **More ▾** stay available either way.   A tap while
   reading opens the detail
   sheet (the element's `doc`, its documentation link, **Requirements**,
-  **Satisfied by**, and **Verified by**) instead of starting a drag. The
+  **Satisfied by**, and **Verified by**) instead of starting a drag,
+  except on a traceability view, where the tap only highlights the thread.
+  The
   sheet covers at most the bottom half of the screen and scrolls inside
   that half. Dragging the diagram does not close it, so the diagram can
   still be panned and pinched while the sheet is open. A tap on empty
@@ -315,7 +337,12 @@ diagnostics use the validators listed under CLI above.
   currently visible. Human-friendly labels: specialization → **kind of**,
   typing → **is a** (model edge kinds unchanged; [NOTATION.md](NOTATION.md)
   N6). Satisfy edges are drawn dark yellow so they stay distinguishable
-  from typing without labels.
+  from typing without labels. **Derive** edges (a derivation dependency)
+  are a brown dashed line labeled "derives from"; **stakeholder** edges
+  (a `stakeholder` feature on a requirement) are a clay dash-dot line
+  labeled "stakeholder of". On a traceability view those labels, and the
+  satisfy / verify / association labels, stay visible even when edge
+  labels are off.
 - The graphical deviations from textbook SysML are the notation profile in
   [NOTATION.md](NOTATION.md). That file is normative for how the Explorer
   and the published Viewer draw; this page describes behavior and points
@@ -333,15 +360,16 @@ page otherwise matches the published Viewer.
 - **What Edit gates.** Custom-diagram controls are marked `expert-only`
   and hidden by `body:not(.expert) .expert-only`: **Tree**, the **+**
   new-View button, and **Rename view** / **Delete view** /
-  **Unhide connections** under **More ▾**. The rest of the authoring
-  chrome is marked `edit-only` and hidden by the same rule: the view
-  switcher, **Save**, and **Revert**. Dragging an element and the
-  right-click menu also wait for Edit. **Display ▾** (including
+  **Unhide connections** under **More ▾**. **Save** and **Revert** are
+  marked `edit-only` and hidden by the same rule. Dragging an element and
+  the right-click menu also wait for Edit. **Display ▾** (including
   **«part def» keywords** and **docs on node**) and **More ▾** stay
   on the header while reading.
-- **What stays available while reading**: the home page and its **Views**
-  button, **Display ▾**, **More ▾**, **+** / **−** / **Fit**, pan, the
-  detail sheet, click-to-highlight, and activity Views.
+- **What stays available while reading**: the **view** dropdown, **Display
+  ▾**, **More ▾**, **+** / **−** / **Fit**, **Undo** / **Redo**, the
+  save-status word, pan, the detail sheet (except on a traceability view),
+  the interview quick-add bar on a context or use-case view,
+  click-to-highlight, and activity Views.
 - The element tree is on screen only when Edit is on *and* the tree is
   open. `treeOpen` stays the user's own preference while Edit is off, so
   turning Edit on restores the panel as it was (`treeVisible()` in
@@ -351,37 +379,14 @@ page otherwise matches the published Viewer.
 - The state is saved in the layout file as `expertMode` (toggling it
   marks the layout dirty, like the Tree button does).
 
-## Home page (`viewer.html`)
+## Opening a model (`viewer.html`)
 
-The landing screen: a short introduction to what the assistant is for, and a
-card per View to start from. Someone who opens the model for the first time
-gets an orientation instead of a diagram with no context, and someone who
-comes back gets a table of contents.
-
-- **What's on it**: the heading **Systems Engineering Assistant**, a
-  one-line subtitle (model package · elements · relationships · views), the
-  welcome copy — what Systems Engineering is for, that the assistant offers
-  a set of artifacts to tailor to an organization's needs and maturity, that
-  artifacts are revisited throughout the lifecycle, and that the point is to
-  involve the whole development team — then the **Views** grid.
-- **View cards** show the View's name, its `description` (see below) and its
-  element count (or **Activity diagram** for an activity View). Clicking
-  one switches to that View and leaves the home page. With no Views at
-  all the grid says so and points at Edit.
-- **Views** (first button in the header, always available — not
-  hidden with Edit) brings the page back. It is hidden on the home page
-  itself, matching the published Viewer. The page is an *overlay* over the
-  canvas, not a separate screen: leaving and coming back never disturbs
-  the diagram underneath or its pan/zoom.
-- **Optional `description`** in a View file (`views/<id>.json`) is the card's
-  blurb — one sentence on what the View is for. There is no UI to edit it
-  (it is authored content, like the element arrangement); a View without one
-  shows a muted *No description.* The field round-trips through **Save**
-  untouched.
-- **When it shows**: on first launch, and afterwards whenever the last
-  **Save** happened with the home page open (`home` in `layout.json`). So a
-  fresh folder opens on the introduction, while someone working inside a
-  View goes straight back to that View.
+The page opens on the diagram. The **view** dropdown at the left of the
+header lists every View and switches to the one you pick. It stays
+available while reading. **Save** drops a leftover `home` flag from older
+layout files; that overlay is gone. A View's optional `description` in
+`views/<id>.json` is still kept through **Save** (there is no card that
+shows it).
 
 ## Views (`viewer.html`)
 
@@ -456,7 +461,7 @@ typically from the element tree.
   layout file (`docs`) — remember to **Save**. Enter an empty value in
   **Edit documentation link…** to remove a link.
 - Each View's membership, positions, hidden connections, pan/zoom,
-  display options, and optional `description` (the home page blurb) are
+  display options, and optional `description` are
   saved in its own file (`<folder>/views/<id>.json`) with `"version": 1`
   — see Server below. The id is a filesystem-safe
   slug derived from the name when the View is created and never changes,
@@ -515,8 +520,8 @@ typically from the element tree.
 
 - Opening a use case (double-click, the 🎬 marker, or **Open activity**
   on the node menu) shows its process. A `perform action` block still
-  opens the same kind of View. The View is listed next to Context /
-  Decomposition in the view dropdown and on the home-page cards.
+  opens the same kind of View. The View is listed next to the others in
+  the view dropdown.
 - Each activity View file has `"kind": "activity"` and `"activityOwner"`
   (the owning def's id, or `<owner>::sub::<step>` for a sub-activity).
   Positions and pan/zoom are stored on that View like any other. If none
@@ -546,7 +551,12 @@ typically from the element tree.
   file. The same edits are available to the embedded chat as the
   `edit_activity` tool. If a person, a place in the flow, or one of a
   decision's outcomes is missing, the tool does not write and the chat
-  asks. A successful edit reloads the model and shows the activity.
+  asks. A successful edit reloads the model, shows the activity, and
+  uses the same toolbar status as any other save (**Saving…**, then
+  **Saved**, or **Error**). **Undo** restores the `.sysml` text from
+  before that edit. The interview quick-add bar stays off this view, so
+  its Stakeholder / Use case / Connect rows are not a second copy of
+  **Add stakeholder**, **New activity**, and **Connect**.
 - Dragging a node only moves it vertically until the next edit, which
   lays the diagram out again. Switch away with the view dropdown or
   Home, same as any other View; a saved session reopens it through
@@ -574,9 +584,8 @@ not shown in the viewer UI; `GET /api/model` reports it as
 - `GET /api/layout` / `POST /api/layout` — global state persistence, always
   at `<folder>/layout.json`
 - `GET /api/views` — list of `{id, name, description, elementCount, kind,
-  activityOwner}` for every View (`<folder>/views/*.json`); the extra
-  fields are what the home page's cards need, so it renders from this one
-  request. `kind` is `"bdd"` unless the file says `"activity"`.
+  activityOwner}` for every View (`<folder>/views/*.json`). `kind` is
+  `"bdd"` unless the file says `"activity"`.
 - `GET /api/views/<id>` — one View's full content
 - `POST /api/views` — create a View; body `{"name": "..."}` (optional
   `kind`, `activityOwner`, `description`), response the same shape as a
@@ -587,6 +596,29 @@ not shown in the viewer UI; `GET /api/model` reports it as
   the id/filename never changes, only the `name` field inside); an
   idempotent create-or-replace, not update-only
 - `DELETE /api/views/<id>` — remove a View
+- `POST /api/model/edit` — interview quick-add and undo of those writes
+  (`src/system_explorer/model_edit.py`). Body `{"action": ...}`:
+  - `add_stakeholder` — `{name, description?}`. Writes a `part def` (not
+    an `actor def`) into the existing `*Context.sysml` file, or a new
+    `SystemContext.sysml`. A phrase such as "the nurse" is stored as
+    `TheNurse`. An optional description becomes `doc /* … */`.
+  - `add_use_case` — `{name, description?}`. Writes a `use case def` into
+    the existing use-case file, or a new `UseCases.sysml`.
+  - `link_actor` — `{useCaseId, stakeholderId}`. Inserts
+    `actor <lowerCamel> : <Type>;` inside that use case, and a
+    `private import Package::*;` when the stakeholder's package is a
+    different one, so a conforming parser can see the type.
+  - `restore_files` — `{files: [{name, text}]}`. Puts named `*.sysml`
+    files in the model folder back to an earlier text (empty text deletes
+    the file). Used by Undo. Refuses any name that is not a bare
+    `*.sysml` filename.
+  A write that would add parser warnings is rolled back. On success the
+  same save path as a view save runs: the file is written locally, and in
+  hosted mode it is committed and pushed as the signed-in user. The
+  quick-add bar (name, optional description, and a stakeholder / use-case
+  pick list with **Connect**) is shown on a view whose name or id contains
+  "context" or "use case", and hidden on activity views and everywhere
+  else. New elements are added to the open view.
 
 ## Published Viewer (`publish.py`, `publish_viewer.html`)
 
