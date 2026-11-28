@@ -4079,6 +4079,132 @@ class AssistantTests(unittest.TestCase):
                 server.shutdown()
                 server.server_close()
 
+    def test_health_check_returns_ok(self):
+        from assistant.server import make_handler
+        from http.server import ThreadingHTTPServer
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = self.settings(Path(tmp))
+            server = ThreadingHTTPServer(
+                ("127.0.0.1", 0), make_handler(settings)
+            )
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                port = server.server_address[1]
+                base = f"http://127.0.0.1:{port}"
+                response = json.load(urllib.request.urlopen(base + "/healthz"))
+                self.assertEqual(response["status"], "ok")
+            finally:
+                server.shutdown()
+                server.server_close()
+
+    def test_basic_auth_protects_endpoints(self):
+        from assistant.server import make_handler
+        from http.server import ThreadingHTTPServer
+        import base64
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = self.settings(
+                Path(tmp),
+                SE_AUTH_USER="testuser",
+                SE_AUTH_PASSWORD="testpass",
+            )
+            server = ThreadingHTTPServer(
+                ("127.0.0.1", 0), make_handler(settings)
+            )
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                port = server.server_address[1]
+                base = f"http://127.0.0.1:{port}"
+                
+                try:
+                    urllib.request.urlopen(base + "/api/session")
+                    self.fail("Expected 401 without auth")
+                except urllib.error.HTTPError as exc:
+                    self.assertEqual(exc.code, 401)
+                    self.assertIn("WWW-Authenticate", exc.headers)
+                
+                auth_string = base64.b64encode(b"testuser:testpass").decode()
+                request = urllib.request.Request(
+                    base + "/api/session",
+                    headers={"Authorization": f"Basic {auth_string}"},
+                )
+                response = json.load(urllib.request.urlopen(request))
+                self.assertIn("messages", response)
+                
+                bad_auth = base64.b64encode(b"wrong:wrong").decode()
+                request = urllib.request.Request(
+                    base + "/api/session",
+                    headers={"Authorization": f"Basic {bad_auth}"},
+                )
+                try:
+                    urllib.request.urlopen(request)
+                    self.fail("Expected 401 with wrong credentials")
+                except urllib.error.HTTPError as exc:
+                    self.assertEqual(exc.code, 401)
+            finally:
+                server.shutdown()
+                server.server_close()
+
+    def test_health_check_bypasses_auth(self):
+        from assistant.server import make_handler
+        from http.server import ThreadingHTTPServer
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = self.settings(
+                Path(tmp),
+                SE_AUTH_USER="testuser",
+                SE_AUTH_PASSWORD="testpass",
+            )
+            server = ThreadingHTTPServer(
+                ("127.0.0.1", 0), make_handler(settings)
+            )
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                port = server.server_address[1]
+                base = f"http://127.0.0.1:{port}"
+                response = json.load(urllib.request.urlopen(base + "/healthz"))
+                self.assertEqual(response["status"], "ok")
+            finally:
+                server.shutdown()
+                server.server_close()
+
+    def test_port_env_var_takes_precedence(self):
+        from assistant.config import load_settings
+        settings = load_settings(
+            environ={"PORT": "9000", "ASSISTANT_PORT": "8201", "MODEL_FOLDER": "/tmp"},
+            files={},
+        )
+        self.assertEqual(settings.port, 9000)
+
+    def test_se_data_dir_overrides_model_folder(self):
+        from assistant.config import load_settings
+        settings = load_settings(
+            environ={"SE_DATA_DIR": "/data/models", "MODEL_FOLDER": "/tmp"},
+            files={},
+        )
+        self.assertEqual(str(settings.model_folder), "/data/models")
+
+    def test_seed_model_folder_creates_example_model(self):
+        from assistant.server import seed_model_folder
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "models"
+            seed_model_folder(target)
+            self.assertTrue(target.is_dir())
+            self.assertTrue((target / "stakeholders.sysml").exists())
+            self.assertTrue((target / "user_needs.sysml").exists())
+            self.assertTrue((target / "views").is_dir())
+
+    def test_seed_model_folder_does_not_overwrite_existing(self):
+        from assistant.server import seed_model_folder
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp)
+            existing = target / "my_model.sysml"
+            existing.write_text("package MyModel { }", encoding="utf-8")
+            seed_model_folder(target)
+            self.assertTrue(existing.exists())
+            self.assertFalse((target / "stakeholders.sysml").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

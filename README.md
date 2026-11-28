@@ -327,6 +327,63 @@ How to run it, and a picture of the repository, are in
 [src/assistant/README.md](src/assistant/README.md). Behavior details are in
 [FEATURES.md](FEATURES.md) under *SE assistant*.
 
+## Deploy on Render
+
+The SE assistant can be deployed as a web service on [Render](https://render.com)
+so the chat interface is accessible from any browser.
+
+**Quick deploy:**
+
+1. Push this repo to GitHub (or fork it).
+2. Sign in to Render → **New → Web Service** → connect your GitHub account
+   and select this repository.
+3. Configure the service:
+   - **Build Command:** `pip install .`
+   - **Start Command:** `python -m assistant`
+   - Set environment variables (see below).
+4. Deploy. The service will be available at `https://<your-service>.onrender.com`.
+
+**Environment variables** (set in the Render dashboard):
+
+Required:
+- `ASSISTANT_HOST=0.0.0.0` (must bind to 0.0.0.0 for Render)
+- `SE_DATA_DIR=/var/data/se-models` (where model files are stored)
+
+Optional AI features (leave empty to run without AI):
+- `ASSISTANT_BASE_URL` (e.g., `https://api.openai.com/v1`)
+- `ASSISTANT_API_KEY` (your API key)
+- `ASSISTANT_MODEL` (e.g., `gpt-4`)
+
+Optional security (HTTP Basic Auth):
+- `SE_AUTH_USER` (username for Basic Auth)
+- `SE_AUTH_PASSWORD` (password for Basic Auth)
+
+**Using the Blueprint:**
+
+Alternatively, use `render-assistant.yaml`:
+
+```bash
+# In Render dashboard: New → Blueprint
+# Select this repository
+# Render reads render-assistant.yaml and prompts for secret values
+```
+
+**Health check:** `/healthz` returns `{"status": "ok"}`
+
+**Important notes:**
+
+- **Free plan:** The filesystem is ephemeral. Model edits are lost on restart
+  or redeploy. The service seeds the example model on first start.
+- **Persistent storage:** Attach a persistent disk (requires a paid plan) to
+  keep edits across restarts. Uncomment the `disks` section in
+  `render-assistant.yaml` or add a disk in the Render dashboard at
+  `/var/data/se-models`.
+- **Security:** Enable HTTP Basic Auth (`SE_AUTH_USER` / `SE_AUTH_PASSWORD`)
+  to protect the public endpoint. Without it, anyone with the URL can access
+  the assistant.
+- **Service sleep:** Free services sleep after 15 minutes of inactivity. The
+  next visitor waits ~50 seconds for wake-up. Paid plans keep services awake.
+
 ## Troubleshooting
 
 **PDFs download instead of opening in the tab.** The server serves
