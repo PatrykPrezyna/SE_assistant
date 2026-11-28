@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "name": "Context",
+  "description": "The pump and the people who have a stake in it.",
+  "elements": [
+    "InsulinPumpContext::InsulinPump",
+    "InsulinPumpContext::Patient",
+    "InsulinPumpContext::Caregiver",
+    "InsulinPumpContext::Endocrinologist",
+    "InsulinPumpContext::Regulator",
+    "InsulinPumpContext::Manufacturer",
+    "InsulinPumpContext::OperationalContext"
+  ],
+  "nodes": {},
+  "hiddenEdges": [],
+  "view": null,
+  "options": {"edgeLabels": true}
+}

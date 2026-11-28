@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "name": "Use cases",
+  "description": "Basal delivery, bolus delivery, and the occlusion alarm.",
+  "elements": [
+    "InsulinPumpUseCases::DeliverBasalInsulin",
+    "InsulinPumpUseCases::DeliverBolus",
+    "InsulinPumpUseCases::HandleOcclusionAlarm",
+    "InsulinPumpContext::Patient",
+    "InsulinPumpContext::Caregiver",
+    "InsulinPumpContext::Endocrinologist",
+    "InsulinPumpContext::InsulinPump",
+    "InsulinPumpRequirements::DeliverBasalRate",
+    "InsulinPumpRequirements::ConfirmedBolus",
+    "InsulinPumpRequirements::StopOnOcclusion"
+  ],
+  "nodes": {},
+  "hiddenEdges": [],
+  "view": null,
+  "options": {"edgeLabels": true}
+}

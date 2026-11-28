@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 import urllib.error
 import urllib.request
@@ -1316,6 +1317,23 @@ class ServerTests(unittest.TestCase):
 
     def test_root_serves_viewer(self):
         self.assertIn("<svg", self.srv.get("/"))
+
+    def test_toolbar_has_projects_and_example(self):
+        page = self.srv.get("/")
+        self.assertIn('id="projectsBtn"', page)
+        self.assertIn('id="exampleBtn"', page)
+        self.assertIn(">Example<", page)
+        self.assertIn(">Projects<", page)
+        # One toolbar: view, Save, then Projects, Example, Undo, Redo, status.
+        order = [
+            'id="viewDropdown"', 'id="saveBtn"', 'id="projectsBtn"',
+            'id="exampleBtn"', 'id="undoBtn"', 'id="redoBtn"', 'id="status"',
+        ]
+        positions = [page.index(token) for token in order]
+        self.assertEqual(positions, sorted(positions))
+        src = (SRC / "system_explorer" / "viewer.html").read_text(encoding="utf-8")
+        self.assertIn("function leaveProject()", src)
+        self.assertIn("resetHistory();", src)
 
     def test_version_has_a_single_source(self):
         # pyproject.toml reads the version from version.py, so there is no
@@ -4878,6 +4896,17 @@ class EmbeddedAssistantTests(unittest.TestCase):
             names = zipfile.ZipFile(wheels[0]).namelist()
         self.assertIn("system_explorer/assistant_panel.js", names)
         self.assertIn("system_explorer/assistant_panel.css", names)
+        self.assertIn(
+            "system_explorer/examples/insulin-pump/InsulinPumpContext.sysml",
+            names,
+        )
+        self.assertIn(
+            "system_explorer/examples/insulin-pump/views/occlusion.json",
+            names,
+        )
+        self.assertIn(
+            "system_explorer/examples/insulin-pump/project.json", names,
+        )
         page = (root / "src" / "system_explorer" / "viewer.html").read_text(encoding="utf-8")
         self.assertIn("function refreshAfterAssistantEdit", page)
 
@@ -5234,6 +5263,518 @@ class TraceAndInterviewDomTests(unittest.TestCase):
             self.assertIn("Saving", (SRC / "system_explorer" / "viewer.html").read_text(encoding="utf-8"))
         finally:
             srv.close()
+# ----------------------------------------------------------------------
+# Projects (spec 0004) and the bundled insulin pump
+# ----------------------------------------------------------------------
+
+from system_explorer import projects as projects_mod  # noqa: E402
+
+SPINE_SENTINEL = (
+    "package Spine {\n"
+    "    part def DoNotTouch {\n"
+    "        doc /* sentinel-spine-cooling */\n"
+    "    }\n"
+    "}\n"
+)
+
+
+def _cookie_pair(set_cookie):
+    return set_cookie.split(";", 1)[0]
+
+
+def _http(port, method, path, body=None, cookie=None):
+    import http.client
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=15)
+    headers = {}
+    if cookie:
+        headers["Cookie"] = cookie
+    data = None
+    if body is not None:
+        data = json.dumps(body).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    conn.request(method, path, body=data, headers=headers)
+    response = conn.getresponse()
+    result = (response.status, response.headers, response.read().decode("utf-8", "replace"))
+    conn.close()
+    return result
+
+
+class ProjectLibraryTests(unittest.TestCase):
+    def test_empty_project_is_a_package_and_a_context_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            library = projects_mod.ProjectLibrary(Path(tmp))
+            info = library.create_empty(owner="ada")
+            model, paths = app_mod.load_folder(info["dir"])
+            self.assertEqual(model["warnings"], [])
+            self.assertEqual(model["nodes"], [])
+            self.assertEqual(
+                {p.name for p in paths},
+                {"NewProject.sysml", "NewProjectContext.sysml"},
+            )
+            context = (info["dir"] / "NewProjectContext.sysml").read_text(encoding="utf-8")
+            self.assertIn("package NewProjectContext", context)
+            self.assertIn("private import NewProject::*;", context)
+
+    def test_list_is_newest_first_and_root_model_is_read_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "CoolSpineSystemContext.sysml").write_text(
+                SPINE_SENTINEL, encoding="utf-8"
+            )
+            before = (root / "CoolSpineSystemContext.sysml").read_bytes()
+            library = projects_mod.ProjectLibrary(root)
+            older = library.create_empty()
+            newer = library.create_empty()
+            for info, stamp in (
+                (older, "2020-01-01T00:00:00Z"),
+                (newer, "2021-06-01T00:00:00Z"),
+            ):
+                meta_path = info["dir"] / "project.json"
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                meta["created"] = stamp
+                meta_path.write_text(json.dumps(meta), encoding="utf-8")
+            listed = library.list_projects()
+            self.assertEqual(
+                [item["id"] for item in listed],
+                [newer["id"], older["id"], "repository"],
+            )
+            self.assertTrue(listed[-1]["readOnly"])
+            self.assertEqual(listed[-1]["name"], "Repository model")
+            with self.assertRaises(PermissionError):
+                library.assert_project_file(root / "CoolSpineSystemContext.sysml")
+            self.assertEqual(
+                (root / "CoolSpineSystemContext.sysml").read_bytes(), before
+            )
+
+    def test_example_model_checks_clean_and_has_the_requested_content(self):
+        folder = projects_mod.example_dir()
+        model, _paths = app_mod.load_folder(folder)
+        self.assertEqual(model["warnings"], [])
+        names = {n["name"] for n in model["nodes"]}
+        for stakeholder in (
+            "Patient", "Caregiver", "Endocrinologist", "Regulator", "Manufacturer",
+        ):
+            self.assertIn(stakeholder, names)
+        for use_case in (
+            "DeliverBasalInsulin", "DeliverBolus", "HandleOcclusionAlarm",
+        ):
+            self.assertIn(use_case, names)
+        # The occlusion steps are standard SysML v2. The swimlane parser
+        # (spec 0002) reads them into one activity.
+        text = (folder / "InsulinPumpUseCases.sysml").read_text(encoding="utf-8")
+        self.assertNotIn("perform action", text)
+        for snippet in (
+            "actor pump : InsulinPump",
+            "perform 'Raise Alarm'",
+            "perform 'Notice Alarm'",
+            "perform 'Check Line'",
+            "action 'Raise Alarm'",
+            "first start then 'Raise Alarm'",
+            "decide decide1",
+            "if clear then 'Clear Line'",
+            "else 'Hold Delivery'",
+            "merge merge1",
+            "first merge1 then done",
+        ):
+            self.assertIn(snippet, text)
+        kinds = {e["kind"] for e in model["edges"]}
+        self.assertIn("satisfy", kinds)
+        self.assertIn("verify", kinds)
+        acts = [
+            a for a in model["activities"]
+            if a["owner"].endswith("HandleOcclusionAlarm")
+        ]
+        self.assertEqual(len(acts), 1)
+        act = acts[0]
+        self.assertEqual(act["decisions"], ["decide1"])
+        self.assertEqual(act["merges"], ["merge1"])
+        lanes = {(l["role"], l["type"], l["action"]) for l in act["lanes"]}
+        self.assertIn(("pump", "InsulinPump", "Raise Alarm"), lanes)
+        self.assertIn(("patient", "Patient", "Notice Alarm"), lanes)
+        self.assertIn(("caregiver", "Caregiver", "Check Line"), lanes)
+        self.assertIn(("caregiver", "Caregiver", "Clear Line"), lanes)
+        self.assertIn(("pump", "InsulinPump", "Hold Delivery"), lanes)
+        edges = {(e["from"], e["to"], e["label"]) for e in act["edges"]}
+        self.assertIn(("start", "Raise Alarm", ""), edges)
+        self.assertIn(("decide1", "Clear Line", "clear"), edges)
+        self.assertIn(("decide1", "Hold Delivery", "no"), edges)
+        self.assertIn(("merge1", "done", ""), edges)
+        view = json.loads((folder / "views" / "occlusion.json").read_text())
+        self.assertEqual(view["kind"], "activity")
+        self.assertEqual(view["activityOwner"], act["owner"])
+        proc = subprocess.run(
+            [sys.executable, "-m", "system_explorer", str(folder), "--check"],
+            cwd=SRC, capture_output=True, text=True,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn("no warnings", proc.stdout)
+
+    def test_example_files_are_package_data_in_the_wheel(self):
+        # Same install path as the Docker image (`pip install .`). A previous
+        # bug shipped the package without its data files.
+        import zipfile
+        root = Path(__file__).resolve().parents[1]
+        pyproject = (root / "pyproject.toml").read_text(encoding="utf-8")
+        self.assertIn("examples/insulin-pump/*.sysml", pyproject)
+        self.assertIn("examples/insulin-pump/views/*.json", pyproject)
+        with tempfile.TemporaryDirectory() as tmp:
+            subprocess.check_call(
+                [sys.executable, "-m", "pip", "wheel", "--no-deps", "-w", tmp, str(root)],
+                stdout=subprocess.DEVNULL,
+            )
+            wheels = list(Path(tmp).glob("*.whl"))
+            self.assertEqual(len(wheels), 1)
+            names = zipfile.ZipFile(wheels[0]).namelist()
+        for rel in (
+            "system_explorer/examples/insulin-pump/InsulinPumpContext.sysml",
+            "system_explorer/examples/insulin-pump/InsulinPumpUseCases.sysml",
+            "system_explorer/examples/insulin-pump/views/context.json",
+            "system_explorer/examples/insulin-pump/views/occlusion.json",
+            "system_explorer/examples/insulin-pump/layout.json",
+        ):
+            self.assertIn(rel, names)
+
+
+class ProjectServerTests(unittest.TestCase):
+    """Local workspace: new project, list, example, and the read-only root."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.sentinel = self.root / "CoolSpineSystemContext.sysml"
+        self.sentinel.write_text(SPINE_SENTINEL, encoding="utf-8")
+        self.before = self.sentinel.read_bytes()
+        self.example_before = (
+            projects_mod.example_dir() / "InsulinPumpContext.sysml"
+        ).read_bytes()
+        self.library = projects_mod.ProjectLibrary(self.root)
+        info = self.library.create_empty()
+        self.library.default_id = info["id"]
+        self.server = ThreadingHTTPServer(
+            ("127.0.0.1", 0),
+            make_handler(self.root, self.root / "layout.json", library=self.library),
+        )
+        self.port = self.server.server_address[1]
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.server.server_close()
+        self.tmp.cleanup()
+
+    def request(self, method, path, body=None, cookie=None):
+        return _http(self.port, method, path, body, cookie)
+
+    def test_startup_project_is_empty_and_root_model_is_unchanged(self):
+        status, headers, body = self.request("GET", "/api/model")
+        self.assertEqual(status, 200)
+        model = json.loads(body)
+        self.assertEqual(model["warnings"], [])
+        self.assertNotIn("DoNotTouch", [n["name"] for n in model["nodes"]])
+        self.assertIn("NewProject", model["package"])
+        self.assertIn("NewProjectContext", model["package"])
+        pinned = headers["Set-Cookie"]
+        self.assertTrue(pinned.startswith(projects_mod.PROJECT_COOKIE + "="))
+        status, _, listed = self.request("GET", "/api/projects", cookie=_cookie_pair(pinned))
+        self.assertEqual(status, 200)
+        payload = json.loads(listed)
+        self.assertEqual(payload["current"]["name"], "New project")
+        self.assertTrue(payload["canCreate"])
+        ids = [item["id"] for item in payload["projects"]]
+        self.assertIn(payload["current"]["id"], ids)
+        self.assertIn("repository", ids)
+        self.assertEqual(self.sentinel.read_bytes(), self.before)
+
+    def test_new_project_is_listed_and_can_be_opened(self):
+        _, headers, _ = self.request("GET", "/api/projects")
+        cookie = _cookie_pair(headers["Set-Cookie"])
+        status, headers, body = self.request("POST", "/api/projects", {}, cookie)
+        self.assertEqual(status, 200)
+        created = json.loads(body)
+        self.assertEqual(created["name"], "New project")
+        opened = _cookie_pair(headers["Set-Cookie"])
+        status, _, listed = self.request("GET", "/api/projects", cookie=opened)
+        payload = json.loads(listed)
+        self.assertEqual(payload["current"]["id"], created["id"])
+        self.assertGreaterEqual(len(payload["projects"]), 2)
+        self.assertEqual(self.sentinel.read_bytes(), self.before)
+
+    def test_example_loads_and_a_write_copies_it(self):
+        status, headers, body = self.request("POST", "/api/projects/example", {})
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body)["id"], "example")
+        cookie = _cookie_pair(headers["Set-Cookie"])
+        status, _, body = self.request("GET", "/api/model", cookie=cookie)
+        self.assertEqual(status, 200)
+        model = json.loads(body)
+        names = {n["name"] for n in model["nodes"]}
+        self.assertIn("Patient", names)
+        self.assertIn("HandleOcclusionAlarm", names)
+        self.assertEqual(model["warnings"], [])
+        self.assertTrue(any(e["kind"] == "satisfy" for e in model["edges"]))
+        status, _, views = self.request("GET", "/api/views", cookie=cookie)
+        self.assertEqual(status, 200)
+        view_ids = {v["id"] for v in json.loads(views)}
+        self.assertIn("context", view_ids)
+        self.assertIn("occlusion", view_ids)
+        status, headers, written = self.request(
+            "PUT", "/api/views/context",
+            {"version": 1, "name": "Context", "elements": [], "nodes": {}},
+            cookie,
+        )
+        self.assertEqual(status, 200)
+        saved = json.loads(written)
+        self.assertTrue(saved["ok"])
+        self.assertTrue(saved["switchedProject"])
+        self.assertNotEqual(saved["switchedProject"], "example")
+        copied = _cookie_pair(headers["Set-Cookie"])
+        self.assertIn(saved["switchedProject"], copied)
+        self.assertNotIn("example", copied)
+        status, _, body = self.request("GET", "/api/model", cookie=copied)
+        self.assertIn("Patient", {n["name"] for n in json.loads(body)["nodes"]})
+        self.assertEqual(
+            (projects_mod.example_dir() / "InsulinPumpContext.sysml").read_bytes(),
+            self.example_before,
+        )
+        self.assertEqual(self.sentinel.read_bytes(), self.before)
+
+    def test_model_edit_writes_the_open_project(self):
+        _, headers, _ = self.request("GET", "/api/projects")
+        cookie = _cookie_pair(headers["Set-Cookie"])
+        status, _, body = self.request("POST", "/api/model/edit", {
+            "action": "add_stakeholder",
+            "name": "Nurse",
+            "description": "On the ward",
+        }, cookie)
+        self.assertEqual(status, 200)
+        result = json.loads(body)
+        self.assertTrue(result["ok"])
+        self.assertNotIn("switchedProject", result)
+        status, _, model = self.request("GET", "/api/model", cookie=cookie)
+        self.assertEqual(status, 200)
+        self.assertIn("Nurse", {n["name"] for n in json.loads(model)["nodes"]})
+        self.assertEqual(list(self.root.glob("*.sysml")), [self.sentinel])
+        self.assertEqual(self.sentinel.read_bytes(), self.before)
+
+    def test_repository_model_is_readable_and_not_writable(self):
+        status, headers, _ = self.request(
+            "POST", "/api/projects/open", {"id": "repository"}
+        )
+        self.assertEqual(status, 200)
+        cookie = _cookie_pair(headers["Set-Cookie"])
+        status, _, body = self.request("GET", "/api/model", cookie=cookie)
+        self.assertEqual(status, 200)
+        self.assertIn("DoNotTouch", [n["name"] for n in json.loads(body)["nodes"]])
+        self.assertIn("sentinel-spine-cooling", body)
+        status, _, _ = self.request(
+            "PUT", "/api/views/context", {"name": "Nope", "elements": []}, cookie
+        )
+        self.assertEqual(status, 403)
+        self.assertEqual(self.sentinel.read_bytes(), self.before)
+        self.assertFalse((self.root / "layout.json").exists())
+
+
+class ProjectCloudTests(unittest.TestCase):
+    """Hosted mode: login creates a project and does not rewrite the root."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        root = Path(self.tmp.name)
+        self.bare = root / "remote.git"
+        _git(root, "init", "-q", "--bare", "-b", "main", str(self.bare))
+        seed = root / "seed"
+        _git(root, "clone", "-q", str(self.bare), str(seed))
+        (seed / "CoolSpineSystemContext.sysml").write_text(
+            SPINE_SENTINEL, encoding="utf-8"
+        )
+        _git(seed, "add", "-A")
+        _git(seed, "commit", "-q", "-m", "seed spine model")
+        _git(seed, "push", "-q", "origin", "HEAD:main")
+        self.work = root / "work"
+        self.sync = cloud_mod.GitSync(
+            str(self.bare), self.work, "main", pull_interval=0, async_push=False
+        )
+        self.sync.clone_or_update()
+        self.sentinel = self.work / "CoolSpineSystemContext.sysml"
+        self.before = self.sentinel.read_bytes()
+        self.library = projects_mod.ProjectLibrary(self.work)
+        self.auth = _stub_auth()
+
+        def on_login(user, library=self.library, sync=self.sync):
+            info = library.create_empty(owner=user.get("login"))
+            sync.commit_and_push(
+                info["files"], f"Create project '{info['name']}'", user
+            )
+            return [projects_mod.project_cookie_header(info["id"])]
+
+        self.auth.on_login = on_login
+        ctx = cloud_mod.CloudContext(self.sync, self.auth, self.work)
+        self.server = ThreadingHTTPServer(
+            ("127.0.0.1", 0),
+            make_handler(self.work, self.work / "layout.json", ctx, library=self.library),
+        )
+        self.port = self.server.server_address[1]
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.server.server_close()
+        self.tmp.cleanup()
+
+    def request(self, method, path, body=None, cookie=None):
+        return _http(self.port, method, path, body, cookie)
+
+    def login(self, code="alice"):
+        status, headers, _ = self.request(
+            "GET", f"/auth/callback?code={code}&state=abc",
+            cookie=f"{cloud_mod.STATE_COOKIE}=abc",
+        )
+        self.assertEqual(status, 302, _)
+        pairs = [_cookie_pair(c) for c in headers.get_all("Set-Cookie")]
+        return "; ".join(pairs)
+
+    def test_login_opens_a_new_project_and_leaves_the_root_model(self):
+        cookie = self.login()
+        self.assertIn(projects_mod.PROJECT_COOKIE + "=", cookie)
+        self.assertIn(cloud_mod.SESSION_COOKIE + "=", cookie)
+        status, _, page = self.request("GET", "/", cookie=cookie)
+        self.assertEqual(status, 200)
+        self.assertIn('id="exampleBtn"', page)
+        status, _, body = self.request("GET", "/api/model", cookie=cookie)
+        self.assertEqual(status, 200)
+        model = json.loads(body)
+        self.assertNotIn("DoNotTouch", [n["name"] for n in model["nodes"]])
+        self.assertIn("NewProject", model["package"])
+        status, _, listed = self.request("GET", "/api/projects", cookie=cookie)
+        payload = json.loads(listed)
+        self.assertEqual(payload["current"]["name"], "New project")
+        self.assertEqual(payload["current"]["owner"], "alice")
+        self.assertTrue(any(item["id"] == "repository" for item in payload["projects"]))
+        self.assertEqual(self.sentinel.read_bytes(), self.before)
+        shown = _git(self.bare, "show", "main:CoolSpineSystemContext.sysml")
+        self.assertIn("sentinel-spine-cooling", shown)
+        committed = _git(self.work, "log", "-1", "--name-only", "--pretty=format:")
+        self.assertNotIn("CoolSpineSystemContext.sysml", committed.split())
+        self.assertTrue(any(line.startswith("projects/") for line in committed.split()))
+
+        self.login("alice")
+        projects = [
+            p for p in self.library.list_projects() if p["id"] != "repository"
+        ]
+        self.assertEqual(len(projects), 2)
+        self.assertEqual(self.sentinel.read_bytes(), self.before)
+
+    def test_forged_session_without_a_project_still_starts_empty(self):
+        cookie = self.auth.make_session({"login": "alice", "name": "Alice", "id": 42})
+        status, headers, body = self.request(
+            "GET", "/api/model", cookie=f"{cloud_mod.SESSION_COOKIE}={cookie}"
+        )
+        self.assertEqual(status, 200)
+        self.assertIn("NewProject", json.loads(body)["package"])
+        self.assertNotIn("DoNotTouch", body)
+        self.assertTrue(
+            headers["Set-Cookie"].startswith(projects_mod.PROJECT_COOKIE + "=")
+        )
+        self.assertEqual(self.sentinel.read_bytes(), self.before)
+        status, _, _ = self.request("GET", "/api/model")
+        self.assertEqual(status, 401)
+
+    def test_repository_model_cannot_be_committed(self):
+        cookie = self.login()
+        status, headers, _ = self.request(
+            "POST", "/api/projects/open", {"id": "repository"}, cookie
+        )
+        self.assertEqual(status, 200)
+        opened = _cookie_pair(
+            [c for c in headers.get_all("Set-Cookie")
+             if c.startswith(projects_mod.PROJECT_COOKIE + "=")][0]
+        )
+        # keep the session cookie too
+        session = [part for part in cookie.split("; ")
+                   if part.startswith(cloud_mod.SESSION_COOKIE + "=")][0]
+        both = session + "; " + opened
+        before_log = _git(self.bare, "log", "--oneline")
+        status, _, _ = self.request(
+            "POST", "/api/layout", {"docs": {"hacked": True}}, both
+        )
+        self.assertEqual(status, 403)
+        self.assertEqual(self.sentinel.read_bytes(), self.before)
+        self.assertEqual(_git(self.bare, "log", "--oneline"), before_log)
+        self.assertFalse((self.work / "layout.json").exists())
+
+
+class ProjectCliTests(unittest.TestCase):
+    def _serve(self, folder, *extra):
+        import socket
+        sock = socket.socket()
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+        sock.close()
+        env = os.environ.copy()
+        env["PYTHONPATH"] = str(SRC)
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "system_explorer", str(folder),
+             "--no-open", "--port", str(port), *extra],
+            cwd=str(SRC), env=env,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+        )
+        deadline = time.time() + 20
+        last = None
+        while time.time() < deadline:
+            if proc.poll() is not None:
+                self.fail(proc.stdout.read())
+            try:
+                with urllib.request.urlopen(
+                    f"http://127.0.0.1:{port}/api/model", timeout=1
+                ) as response:
+                    return proc, port, response.read().decode("utf-8")
+            except Exception as exc:
+                last = exc
+                time.sleep(0.1)
+        proc.kill()
+        self.fail(f"server did not start: {last}")
+
+    def _stop(self, proc):
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=5)
+
+    def test_workspace_flag_starts_a_new_project(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            sentinel = root / "CoolSpineSystemContext.sysml"
+            sentinel.write_text(SPINE_SENTINEL, encoding="utf-8")
+            before = sentinel.read_bytes()
+            proc, port, body = self._serve(root, "--workspace")
+            try:
+                model = json.loads(body)
+                self.assertIn("NewProject", model["package"])
+                self.assertNotIn("DoNotTouch", [n["name"] for n in model["nodes"]])
+                listed = json.loads(urllib.request.urlopen(
+                    f"http://127.0.0.1:{port}/api/projects", timeout=5
+                ).read().decode("utf-8"))
+                self.assertEqual(listed["current"]["name"], "New project")
+                self.assertTrue(any(
+                    item["id"] == "repository" for item in listed["projects"]
+                ))
+                self.assertEqual(sentinel.read_bytes(), before)
+            finally:
+                self._stop(proc)
+
+    def test_empty_folder_starts_a_new_project_without_the_flag(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            proc, _port, body = self._serve(Path(tmp))
+            try:
+                model = json.loads(body)
+                self.assertIn("NewProject", model["package"])
+                self.assertEqual(model["nodes"], [])
+                self.assertEqual(model["warnings"], [])
+            finally:
+                self._stop(proc)
 
 
 if __name__ == "__main__":

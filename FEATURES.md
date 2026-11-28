@@ -23,6 +23,10 @@ system-explorer <folder> [--port 8199] [--no-open]
 - `--publish <outdir>` — write a static view-only **Viewer** site into
   `<outdir>` and exit (see **Published Viewer**). Combined with `--check`,
   the site is written only when validation reports no warnings.
+- `--workspace` — treat `<folder>` as a workspace (see **Projects**). A
+  folder with no `.sysml` files does this even without the flag.
+  `--check`, `--print`, and `--publish` never create a project; they still
+  read the `.sysml` files directly in `<folder>`.
 
 Each View is saved to `<folder>/views/<id>.json` (including activity
 Views); everything else (documentation links, the element tree panel, the
@@ -366,10 +370,10 @@ page otherwise matches the published Viewer.
   **«part def» keywords** and **docs on node**) and **More ▾** stay
   on the header while reading.
 - **What stays available while reading**: the **view** dropdown, **Display
-  ▾**, **More ▾**, **+** / **−** / **Fit**, **Undo** / **Redo**, the
-  save-status word, pan, the detail sheet (except on a traceability view),
-  the interview quick-add bar on a context or use-case view,
-  click-to-highlight, and activity Views.
+  ▾**, **More ▾**, **+** / **−** / **Fit**, **Projects**, **Example**,
+  **Undo** / **Redo**, the save-status word, pan, the detail sheet
+  (except on a traceability view), the interview quick-add bar on a
+  context or use-case view, click-to-highlight, and activity Views.
 - The element tree is on screen only when Edit is on *and* the tree is
   open. `treeOpen` stays the user's own preference while Edit is off, so
   turning Edit on restores the panel as it was (`treeVisible()` in
@@ -676,17 +680,75 @@ or browser-zoom.
 With `--check`, warnings are printed and the site is not written when there
 are any.
 
+## Projects
+
+A workspace holds many models. Hosted mode is always a workspace.
+Locally, `system-explorer <folder> --workspace` is one, and so is a folder
+that has no `.sysml` files yet. `system-explorer <folder>` on a folder that
+already has `.sysml` files still opens that folder as the one model.
+
+- **New project.** A package file `NewProject.sysml` and an empty context
+  file `NewProjectContext.sysml`, plus `project.json`. In hosted mode each
+  successful sign-in creates one and opens it. A refresh stays on it; the
+  next sign-in creates another. Locally the process creates one at startup.
+  **Projects → New project** creates another at any time.
+- **Where they live.** `<workspace>/projects/<id>/`. `<id>` is a lowercase
+  token. The decision to keep them in the git repo, and not on the
+  container disk, is [docs/adr/0007-git-backed-projects.md](docs/adr/0007-git-backed-projects.md).
+- **Open recent.** The **Projects** toolbar menu lists saved projects,
+  newest first. Choosing one sets the `sx_project` cookie, clears the
+  undo history, and reloads. Creating a project does the same. Undo
+  steps belong to the project that was open.
+- **Repository model.** `.sysml` files that already sit in the workspace
+  root (the spine-cooling model, in the Render deployment) are listed as
+  **Repository model (read-only)**. The server never writes, deletes, or
+  `git add`s a path outside `projects/<id>/`.
+- **Example.** The **Example** button opens the insulin pump shipped in
+  the package (`system_explorer/examples/insulin-pump/`). The package copy
+  is never modified. In a workspace the first save or other write copies
+  it to a new project (`Insulin pump copy`) and continues there. The
+  response includes `switchedProject` with the new id, and the page
+  reloads with an empty undo history so example steps are not replayed
+  in the copy. Without a workspace the example is read-only.
+- **One toolbar.** After the flexible space: the project name,
+  **Projects**, **Example**, **Undo**, **Redo**, and the save-status
+  word, then Chat and Edit. **Save** stays with the edit controls.
+- **Routes.** `GET /api/projects` returns `{current, projects, canCreate}`.
+  `POST /api/projects` creates an empty project. `POST /api/projects/open`
+  with `{"id"}` switches. `POST /api/projects/example` opens the example.
+  The id `example` is the package, and `repository` is the read-only root
+  model. Neither is a directory name under `projects/`.
+
+The insulin pump is a small medical device: stakeholders are `part def`s
+in the context file (Patient, Caregiver, Endocrinologist, Regulator for
+the FDA, Manufacturer); user needs and the requirements derived from them
+use `satisfy`; one verification uses `verify`; three use cases (Deliver
+Basal Insulin, Deliver Bolus, Handle Occlusion Alarm) name actors with
+`actor` / `subject`. Handle Occlusion Alarm is written as standard SysML v2,
+the same spelling as the swimlane view: the use case owns the `action`
+steps, each actor says `perform 'Step';`, `first` / `then` gives the order,
+and one `decide` with `if` / `else` joins again at a `merge`. The
+**Occlusion alarm** view is an activity view of that use case, so the
+swimlane view draws the pump, the patient, and the caregiver. The
+example does not use the `perform action { … }` dialect. The explorer does
+not draw a separate derive edge, so a requirement that comes from a need
+satisfies that need.
+
 ## Hosted mode (`src/system_explorer/cloud.py`)
 
-`system-explorer-cloud` serves one model folder of a GitHub repo to a whole
+`system-explorer-cloud` serves a workspace from a GitHub repo to a whole
 team from a container (`Dockerfile` and `render.yaml`, a ready-made Render
-blueprint, are at the root of this repo; the model lives in its own repo). Step-by-step setup is in
+blueprint, are at the root of this repo; the models live in that repo, under
+`projects/`). Step-by-step setup is in
 README.md → *Hosting for a team*. The git repo stays the single source of
 truth — the container holds only a disposable clone:
 
-- **Startup** — clones `GITHUB_BRANCH` of `GITHUB_REPO` into `WORK_DIR` and
-  serves `MODEL_PATH` (a folder inside the repo; it may not escape it, and
-  it must contain `.sysml` files, or the server refuses to start).
+- **Startup** — clones `GITHUB_BRANCH` of `GITHUB_REPO` into `WORK_DIR`.
+  `MODEL_PATH` is the workspace inside the clone (it may not escape the
+  repo, and it must be a directory). It does not have to contain `.sysml`
+  files. Signing in creates a project under `projects/` and opens that,
+  not the files already at the workspace root. Those stay in git and can
+  be opened read-only from the Projects menu. See **Projects**.
 - **Reads pull** — every signed-in GET first runs `git pull --rebase`, at
   most once per `PULL_INTERVAL` seconds (default 30), so `.sysml` edits and
   Views pushed from teammates' IDEs show up on refresh. A failed pull is

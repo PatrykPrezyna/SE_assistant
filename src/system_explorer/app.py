@@ -20,6 +20,7 @@ Without installing, from a checkout of this repo:
 """
 
 import argparse
+import copy
 import json
 import mimetypes
 import os
@@ -32,6 +33,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
+from .projects import (
+    EXAMPLE_ID,
+    EXAMPLE_NAME,
+    ProjectLibrary,
+    example_dir,
+    project_cookie_header,
+    read_project_cookie,
+)
 from .version import __version__
 
 # Assistant imports are done on-demand to avoid circular dependencies
@@ -1041,7 +1050,8 @@ def _slugify(name, existing):
     return slug
 
 
-def make_handler(folder: Path, layout_path: Path, cloud=None, assistant_settings=None):
+def make_handler(folder: Path, layout_path: Path, cloud=None, assistant_settings=None,
+                 library=None):
     """Build the request handler class for `folder`.
 
     `cloud` is None for the local tool. When the server is hosted (see
@@ -1050,17 +1060,14 @@ def make_handler(folder: Path, layout_path: Path, cloud=None, assistant_settings
     checkout the folder lives in and every write is committed and pushed
     (`cloud.sync`), and linked documentation may not leave the checkout
     (`cloud.repo_root`).
-    
+
     `assistant_settings` enables the SE assistant chat routes when set.
+
+    `library` is a ProjectLibrary when `folder` is a workspace (hosted
+    mode, or local ``--workspace``). Without it, `folder` is the single
+    model, as before. The Example button still serves the packaged
+    insulin pump, read-only, in that mode.
     """
-    views_dir = folder / "views"
-
-    def view_path(view_id):
-        # reject anything that isn't a plain slug, e.g. path traversal via id
-        if not view_id or not RE_VIEW_ID.match(view_id):
-            return None
-        return views_dir / f"{view_id}.json"
-
 
     class Handler(BaseHTTPRequestHandler):
         user = None  # signed-in user dict in cloud mode (see _gate)
@@ -1096,9 +1103,237 @@ def make_handler(folder: Path, layout_path: Path, cloud=None, assistant_settings
             return False
 
         def _saved(self, paths, message):
-            # cloud mode: every change to views/layout becomes a git commit
+            # A workspace may only commit files under projects/<id>/.
+            # That is what keeps the repository model (spine-cooling, at
+            # the workspace root) from being rewritten.
+            if library is not None:
+                for path in paths:
+                    library.assert_project_file(path)
             if cloud is not None:
                 cloud.sync.commit_and_push(paths, message, self.user)
+
+        def _view_path(self, view_id):
+            if not view_id or not RE_VIEW_ID.match(view_id):
+                return None
+            if self.views_dir is None:
+                return None
+            return self.views_dir / f"{view_id}.json"
+
+        def _cookie_secure(self):
+            return bool(cloud and cloud.auth and cloud.auth.secure)
+
+        def _remember(self, project_id, max_age=31536000):
+            self._set_cookies = [project_cookie_header(
+                project_id, secure=self._cookie_secure(), max_age=max_age
+            )]
+
+        def _apply_binding(self, binding, pin=False):
+            self.model_folder = binding["folder"]
+            self.layout_path = binding["folder"] / "layout.json"
+            self.views_dir = binding["folder"] / "views"
+            self.read_only = binding["readOnly"]
+            self.project = binding["project"]
+            if pin:
+                self._remember(binding["project"]["id"])
+
+        def _owner_login(self):
+            user = getattr(self, "user", None)
+            if isinstance(user, dict):
+                return user.get("login")
+            return None
+
+        def _bind_model(self):
+            """Choose the folder this request reads. See spec 0004."""
+            self._set_cookies = []
+            self._switched_project = False
+            wanted = read_project_cookie(self.headers.get("Cookie"))
+            if library is None:
+                if wanted == EXAMPLE_ID:
+                    self._apply_binding({
+                        "folder": example_dir(),
+                        "readOnly": True,
+                        "project": {
+                            "id": EXAMPLE_ID,
+                            "name": EXAMPLE_NAME,
+                            "readOnly": True,
+                            "kind": "example",
+                        },
+                    })
+                    return
+                self.model_folder = folder
+                self.layout_path = layout_path
+                self.views_dir = folder / "views"
+                self.read_only = False
+                self.project = {
+                    "id": "model",
+                    "name": folder.name,
+                    "readOnly": False,
+                    "kind": "model",
+                }
+                return
+
+            binding = library.resolve(wanted) if wanted else None
+            if binding is not None:
+                self._apply_binding(binding)
+                return
+            if library.default_id:
+                binding = library.resolve(library.default_id)
+                if binding is not None:
+                    self._apply_binding(binding, pin=not wanted)
+                    return
+            if self._should_create():
+                info = library.create_empty(owner=self._owner_login())
+                self._saved(info["files"], f"Create project '{info['name']}'")
+                self._apply_binding(library.resolve(info["id"]), pin=True)
+                return
+            self.model_folder = None
+            self.layout_path = None
+            self.views_dir = None
+            self.read_only = True
+            self.project = None
+
+        def _should_create(self):
+            if library is None or library.default_id:
+                return False
+            if self.command != "GET":
+                return False
+            path = self.path.split("?")[0]
+            return path == "/" or path.startswith("/api/")
+
+        def _ensure_writable(self):
+            """True when this request may write.
+
+            The packaged example is copied into a new project on the first
+            write when a workspace is in use. The repository model is never
+            copied and never written.
+            """
+            if self.model_folder is None:
+                self.send_error(409, "no project")
+                return False
+            if not self.read_only:
+                return True
+            kind = (self.project or {}).get("kind")
+            if kind == "example" and library is not None:
+                info = library.copy_example(owner=self._owner_login())
+                self._saved(info["files"], "Copy insulin pump example")
+                self._apply_binding(library.resolve(info["id"]), pin=True)
+                # The page was showing the packaged example. The write
+                # continues in the copy, and the client must drop the
+                # example's undo stack before it records anything else.
+                self._switched_project = True
+                return True
+            if kind == "repository":
+                self.send_error(403, "repository model is read-only")
+            else:
+                self.send_error(403, "example is read-only")
+            return False
+
+        def _note_switch(self, payload):
+            """Tell the page it is no longer looking at the project it opened.
+
+            The example is copied on the first write. Undo steps recorded
+            against that read-only model must not be replayed in the copy.
+            """
+            if not getattr(self, "_switched_project", False):
+                return payload
+            if not isinstance(payload, dict):
+                return payload
+            payload = dict(payload)
+            payload["switchedProject"] = (self.project or {}).get("id")
+            return payload
+
+        def _projects_payload(self):
+            if self.project is None:
+                current = {
+                    "id": None, "name": "", "readOnly": True, "kind": None,
+                }
+            else:
+                current = self.project
+            if library is None:
+                return {
+                    "current": current,
+                    "projects": [{
+                        "id": "model",
+                        "name": folder.name,
+                        "readOnly": False,
+                        "kind": "model",
+                    }],
+                    "canCreate": False,
+                }
+            return {
+                "current": current,
+                "projects": library.list_projects(),
+                "canCreate": True,
+            }
+
+        def _projects_post(self, path):
+            length = int(self.headers.get("Content-Length", 0) or 0)
+            raw = self.rfile.read(length) if length else b""
+            try:
+                body = json.loads(raw.decode("utf-8")) if raw else {}
+            except ValueError:
+                self.send_error(400, "request body must be JSON")
+                return
+            if not isinstance(body, dict):
+                body = {}
+            if path == "/api/projects":
+                if library is None:
+                    self.send_error(400, "this folder is a single model")
+                    return
+                info = library.create_empty(owner=self._owner_login())
+                self._saved(info["files"], f"Create project '{info['name']}'")
+                self._remember(info["id"])
+                self._send(json.dumps({
+                    "id": info["id"],
+                    "name": info["name"],
+                    "readOnly": False,
+                }))
+                return
+            if path not in ("/api/projects/example", "/api/projects/open"):
+                self.send_error(404)
+                return
+            project_id = (
+                EXAMPLE_ID if path.endswith("/example") else (body.get("id") or "")
+            )
+            if not isinstance(project_id, str) or not project_id:
+                self.send_error(400, "missing project id")
+                return
+            if library is None:
+                if project_id == EXAMPLE_ID:
+                    self._remember(EXAMPLE_ID)
+                    self._send(json.dumps({
+                        "id": EXAMPLE_ID,
+                        "name": EXAMPLE_NAME,
+                        "readOnly": True,
+                    }))
+                    return
+                if project_id == "model":
+                    self._remember("model", max_age=0)
+                    self._send(json.dumps({
+                        "id": "model",
+                        "name": folder.name,
+                        "readOnly": False,
+                    }))
+                    return
+                self.send_error(404, "project not found")
+                return
+            binding = library.resolve(project_id)
+            if binding is None:
+                self.send_error(404, "project not found")
+                return
+            self._remember(project_id)
+            self._send(json.dumps({
+                "id": project_id,
+                "name": binding["project"]["name"],
+                "readOnly": binding["readOnly"],
+            }))
+
+        def _assistant_for_request(self):
+            if not assistant_settings or self.model_folder is None:
+                return assistant_settings
+            settings = copy.copy(assistant_settings)
+            settings.model_folder = self.model_folder
+            return settings
 
         def _write_all(self, data):
             # Paced chunked writes: antivirus loopback filters (verified with
@@ -1118,6 +1353,8 @@ def make_handler(folder: Path, layout_path: Path, cloud=None, assistant_settings
             self.send_response(status)
             self.send_header("Content-Type", f"{ctype}; charset=utf-8")
             self.send_header("Content-Length", str(len(data)))
+            for cookie in getattr(self, "_set_cookies", ()) or ():
+                self.send_header("Set-Cookie", cookie)
             self.end_headers()
             self._write_all(data)
 
@@ -1140,9 +1377,11 @@ def make_handler(folder: Path, layout_path: Path, cloud=None, assistant_settings
             target = qs.get("path", [""])[0]
             if not target:
                 return None
+            if self.model_folder is None:
+                return None
             p = Path(target)
             if not p.is_absolute():
-                p = folder / target
+                p = self.model_folder / target
             if cloud is not None:
                 # hosted: only files inside the git checkout, never the
                 # server's own filesystem
@@ -1155,9 +1394,11 @@ def make_handler(folder: Path, layout_path: Path, cloud=None, assistant_settings
         def _browse_dir(self):
             # folder-tree browser for the "Add documentation link" dialog:
             # path is relative to the model folder and may not escape it
+            if self.model_folder is None:
+                return None
             qs = parse_qs(urlsplit(self.path).query)
             rel = qs.get("path", [""])[0]
-            base = folder.resolve()
+            base = self.model_folder.resolve()
             target = (base / rel).resolve() if rel else base
             try:
                 target.relative_to(base)
@@ -1189,6 +1430,7 @@ def make_handler(folder: Path, layout_path: Path, cloud=None, assistant_settings
         def do_GET(self):
             if self._gate():
                 return
+            self._bind_model()
             path = self.path.split("?")[0]
             if path == "/":
                 self._send(VIEWER.read_text(encoding="utf-8"), "text/html")
@@ -1204,22 +1446,27 @@ def make_handler(folder: Path, layout_path: Path, cloud=None, assistant_settings
                     self._send(js_path.read_text(encoding="utf-8"), "application/javascript")
                 else:
                     self.send_error(404)
+            elif path == "/api/projects":
+                self._send(json.dumps(self._projects_payload()))
             elif path == "/api/session" and assistant_settings:
                 if not self._check_assistant_auth():
                     self.send_error(401, "Authentication required")
                     return
                 try:
                     from assistant.server import session_payload
-                    payload = session_payload(assistant_settings)
+                    payload = session_payload(self._assistant_for_request())
                     self._send(json.dumps(payload))
                 except (ImportError, ModuleNotFoundError):
                     self.send_error(503, "Assistant not available")
             elif path == "/api/model":
+                if self.model_folder is None:
+                    self.send_error(409, "no project")
+                    return
                 try:
-                    model, model_paths = load_folder(folder)
+                    model, model_paths = load_folder(self.model_folder)
                     if model is None:
                         self._send(json.dumps(
-                            {"error": f"no .sysml files found in {folder}",
+                            {"error": f"no .sysml files found in {self.model_folder}",
                              "explorerVersion": __version__}))
                         return
                     model["file"] = ", ".join(p.name for p in model_paths)
@@ -1229,14 +1476,14 @@ def make_handler(folder: Path, layout_path: Path, cloud=None, assistant_settings
                     self._send(json.dumps(
                         {"error": str(exc), "explorerVersion": __version__}))
             elif path == "/api/layout":
-                if layout_path.exists():
-                    self._send(layout_path.read_text(encoding="utf-8"))
+                if self.layout_path and self.layout_path.exists():
+                    self._send(self.layout_path.read_text(encoding="utf-8"))
                 else:
                     self._send("{}")
             elif path == "/api/views":
                 views = []
-                if views_dir.is_dir():
-                    for p in sorted(views_dir.glob("*.json")):
+                if self.views_dir is not None and self.views_dir.is_dir():
+                    for p in sorted(self.views_dir.glob("*.json")):
                         try:
                             data = json.loads(p.read_text(encoding="utf-8"))
                         except (OSError, ValueError):
@@ -1256,7 +1503,7 @@ def make_handler(folder: Path, layout_path: Path, cloud=None, assistant_settings
                         })
                 self._send(json.dumps(views))
             elif path.startswith("/api/views/"):
-                p = view_path(path[len("/api/views/"):])
+                p = self._view_path(path[len("/api/views/"):])
                 if p and p.is_file():
                     self._send(p.read_text(encoding="utf-8"))
                 else:
@@ -1276,7 +1523,7 @@ def make_handler(folder: Path, layout_path: Path, cloud=None, assistant_settings
                 if d is None:
                     self.send_error(404, "folder not found")
                 else:
-                    rel = d.relative_to(folder.resolve()).as_posix()
+                    rel = d.relative_to(self.model_folder.resolve()).as_posix()
                     entries = [
                         {"name": p.name, "isDir": p.is_dir()}
                         for p in sorted(
@@ -1295,6 +1542,7 @@ def make_handler(folder: Path, layout_path: Path, cloud=None, assistant_settings
             # answering 501 can make them fall back to downloading
             if self._gate():
                 return
+            self._bind_model()
             if self.path.split("?")[0] == "/api/doc":
                 p = self._doc_path()
                 if p:
@@ -1309,13 +1557,21 @@ def make_handler(folder: Path, layout_path: Path, cloud=None, assistant_settings
         def _assistant_complete(self, messages, tools):
             """Wrapper for assistant complete that handles model writes in hosted mode."""
             from assistant.provider import complete
-            result = complete(messages, assistant_settings, tools)
-            return result
+            return complete(messages, self._assistant_for_request(), tools)
 
         def do_POST(self):
             if self._gate():
                 return
+            self._bind_model()
             path = self.path.split("?")[0]
+            if path == "/api/projects" or path.startswith("/api/projects/"):
+                self._projects_post(path)
+                return
+            writing = path in (
+                "/api/layout", "/api/views", "/api/model/edit", "/api/activity",
+            ) or (path == "/api/chat" and assistant_settings)
+            if writing and not self._ensure_writable():
+                return
             if path == "/api/chat" and assistant_settings:
                 if not self._check_assistant_auth():
                     self.send_error(401, "Authentication required")
@@ -1330,8 +1586,9 @@ def make_handler(folder: Path, layout_path: Path, cloud=None, assistant_settings
                 except (ImportError, ModuleNotFoundError):
                     self.send_error(503, "Assistant not available")
                     return
+                request_settings = self._assistant_for_request()
                 try:
-                    payload = chat_payload(body, assistant_settings, self._assistant_complete)
+                    payload = chat_payload(body, request_settings, self._assistant_complete)
                 except Exception as exc:
                     print(f"assistant chat failed: {exc}", file=sys.stderr)
                     payload = {
@@ -1339,18 +1596,23 @@ def make_handler(folder: Path, layout_path: Path, cloud=None, assistant_settings
                         "notes": [],
                         "error": f"The assistant failed: {exc}",
                     }
-                # If assistant wrote model files, commit them in hosted mode
+                # If assistant wrote model files, commit them in hosted mode.
+                # Only the active project folder is staged, never the
+                # workspace root.
                 if cloud is not None and payload.get("notes"):
-                    sysml_files = list(folder.glob("*.sysml"))
+                    sysml_files = list(self.model_folder.glob("*.sysml"))
                     if sysml_files:
-                        cloud.sync.commit_and_push(sysml_files, "Assistant: update model", self.user)
+                        self._saved(sysml_files, "Assistant: update model")
                 status = 200 if not payload.get("error") else 400
-                if payload.get("error") and assistant_settings.configuration_error():
+                if payload.get("error") and request_settings.configuration_error():
                     status = 503
+                payload = self._note_switch(payload)
                 data = json.dumps(payload).encode("utf-8")
                 self.send_response(status)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
                 self.send_header("Content-Length", str(len(data)))
+                for cookie in getattr(self, "_set_cookies", ()) or ():
+                    self.send_header("Set-Cookie", cookie)
                 self.end_headers()
                 self.wfile.write(data)
                 return
@@ -1363,7 +1625,7 @@ def make_handler(folder: Path, layout_path: Path, cloud=None, assistant_settings
                     return
                 from .model_edit import apply_edit
                 try:
-                    result = apply_edit(folder, body)
+                    result = apply_edit(self.model_folder, body)
                 except Exception as exc:
                     print(f"model edit failed: {exc}", file=sys.stderr)
                     self._send('{"ok": false, "error": "Could not update the model."}',
@@ -1371,27 +1633,27 @@ def make_handler(folder: Path, layout_path: Path, cloud=None, assistant_settings
                     return
                 if result.get("ok") and result.get("changed"):
                     self._saved(
-                        [folder / name for name in result["changed"]],
+                        [self.model_folder / name for name in result["changed"]],
                         result.get("message") or "Update model",
                     )
-                self._send(json.dumps(result),
+                self._send(json.dumps(self._note_switch(result)),
                            status=200 if result.get("ok") else 400)
                 return
             if path == "/api/layout":
                 data = self._read_json_body()  # validate before writing
-                layout_path.write_text(
+                self.layout_path.write_text(
                     json.dumps(data, indent=2) + "\n", encoding="utf-8"
                 )
-                self._saved([layout_path], "Update explorer layout")
-                self._send('{"ok": true}')
+                self._saved([self.layout_path], "Update explorer layout")
+                self._send(json.dumps(self._note_switch({"ok": True})))
             elif path == "/api/views":
                 body = self._read_json_body()
                 name = (body.get("name") or "").strip() or "Untitled"
                 kind = body.get("kind") or "bdd"
                 activity_owner = body.get("activityOwner")
                 description = body.get("description") or ""
-                views_dir.mkdir(parents=True, exist_ok=True)
-                existing = {p.stem for p in views_dir.glob("*.json")}
+                self.views_dir.mkdir(parents=True, exist_ok=True)
+                existing = {p.stem for p in self.views_dir.glob("*.json")}
                 view_id = _slugify(name, existing)
                 data = {"version": 1, "name": name, "elements": [], "nodes": {},
                         "hiddenEdges": [], "view": None, "options": {}}
@@ -1401,16 +1663,18 @@ def make_handler(folder: Path, layout_path: Path, cloud=None, assistant_settings
                     data["activityOwner"] = activity_owner
                 if description:
                     data["description"] = description
-                (views_dir / f"{view_id}.json").write_text(
+                (self.views_dir / f"{view_id}.json").write_text(
                     json.dumps(data, indent=2) + "\n", encoding="utf-8"
                 )
-                self._saved([views_dir / f"{view_id}.json"],
+                self._saved([self.views_dir / f"{view_id}.json"],
                             f"Create view '{name}'")
-                self._send(json.dumps({"id": view_id, "name": name,
-                                       "description": description,
-                                       "elementCount": 0,
-                                       "kind": kind,
-                                       "activityOwner": activity_owner}))
+                self._send(json.dumps(self._note_switch({
+                    "id": view_id, "name": name,
+                    "description": description,
+                    "elementCount": 0,
+                    "kind": kind,
+                    "activityOwner": activity_owner,
+                })))
             elif path == "/api/activity":
                 try:
                     body = self._read_json_body()
@@ -1419,59 +1683,62 @@ def make_handler(folder: Path, layout_path: Path, cloud=None, assistant_settings
                     return
                 from .activity_edit import ActivityEditError, apply_edit
                 try:
-                    result = apply_edit(folder, body)
+                    result = apply_edit(self.model_folder, body)
                 except ActivityEditError as exc:
-                    data = json.dumps({"error": str(exc)}).encode("utf-8")
-                    self.send_response(400)
-                    self.send_header("Content-Type", "application/json; charset=utf-8")
-                    self.send_header("Content-Length", str(len(data)))
-                    self.end_headers()
-                    self.wfile.write(data)
+                    self._send(json.dumps(self._note_switch(
+                        {"ok": False, "error": str(exc)})), status=400)
                     return
                 written = [
-                    folder / name for name in result.get("files") or [result["file"]]
+                    self.model_folder / name
+                    for name in result.get("files") or [result["file"]]
                 ]
                 self._saved(written, result.get("message") or "Update activity")
-                self._send(json.dumps({
+                self._send(json.dumps(self._note_switch({
                     "ok": True,
                     "owner": result.get("owner"),
                     "file": result.get("file"),
                     "message": result.get("message"),
                     "snapshots": result.get("snapshots") or [],
-                }))
+                })))
             else:
                 self.send_error(404)
 
         def do_PUT(self):
             if self._gate():
                 return
+            self._bind_model()
             path = self.path.split("?")[0]
             if not path.startswith("/api/views/"):
                 self.send_error(404)
                 return
-            p = view_path(path[len("/api/views/"):])
+            if not self._ensure_writable():
+                return
+            p = self._view_path(path[len("/api/views/"):])
             if not p:
                 self.send_error(400, "invalid view id")
                 return
             data = self._read_json_body()  # validate before writing
-            views_dir.mkdir(parents=True, exist_ok=True)
+            self.views_dir.mkdir(parents=True, exist_ok=True)
             p.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
             name = data.get("name", p.stem) if isinstance(data, dict) else p.stem
             self._saved([p], f"Update view '{name}'")
-            self._send('{"ok": true}')
+            self._send(json.dumps(self._note_switch({"ok": True})))
 
         def do_DELETE(self):
             if self._gate():
                 return
+            self._bind_model()
             path = self.path.split("?")[0]
             if not path.startswith("/api/views/"):
                 self.send_error(404)
                 return
-            p = view_path(path[len("/api/views/"):])
+            if not self._ensure_writable():
+                return
+            p = self._view_path(path[len("/api/views/"):])
             if p and p.is_file():
                 p.unlink()
                 self._saved([p], f"Delete view '{p.stem}'")
-                self._send('{"ok": true}')
+                self._send(json.dumps(self._note_switch({"ok": True})))
             else:
                 self.send_error(404, "view not found")
 
@@ -1505,14 +1772,25 @@ def main():
              "and exit. With --check, the site is written only when the "
              "model has no warnings",
     )
+    ap.add_argument(
+        "--workspace", action="store_true",
+        help="treat the folder as a workspace and start a new empty project "
+             "under projects/. A folder with no .sysml files does this "
+             "without the flag. Existing files in the folder stay put and "
+             "can be opened read-only as the repository model.",
+    )
     args = ap.parse_args()
 
     folder = Path(args.folder).resolve()
     if not folder.is_dir():
         sys.exit(f"not a folder: {folder}")
     model, model_paths = load_folder(folder)
-    if model is None:
+    inspect_only = bool(args.check or args.print or args.publish)
+    if model is None and inspect_only:
         sys.exit(f"no .sysml files found directly in {folder}")
+    # Hosted mode always uses a workspace. Locally, --workspace does the
+    # same, and so does opening a folder that is not already a model.
+    workspace = (not inspect_only) and (args.workspace or model is None)
 
     if args.publish and args.print:
         sys.exit("use either --print or --publish")
@@ -1544,12 +1822,15 @@ def main():
         return
 
     # the layout file lives in the folder, independent of which .sysml
-    # files happen to be in it
+    # files happen to be in it. A workspace serves projects/<id>/ instead;
+    # the handler rebinds the layout path per request.
     layout_path = folder / "layout.json"
     url = f"http://127.0.0.1:{args.port}/"
+    library = ProjectLibrary(folder) if workspace else None
 
     # Assistant configuration (optional, same as cloud.py).
     # The methodology file belongs to this tool, not to the model folder.
+    # The handler points each chat turn at the project that is open.
     assistant_settings = None
     try:
         from assistant.config import explorer_settings
@@ -1573,7 +1854,9 @@ def main():
 
     try:
         server = _ExplorerServer(
-            ("127.0.0.1", args.port), make_handler(folder, layout_path, assistant_settings=assistant_settings)
+            ("127.0.0.1", args.port),
+            make_handler(folder, layout_path, assistant_settings=assistant_settings,
+                         library=library),
         )
     except OSError as exc:
         print(f"Port {args.port} is already in use — another explorer is "
@@ -1583,12 +1866,20 @@ def main():
             webbrowser.open(url)
         sys.exit(1)
 
-    print(f"Serving {len(model_paths)} .sysml file(s) from {folder} at {url}")
-    print(f"  ({', '.join(p.name for p in model_paths)})")
-    for w in model["warnings"]:
-        print(f"warning: {w}")
-    print(f"Views will be saved to {folder / 'views'}")
-    print(f"Global state will be saved to {layout_path}")
+    if library is not None:
+        info = library.create_empty()
+        library.default_id = info["id"]
+        print(f"New project '{info['name']}' ({info['id']})")
+        print(f"  {info['dir']}")
+        print(f"Workspace {folder} at {url}")
+        print("Earlier projects stay under projects/ and are listed in the toolbar.")
+    else:
+        print(f"Serving {len(model_paths)} .sysml file(s) from {folder} at {url}")
+        print(f"  ({', '.join(p.name for p in model_paths)})")
+        for w in model["warnings"]:
+            print(f"warning: {w}")
+        print(f"Views will be saved to {folder / 'views'}")
+        print(f"Global state will be saved to {layout_path}")
     print("Press Ctrl+C to stop.")
     if not args.no_open:
         threading.Timer(0.3, webbrowser.open, [url]).start()

@@ -22,5 +22,13 @@ version = {attr = "system_explorer.version.__version__"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-system_explorer = ["viewer.html", "publish_viewer.html", "assistant_panel.js", "assistant_panel.css"]
+system_explorer = [
+    "viewer.html",
+    "publish_viewer.html",
+    "assistant_panel.js",
+    "assistant_panel.css",
+    "examples/insulin-pump/*.sysml",
+    "examples/insulin-pump/*.json",
+    "examples/insulin-pump/views/*.json",
+]
 assistant = ["chat.html"]

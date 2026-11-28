@@ -27,6 +27,14 @@
     min-height: 36px; border-radius: 8px; border: 1px solid #d5d8de;
     background: #fff; padding: 4px 8px; }
   #toolbar .grow { flex: 1; min-width: 8px; }
+  #projectLabel { font-weight: 650; max-width: 220px; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  #projectMenu { right: 0; left: auto; min-width: 260px; max-height: 70vh;
+    overflow: auto; }
+  #projectMenu button.item { height: auto; white-space: normal; }
+  #projectMenu button.item small { display: block; color: #667; font-size: 12px;
+    font-weight: 400; }
+  #projectMenu button.item.current { font-weight: 650; }
   /* Reading is the default. Edit (expert mode) reveals the authoring
      controls — see setExpertMode(). */
   body:not(.expert) .expert-only,
@@ -324,6 +332,12 @@
     </div>
   </div>
   <span class="grow"></span>
+  <span id="projectLabel"></span>
+  <div class="menu-wrap" id="projectWrap">
+    <button type="button" id="projectsBtn" title="Open a recent project">Projects</button>
+    <div id="projectMenu" class="menu-panel" role="menu"></div>
+  </div>
+  <button type="button" id="exampleBtn" title="Open the insulin pump example">Example</button>
   <button id="undoBtn" type="button" title="Undo (Ctrl+Z)" disabled>Undo</button>
   <button id="redoBtn" type="button" title="Redo (Ctrl+Shift+Z)" disabled>Redo</button>
   <span id="status" class="saved" role="status">Saved</span>
@@ -1575,8 +1589,10 @@ async function activityEdit(body) {
     setSaveStatus("error");
     const hint = document.getElementById("activityHint");
     if (hint) hint.textContent = data.error || "Could not update the diagram";
+    if (switchedAway(data)) return;
     return;
   }
+  if (switchedAway(data)) return;
   connectFrom = null;
   await loadModel();
   if (data.owner) {
@@ -2772,38 +2788,43 @@ svg.addEventListener("wheel", evt => {
 async function save() {
   setSaveStatus("saving");
   try {
-  for (const id in nodes) posMap()[id] = { x: nodes[id].x, y: nodes[id].y };
-  if (activeView) {
-    activeView.hiddenEdges = [...hiddenEdges];
-    activeView.view = { ...view };
-    activeView.version = VIEW_VERSION;
-    activeView.options = displayOpts();
-  }
+    for (const id in nodes) posMap()[id] = { x: nodes[id].x, y: nodes[id].y };
+    if (activeView) {
+      activeView.hiddenEdges = [...hiddenEdges];
+      activeView.view = { ...view };
+      activeView.version = VIEW_VERSION;
+      activeView.options = displayOpts();
+    }
 
-  layout.version = LAYOUT_VERSION;
-  layout.docs = layout.docs || {};
-  layout.treeOpen = treeOpen;
-  layout.expertMode = expertMode;
-  layout.activeView = activeViewId;
-  for (const key of STALE_LAYOUT_KEYS) delete layout[key];
-  delete layout.home;  // No longer used
+    layout.version = LAYOUT_VERSION;
+    layout.docs = layout.docs || {};
+    layout.treeOpen = treeOpen;
+    layout.expertMode = expertMode;
+    layout.activeView = activeViewId;
+    for (const key of STALE_LAYOUT_KEYS) delete layout[key];
+    delete layout.home;  // No longer used
 
-  const requests = [
-    fetch("/api/layout", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(layout),
-    }),
-  ];
-  if (activeViewId)
-    requests.push(fetch(`/api/views/${activeViewId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(activeView),
-    }));
-  const results = await Promise.all(requests);
-  if (results.every(r => r.ok)) setDirty(false);
-  else setSaveStatus("error");
+    // One write at a time. The first save of the read-only example copies
+    // it into a project and sets the cookie; a parallel second write would
+    // copy it again.
+    const posts = [
+      ["/api/layout", layout],
+    ];
+    if (activeViewId) posts.push([`/api/views/${activeViewId}`, activeView]);
+    let ok = true;
+    for (const [url, body] of posts) {
+      const res = await fetch(url, {
+        method: url === "/api/layout" ? "POST" : "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      let data = {};
+      try { data = await res.json(); } catch (err) { data = {}; }
+      if (!res.ok) { ok = false; break; }
+      if (switchedAway(data)) return;
+    }
+    if (ok) setDirty(false);
+    else setSaveStatus("error");
   } catch (err) {
     setSaveStatus("error");
   }
@@ -3134,7 +3155,98 @@ async function bootstrapViews() {
   applyViewKind(activeView);
 }
 
+function projectStamp(project) {
+  const when = (project.created || "").replace("T", " ").slice(0, 16);
+  return [when, project.owner].filter(Boolean).join(" · ");
+}
+
+let currentProjectId = null;
+
+function leaveProject() {
+  // A different project must not replay this tab's undo steps. Those
+  // steps name files and positions in the project that was open.
+  resetHistory();
+  location.reload();
+}
+
+function switchedAway(data) {
+  if (!data || !data.switchedProject) return false;
+  if (data.switchedProject === currentProjectId) return false;
+  leaveProject();
+  return true;
+}
+
+async function openProject(id) {
+  const res = await fetch("/api/projects/open", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id: id }),
+  });
+  if (!res.ok) return;
+  leaveProject();
+}
+
+async function loadProjectChrome() {
+  const label = document.getElementById("projectLabel");
+  try {
+    const res = await fetch("/api/projects");
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.current) currentProjectId = data.current.id || null;
+    if (label && data.current && data.current.name) {
+      label.textContent = data.current.name
+        + (data.current.readOnly ? " (read-only)" : "");
+    }
+    const menu = document.getElementById("projectMenu");
+    if (!menu) return;
+    menu.innerHTML = "";
+    if (data.canCreate) {
+      const create = document.createElement("button");
+      create.type = "button";
+      create.className = "item";
+      create.textContent = "New project";
+      create.addEventListener("click", async () => {
+        const made = await fetch("/api/projects", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        });
+        if (made.ok) leaveProject();
+      });
+      menu.appendChild(create);
+    }
+    for (const project of data.projects || []) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "item"
+        + (data.current && project.id === data.current.id ? " current" : "");
+      btn.appendChild(document.createTextNode(project.name
+        + (project.readOnly ? " (read-only)" : "")));
+      const stamp = projectStamp(project);
+      if (stamp) {
+        const small = document.createElement("small");
+        small.textContent = stamp;
+        btn.appendChild(small);
+      }
+      btn.addEventListener("click", () => openProject(project.id));
+      menu.appendChild(btn);
+    }
+  } catch (e) { /* the diagram still loads without the project menu */ }
+}
+
+document.getElementById("projectsBtn").addEventListener("click", evt => {
+  evt.stopPropagation();
+  const menu = document.getElementById("projectMenu");
+  const wasOpen = menu.classList.contains("open");
+  closeMenus();
+  if (!wasOpen) menu.classList.add("open");
+});
+document.getElementById("exampleBtn").addEventListener("click", () => {
+  openProject("example");
+});
+
 async function init() {
+  loadProjectChrome();
   try {
     const saved = await (await fetch("/api/layout")).json();
     if (saved && typeof saved === "object") layout = saved;
@@ -3204,6 +3316,8 @@ unhideBtn.addEventListener("click", () => {
 function closeMenus() {
   document.getElementById("displayMenu").classList.remove("open");
   document.getElementById("moreMenu").classList.remove("open");
+  const projects = document.getElementById("projectMenu");
+  if (projects) projects.classList.remove("open");
 }
 function toggleMenu(id, evt) {
   evt.stopPropagation();
@@ -3392,6 +3506,7 @@ async function applyHistory(entry, which) {
         setSaveStatus("error");
         return;
       }
+      if (switchedAway(data)) return;
       await loadModel();
     }
     const snap = entry[which];
@@ -3434,6 +3549,7 @@ async function postModelEdit(body) {
   catch (err) { data = {}; }
   if (!res.ok || !data.ok)
     throw new Error(data.error || "Could not update the model.");
+  if (switchedAway(data)) return null;
   return data;
 }
 
@@ -3444,6 +3560,7 @@ async function commitModelEdit(body, clearIds) {
   setSaveStatus("saving");
   try {
     const data = await postModelEdit(body);
+    if (!data) return;
     await loadModel();
     if (mode === "bdd" && activeView) {
       const show = data.showIds || data.addedIds || [];
