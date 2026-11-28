@@ -171,7 +171,8 @@
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages })
+        body: JSON.stringify({ messages }),
+        credentials: 'same-origin'  // Send session cookie in hosted mode
       });
       
       if (!res.ok) {
@@ -235,7 +236,9 @@
   
   async function initSession() {
     try {
-      const res = await fetch("/api/session");
+      const res = await fetch("/api/session", {
+        credentials: 'same-origin'  // Send session cookie in hosted mode
+      });
       
       if (!res.ok) {
         if (res.status === 401) {

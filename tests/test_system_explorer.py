@@ -4251,7 +4251,7 @@ class EmbeddedAssistantTests(unittest.TestCase):
                 server.server_close()
     
     def test_add_model_element_tool(self):
-        """The add_model_element tool creates valid SysML."""
+        """The add_model_element tool creates valid SysML following model conventions."""
         from assistant.tools import run_tool
         from assistant.config import Settings as AssistantSettings
         
@@ -4272,43 +4272,44 @@ class EmbeddedAssistantTests(unittest.TestCase):
                 auth_password="",
             )
             
-            # Add an actor
+            # Add a stakeholder (person) - creates part def, not actor def
             result = run_tool("add_model_element", {
-                "element_type": "actor",
+                "element_type": "stakeholder",
                 "name": "Nurse",
                 "description": "Healthcare professional administering treatment",
-                "package": "Context"
             }, settings)
             
-            self.assertIn("Added actor def", result)
+            self.assertIn("Added part def", result)
             self.assertIn("Nurse", result)
             
-            # Check the file was created
-            sysml_file = folder / "model_elements.sysml"
-            self.assertTrue(sysml_file.exists())
-            content = sysml_file.read_text()
-            self.assertIn("actor def Nurse", content)
+            # Check the file was created with Context naming
+            context_file = folder / "SystemContext.sysml"
+            self.assertTrue(context_file.exists())
+            content = context_file.read_text()
+            self.assertIn("part def Nurse", content)
             self.assertIn("Healthcare professional", content)
+            self.assertNotIn("actor def", content)  # Should be part def, not actor def
             
             # Try to add duplicate - should fail
             result = run_tool("add_model_element", {
-                "element_type": "actor",
+                "element_type": "stakeholder",
                 "name": "Nurse",
                 "description": "Duplicate",
             }, settings)
             self.assertIn("already exists", result)
             
-            # Add a use case
+            # Add another stakeholder
             result = run_tool("add_model_element", {
-                "element_type": "use_case",
-                "name": "AdministerMedication",
-                "description": "Nurse administers medication to patient",
+                "element_type": "stakeholder",
+                "name": "Patient",
+                "description": "Person receiving care",
             }, settings)
-            self.assertIn("Added use case def", result)
+            self.assertIn("Added part def", result)
             
-            # Verify it was added
-            content = sysml_file.read_text()
-            self.assertIn("use case def AdministerMedication", content)
+            # Verify both are in the same file
+            content = context_file.read_text()
+            self.assertIn("part def Nurse", content)
+            self.assertIn("part def Patient", content)
     
     def test_hosted_commit_path(self):
         """In hosted mode, assistant edits are committed and pushed."""

@@ -107,22 +107,24 @@ def _report(result):
 
 
 def _add_model_element(arguments, settings):
-    """Add a model element (actor, part def, requirement, etc.) to the appropriate SysML file."""
+    """Add a model element following existing model conventions.
+    
+    Stakeholders (people) should be part def in Context, not actor def.
+    Use cases can reference them as actor/subject roles.
+    """
     element_type = arguments.get("element_type", "").strip().lower()
     name = arguments.get("name", "").strip()
     description = arguments.get("description", "").strip()
-    package = arguments.get("package", "Context").strip()
     
     if not element_type or not name:
         return "Error: Both element_type and name are required."
     
-    # Validate element type
+    # Validate element type - note: "stakeholder" creates a part def for a person
     valid_types = {
-        "actor": "actor def",
-        "part": "part def",
+        "stakeholder": "part def",  # People: Nurse, Patient, Surgeon, etc.
+        "part": "part def",         # Equipment/components
         "requirement": "requirement def",
         "use_case": "use case def",
-        "action": "action def",
     }
     
     if element_type not in valid_types:
@@ -134,41 +136,66 @@ def _add_model_element(arguments, settings):
     
     sysml_keyword = valid_types[element_type]
     
-    # Find or create the appropriate .sysml file
+    # Find appropriate file based on conventions
     folder = Path(settings.model_folder)
-    target_file = folder / "model_elements.sysml"
     
-    # Check if element already exists
-    existing_files = list(folder.glob("*.sysml"))
-    for file in existing_files:
-        content = file.read_text(encoding="utf-8")
-        if f"{sysml_keyword} {name}" in content:
-            return f"Element '{name}' already exists in {file.name}. Use a different name or modify the existing element manually."
+    # For stakeholders, use or create a Context file
+    if element_type == "stakeholder":
+        # Look for existing Context file
+        context_files = [f for f in folder.glob("*Context.sysml")]
+        if context_files:
+            target_file = context_files[0]
+        else:
+            target_file = folder / "SystemContext.sysml"
+    else:
+        # For other elements, use a general file
+        target_file = folder / "ModelElements.sysml"
     
-    # Build the SysML element
-    doc_text = f" {{\n  doc /* {description} */\n}}" if description else " {}"
-    sysml_text = f"\n{sysml_keyword} {name}{doc_text}\n"
+    # Check if element already exists in any file
+    for file in folder.glob("*.sysml"):
+        try:
+            content = file.read_text(encoding="utf-8")
+            # Look for the definition
+            if re.search(rf'\b{sysml_keyword}\s+{name}\s*[{{;]', content):
+                return f"Element '{name}' already exists in {file.name}. Use a different name or modify the existing element manually."
+        except (OSError, UnicodeError):
+            continue
     
-    # Append to file (or create if it doesn't exist)
+    # Build the SysML element with proper doc comment formatting
+    if description:
+        # Multi-line doc comment like in spine-cooling-model
+        doc_lines = description.split(". ")
+        doc_text = " {\n        doc /*\n"
+        for line in doc_lines:
+            if line:
+                doc_text += f"        {line.strip()}.\n"
+        doc_text += "        */\n    }"
+    else:
+        doc_text = " {}"
+    
+    sysml_text = f"\n    {sysml_keyword} {name}{doc_text}\n"
+    
+    # Insert into file following conventions
     if target_file.exists():
         content = target_file.read_text(encoding="utf-8")
-        # Try to add within existing package or at the end
-        if f"package {package}" in content:
-            # Insert before closing brace of package
-            # Simple approach: append at end of file
+        # Find the package and insert before closing brace
+        # Simple: insert before last } of the file
+        lines = content.split("\n")
+        insert_pos = len(lines) - 1
+        while insert_pos > 0 and not lines[insert_pos].strip():
+            insert_pos -= 1
+        if lines[insert_pos].strip() == "}":
+            lines.insert(insert_pos, sysml_text)
+            content = "\n".join(lines)
+        else:
+            # Just append
             if not content.endswith("\n"):
                 content += "\n"
             content += sysml_text
-        else:
-            # Wrap in package
-            if not content.strip():
-                content = f"package {package} {{\n{sysml_text}}}\n"
-            else:
-                if not content.endswith("\n"):
-                    content += "\n"
-                content += sysml_text
     else:
-        content = f"package {package} {{\n{sysml_text}}}\n"
+        # Create new file with proper package
+        package_name = target_file.stem
+        content = f"package {package_name} {{\n{sysml_text}}}\n"
     
     target_file.write_text(content, encoding="utf-8")
     
