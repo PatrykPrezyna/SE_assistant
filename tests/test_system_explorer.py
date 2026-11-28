@@ -929,6 +929,10 @@ class StandardActivityTests(unittest.TestCase):
             written = (srv.folder / "model.sysml").read_text(encoding="utf-8")
             self.assertIn("perform 'Prepare OR'", written)
             self.assertIn("part def Nurse", written)
+            snaps = created["snapshots"]
+            self.assertEqual([s["name"] for s in snaps], ["model.sysml"])
+            self.assertNotIn("Prepare OR", snaps[0]["before"])
+            self.assertIn("perform 'Prepare OR'", snaps[0]["after"])
             with self.assertRaises(urllib.error.HTTPError) as ctx:
                 srv.post("/api/activity", {
                     "op": "add-action", "owner": "PerformSurgery",
@@ -1722,11 +1726,21 @@ class ViewApiTests(unittest.TestCase):
 
 
 def find_edge():
+    """Headless Chromium for the DOM tests. Edge on Windows, or Chrome."""
     for base in (os.environ.get("ProgramFiles(x86)"), os.environ.get("ProgramFiles")):
         if base:
             p = Path(base) / "Microsoft" / "Edge" / "Application" / "msedge.exe"
             if p.exists():
                 return str(p)
+    # google-chrome-stable before google-chrome: some machines put a wrapper
+    # named google-chrome first on PATH that forces a shared profile, and
+    # --dump-dom then never returns.
+    for name in ("msedge", "microsoft-edge", "microsoft-edge-stable",
+                 "google-chrome-stable", "google-chrome", "chromium",
+                 "chromium-browser"):
+        found = shutil.which(name)
+        if found:
+            return found
     return None
 
 
@@ -2285,12 +2299,18 @@ class ExpertModeRenderingTests(unittest.TestCase):
 
     def test_reading_controls_stay_available(self):
         dom = self.render()
-        for el_id in ["fitBtn", "homeBtn", "expertBtn", "zoomIn", "zoomOut",
+        for el_id in ["fitBtn", "expertBtn", "zoomIn", "zoomOut",
                       "displayBtn", "moreBtn"]:
             m = re.search(r'<button[^>]*id="%s"[^>]*>' % el_id, dom)
             self.assertIsNotNone(m, f"{el_id} not found")
             self.assertNotIn("expert-only", m.group(0), el_id)
             self.assertNotIn("edit-only", m.group(0), el_id)
+        # The header dropdown replaced the home-page overlay, so a reader
+        # can change views without turning Edit on.
+        drop = re.search(r'<select[^>]*id="viewDropdown"[^>]*>', dom)
+        self.assertIsNotNone(drop, "viewDropdown not found")
+        self.assertNotIn("expert-only", drop.group(0))
+        self.assertNotIn("edit-only", drop.group(0))
 
     def test_authoring_controls_wait_for_edit(self):
         dom = self.render()
@@ -2298,7 +2318,6 @@ class ExpertModeRenderingTests(unittest.TestCase):
             m = re.search(r'<button[^>]*id="%s"[^>]*>' % el_id, dom)
             self.assertIsNotNone(m, f"{el_id} not found")
             self.assertIn("edit-only", m.group(0), el_id)
-        self.assertIn('<label class="edit-only">', dom)
         self.assertNotIn("expert", self.body_classes(dom))
         # Display and More stay on the header; their panels are not clipped
         self.assertIn('id="displayMenu"', dom)
@@ -2532,7 +2551,7 @@ class ActivityRenderingTests(unittest.TestCase):
         # first-class View, not a drilldown: the view picker stays usable
         # and lists the auto-created Activity — <owner> entry
         act_dom = self.render(self.ACTIVITY_LAYOUT)
-        m = re.search(r'<select id="viewSel"[^>]*>', act_dom)
+        m = re.search(r'<select id="viewDropdown"[^>]*>', act_dom)
         self.assertIsNotNone(m, "view dropdown not rendered")
         self.assertNotIn("disabled", m.group(0))
         self.assertIn("Activity — Interaction", act_dom)
@@ -2614,6 +2633,7 @@ class RelatedElementsMenuTests(unittest.TestCase):
             "function visibleIds() { return new Set(activeView.elements); }\n"
             "function rebuild() {}\n"
             "function setDirty() {}\n"
+            "function finishHistory() {}\n"
             + self.RELATED_JS
         )
 
@@ -2839,6 +2859,7 @@ class LayoutSaveTests(unittest.TestCase):
             "function displayOpts() { return {}; }",
             "function setDirty() {}",
             "function flash() {}",
+            "function setSaveStatus() {}",
             "window.fetch = async (url, opts) => {",
             "  if (url === '/api/layout') posted = JSON.parse(opts.body);",
             "  return { ok: true };",
@@ -2852,190 +2873,30 @@ class LayoutSaveTests(unittest.TestCase):
         ])
         saved = run_js(setup, "null")
         self.assertEqual(sorted(saved), ["activeView", "docs", "expertMode",
-                                         "home", "treeOpen", "version"])
+                                         "treeOpen", "version"])
+        self.assertNotIn("home", saved)
         self.assertEqual(saved["docs"], {"P::A": "a.pdf"})
 
 
 @unittest.skipUnless(EDGE, "Microsoft Edge not found; skipping rendering tests")
-class HomePageTests(unittest.TestCase):
-    """The home page: the landing screen with the introduction and a card
-    per View. The card-building code runs standalone against stubs (a click
-    is not something --dump-dom can simulate); boot visibility is checked on
-    the real page."""
-
-    HOME_JS = None
-
-    HOME_DOM = (
-        '<div id="home" class="hidden"><h1 id="homeTitle"></h1>'
-        '<div id="homeSub"></div><div id="homeViews"></div></div>'
-        '<button id="homeBtn"></button>'
-    )
-
-    VIEWS = [
-        {"id": "ctx", "name": "Context", "description": "Who uses it.",
-         "elementCount": 7},
-        {"id": "bare", "name": "Bare", "description": "", "elementCount": 1},
-    ]
+class ViewDropdownTests(unittest.TestCase):
+    """The header dropdown replaced the home-page overlay. Readers switch
+    views from it, and the page opens on the diagram."""
 
     @classmethod
     def setUpClass(cls):
-        cls.HOME_JS = viewer_js(
-            "// ------------------------------------------------------------- home page",
-            "async function createView")
         cls.srv = ServerFixture()
 
     @classmethod
     def tearDownClass(cls):
         cls.srv.close()
 
-    def drive(self, views, expr, action="", model="null"):
-        """Run the viewer's own home-page code against a stub DOM."""
-        setup = "\n".join([
-            # append, never replace: run_js needs its own <pre id="out">
-            'document.body.insertAdjacentHTML("beforeend", '
-            + json.dumps(self.HOME_DOM) + ");",
-            "let views = " + json.dumps(views) + ";",
-            "const model = " + model + ";",
-            "let homeOpen = false;",
-            "let activeViewId = null;",
-            "let switched = [];",
-            "async function switchToView(id) { switched.push(id);"
-            " activeViewId = id; }",
-            self.HOME_JS,
-            action,
-        ])
-        return run_js(setup, expr)
-
-    def cards(self):
-        return self.drive(self.VIEWS, "cards", action=(
-            "setHomeOpen(true);\n"
-            'const cards = [...document.querySelectorAll("#homeViews .card")]'
-            '  .map(c => ({ id: c.dataset.viewId,'
-            '               name: c.querySelector(".name").textContent,'
-            '               desc: c.querySelector(".desc").textContent,'
-            '               descClass: c.querySelector(".desc").className,'
-            '               count: c.querySelector(".count").textContent }));'
-        ))
-
-    def test_one_card_per_view_in_listing_order(self):
-        self.assertEqual([c["id"] for c in self.cards()], ["ctx", "bare"])
-
-    def test_card_shows_name_description_and_element_count(self):
-        ctx = self.cards()[0]
-        self.assertEqual(ctx["name"], "Context")
-        self.assertEqual(ctx["desc"], "Who uses it.")
-        self.assertEqual(ctx["count"], "7 elements")
-
-    def test_activity_card_says_activity_diagram(self):
-        views = [{"id": "act", "name": "Activity — Go",
-                  "description": "Swimlanes.", "elementCount": 0,
-                  "kind": "activity", "activityOwner": "P::Go"}]
-        cards = self.drive(views, "cards", action=(
-            "setHomeOpen(true);\n"
-            'const cards = [...document.querySelectorAll("#homeViews .card")]'
-            '  .map(c => ({ name: c.querySelector(".name").textContent,'
-            '               count: c.querySelector(".count").textContent }));'
-        ))
-        self.assertEqual(cards[0]["name"], "Activity — Go")
-        self.assertEqual(cards[0]["count"], "Activity diagram")
-
-    def test_card_without_a_description_says_so(self):
-        # a View file may simply not carry one; the card must not look broken
-        bare = self.cards()[1]
-        self.assertEqual(bare["desc"], "No description.")
-        self.assertIn("none", bare["descClass"])
-        self.assertEqual(bare["count"], "1 element")
-
-    def test_subtitle_names_the_package_and_counts_the_model(self):
-        model = json.dumps({"package": "CoolSpine",
-                            "nodes": [{"id": "a"}, {"id": "b"}],
-                            "edges": [{"kind": "x"}]})
-        sub = self.drive(self.VIEWS, "sub", model=model, action=(
-            "setHomeOpen(true);\n"
-            'const sub = document.getElementById("homeSub").textContent;'
-        ))
-        self.assertEqual(
-            sub, "CoolSpine · 2 elements · 1 relationship · 2 views")
-
-    def test_subtitle_survives_a_model_that_has_not_loaded_yet(self):
-        sub = self.drive(self.VIEWS, "sub", action=(
-            "setHomeOpen(true);\n"
-            'const sub = document.getElementById("homeSub").textContent;'
-        ))
-        self.assertEqual(sub, "2 views")
-
-    def test_folder_without_views_gets_a_hint_instead_of_cards(self):
-        empty = self.drive([], "empty", action=(
-            "setHomeOpen(true);\n"
-            'const empty = document.querySelector("#homeViews .empty")'
-            '                .textContent;'
-        ))
-        self.assertIn("No views yet", empty)
-
-    def test_clicking_a_card_opens_that_view_and_leaves_home(self):
-        # the handler awaits switchToView, so the result is read back one
-        # microtask later (same trick as RevertTests) rather than inline
-        r = self.drive(self.VIEWS, "null", action=(
-            "setHomeOpen(true);\n"
-            "document.querySelector('[data-view-id=\"bare\"]').click();\n"
-            "Promise.resolve().then(() => {\n"
-            '  document.getElementById("out").textContent = JSON.stringify({'
-            "    switched, homeOpen,"
-            '    hidden: document.getElementById("home").classList'
-            '             .contains("hidden") });\n'
-            "});"
-        ))
-        self.assertEqual(r["switched"], ["bare"])
-        self.assertFalse(r["homeOpen"])
-        self.assertTrue(r["hidden"])
-
-    def test_toggling_home_shows_and_hides_the_panel(self):
-        r = self.drive(self.VIEWS, "r", action=(
-            "setHomeOpen(true);\n"
-            'const shown = !document.getElementById("home").classList'
-            '                 .contains("hidden");\n'
-            "setHomeOpen(false);\n"
-            'const r = { shown, hidden: document.getElementById("home")'
-            '              .classList.contains("hidden") };'
-        ))
-        self.assertTrue(r["shown"])
-        self.assertTrue(r["hidden"])
-
-    # -- boot behaviour, on the real page ---------------------------------
-
-    def render(self, layout=None):
-        if layout is None:
-            self.srv.layout_path.unlink(missing_ok=True)
-        else:
-            self.srv.layout_path.write_text(json.dumps(layout),
-                                            encoding="utf-8")
-        return dump_dom(self.srv.url)
-
-    def home_hidden(self, dom):
-        m = re.search(r'<div id="home"[^>]*>', dom)
-        self.assertIsNotNone(m, "home page not rendered")
-        return "hidden" in m.group(0)
-
-    def test_first_launch_lands_on_the_home_page(self):
-        self.assertFalse(self.home_hidden(self.render()))
-
-    def test_saved_session_inside_a_view_skips_the_home_page(self):
-        self.assertTrue(self.home_hidden(self.render({"home": False})))
-
-    def test_saved_session_on_home_comes_back_to_it(self):
-        self.assertFalse(self.home_hidden(self.render({"home": True})))
-
-    def test_home_page_lists_the_views_of_the_served_folder(self):
-        dom = self.render()
-        self.assertIn('data-view-id="default"', dom)
-        listed = json.loads(self.srv.get("/api/views"))[0]
-        self.assertIn(f"{listed['elementCount']} elements", dom)
-
-    def test_home_button_is_not_expert_only(self):
-        # orientation is for first-time readers above all
-        m = re.search(r'<button[^>]*id="homeBtn"[^>]*>', self.render())
-        self.assertIsNotNone(m)
-        self.assertNotIn("expert-only", m.group(0))
+    def test_dropdown_lists_the_folder_views(self):
+        dom = dump_dom(self.srv.url)
+        self.assertIn('id="viewDropdown"', dom)
+        self.assertIn(">Default<", dom)
+        self.assertNotIn('id="home"', dom)
+        self.assertNotIn('id="homeBtn"', dom)
 
 
 @unittest.skipUnless(EDGE, "Microsoft Edge not found; skipping rendering tests")
@@ -5019,6 +4880,360 @@ class EmbeddedAssistantTests(unittest.TestCase):
         self.assertIn("system_explorer/assistant_panel.css", names)
         page = (root / "src" / "system_explorer" / "viewer.html").read_text(encoding="utf-8")
         self.assertIn("function refreshAfterAssistantEdit", page)
+
+
+class TraceLinkParserTests(unittest.TestCase):
+    """Stakeholder features and derivation dependencies are trace edges."""
+
+    def test_stakeholder_feature_and_derivation_dependency(self):
+        model = parse_sysml("""
+        package P {
+            part def Surgeon;
+            requirement def UserNeed;
+            requirement <'NEED-1'> Warm : UserNeed {
+                stakeholder surgeon : Surgeon;
+            }
+            requirement <'REQ-1'> Heat;
+            #derivation dependency deriveHeat from 'REQ-1' to 'NEED-1';
+        }
+        """)
+        self.assertEqual(model["warnings"], [])
+        stakeholders = edges_of(model, "stakeholder")
+        self.assertEqual(
+            [(e["from"], e["to"], e["label"]) for e in stakeholders],
+            [("P::Warm", "P::Surgeon", "surgeon")],
+        )
+        derived = edges_of(model, "derive")
+        self.assertEqual(
+            [(e["from"], e["to"], e["label"]) for e in derived],
+            [("P::Heat", "P::Warm", "«derive»")],
+        )
+
+    def test_second_stakeholder_role_of_the_same_type_is_one_edge(self):
+        model = parse_sysml("""
+        package P {
+            part def Surgeon;
+            requirement def Need {
+                stakeholder lead : Surgeon;
+                stakeholder backup : Surgeon;
+            }
+        }
+        """)
+        self.assertEqual(len(edges_of(model, "stakeholder")), 1)
+        self.assertEqual(model["warnings"], [])
+
+    def test_unresolved_stakeholder_and_derive_warn(self):
+        model = parse_sysml("""
+        package P {
+            requirement def Need {
+                stakeholder ghost : Nobody;
+            }
+            #derivation dependency d from Missing to Need;
+        }
+        """)
+        self.assertEqual(edges_of(model, "stakeholder"), [])
+        self.assertEqual(edges_of(model, "derive"), [])
+        text = " ".join(model["warnings"])
+        self.assertIn("Nobody", text)
+        self.assertIn("Missing", text)
+
+
+class ModelEditTests(unittest.TestCase):
+    """Quick-add writes standard SysML and the explorer's own check accepts it."""
+
+    def test_stakeholder_use_case_and_actor_round_trip(self):
+        from system_explorer.model_edit import apply_edit
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            (folder / "CoolSpineSystemContext.sysml").write_text(
+                "package CoolSpineSystemContext {\n    part def Patient;\n}\n",
+                encoding="utf-8",
+            )
+            added = apply_edit(folder, {
+                "action": "add_stakeholder",
+                "name": "the nurse",
+                "description": "Watches the patient during cooling.",
+            })
+            self.assertTrue(added["ok"], added)
+            self.assertEqual(added["addedIds"], ["CoolSpineSystemContext::TheNurse"])
+            text = (folder / "CoolSpineSystemContext.sysml").read_text(encoding="utf-8")
+            self.assertIn("part def TheNurse", text)
+            self.assertIn("Watches the patient during cooling.", text)
+            self.assertNotIn("actor def", text)
+
+            case = apply_edit(folder, {
+                "action": "add_use_case",
+                "name": "Deliver cooling",
+                "description": "Cool the patient to the target.",
+            })
+            self.assertTrue(case["ok"], case)
+            use_text = (folder / "UseCases.sysml").read_text(encoding="utf-8")
+            self.assertIn("use case def DeliverCooling", use_text)
+            self.assertIn("package UseCases", use_text)
+
+            linked = apply_edit(folder, {
+                "action": "link_actor",
+                "stakeholder": "TheNurse",
+                "useCase": "DeliverCooling",
+            })
+            self.assertTrue(linked["ok"], linked)
+            use_text = (folder / "UseCases.sysml").read_text(encoding="utf-8")
+            self.assertIn("actor theNurse : TheNurse;", use_text)
+            self.assertIn("private import CoolSpineSystemContext::*;", use_text)
+            self.assertIn("CoolSpineSystemContext::TheNurse", linked["showIds"])
+            self.assertIn("UseCases::DeliverCooling", linked["showIds"])
+
+            again = apply_edit(folder, {
+                "action": "link_actor",
+                "stakeholder": "TheNurse",
+                "useCase": "DeliverCooling",
+            })
+            self.assertFalse(again["ok"])
+            self.assertIn("already", again["error"])
+
+            dup = apply_edit(folder, {"action": "add_stakeholder", "name": "TheNurse"})
+            self.assertFalse(dup["ok"])
+
+            env = os.environ.copy()
+            env["PYTHONPATH"] = str(SRC)
+            checked = subprocess.run(
+                [sys.executable, "-m", "system_explorer", str(folder), "--check"],
+                capture_output=True, text=True, env=env,
+            )
+            self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+            self.assertIn("no warnings", checked.stdout)
+
+    def test_plain_words_and_refused_names(self):
+        from system_explorer.model_edit import upper_camel, apply_edit
+        self.assertEqual(upper_camel("Nurse"), "Nurse")
+        self.assertEqual(upper_camel("notified body"), "NotifiedBody")
+        self.assertIsNone(upper_camel("123"))
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            (folder / "m.sysml").write_text("package M { part def A; }\n", encoding="utf-8")
+            refused = apply_edit(folder, {"action": "add_stakeholder", "name": "..."})
+            self.assertFalse(refused["ok"])
+            self.assertFalse(list(folder.glob("*Context.sysml")))
+
+    def test_restore_rejects_paths_outside_the_folder(self):
+        from system_explorer.model_edit import apply_edit
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            (folder / "m.sysml").write_text("package M { part def A; }\n", encoding="utf-8")
+            bad = apply_edit(folder, {"action": "restore_files", "files": [
+                {"name": "../evil.sysml", "text": "package X { part def Z; }\n"},
+            ]})
+            self.assertFalse(bad["ok"])
+            self.assertFalse((folder.parent / "evil.sysml").exists())
+            wiped = apply_edit(folder, {"action": "restore_files", "files": [
+                {"name": "m.sysml", "text": ""},
+            ]})
+            self.assertTrue(wiped["ok"], wiped)
+            self.assertFalse((folder / "m.sysml").exists())
+
+    def test_http_edit_and_hosted_commit(self):
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            (folder / "SystemContext.sysml").write_text(
+                "package SystemContext {\n}\n", encoding="utf-8",
+            )
+            commits = []
+
+            class Sync:
+                def pull(self):
+                    return None
+
+                def commit_and_push(self, paths, message, user=None):
+                    commits.append((paths, message, user))
+
+            class Auth:
+                def session_user(self, cookie):
+                    return {"login": "ada", "name": "Ada", "id": 7}
+
+            cloud = SimpleNamespace(sync=Sync(), auth=Auth(), repo_root=folder)
+            handler = make_handler(folder, folder / "layout.json", cloud)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                port = server.server_address[1]
+                body = json.dumps({
+                    "action": "add_stakeholder",
+                    "name": "Surgeon",
+                    "description": "Uses the device.",
+                }).encode()
+                request = urllib.request.Request(
+                    f"http://127.0.0.1:{port}/api/model/edit",
+                    data=body,
+                    headers={"Content-Type": "application/json"},
+                )
+                payload = json.load(urllib.request.urlopen(request, timeout=10))
+                self.assertTrue(payload["ok"], payload)
+                self.assertEqual(commits[0][1], "Add stakeholder Surgeon")
+                self.assertEqual(commits[0][2]["login"], "ada")
+                text = (folder / "SystemContext.sysml").read_text(encoding="utf-8")
+                self.assertIn("part def Surgeon", text)
+            finally:
+                server.shutdown()
+                server.server_close()
+
+
+@unittest.skipUnless(EDGE, "Microsoft Edge not found; skipping rendering tests")
+class TraceAndInterviewDomTests(unittest.TestCase):
+    """The traceability view dims a thread; interview views show quick-add."""
+
+    TRACE = """
+    package Ctx {
+        part def Surgeon;
+        part def Nurse;
+        part def Device;
+        use case def Cool {
+            actor surgeon : Surgeon;
+            subject device : Device;
+            satisfy requirement 'REQ-1';
+        }
+        requirement <'NEED-1'> Warm {
+            stakeholder surgeon : Surgeon;
+        }
+        requirement <'REQ-1'> Heat;
+        #derivation dependency d from 'REQ-1' to 'NEED-1';
+        verification def Check {
+            objective { verify requirement 'REQ-1'; }
+        }
+    }
+    """
+
+    def test_trace_closure_highlights_the_thread_and_dims_the_rest(self):
+        model = parse_sysml(self.TRACE)
+        js = viewer_js("const TRACE_KINDS", "function selectNode")
+        ids = [n["id"] for n in model["nodes"]]
+        edge_json = json.dumps([
+            {"kind": e["kind"], "from": e["from"], "to": e["to"],
+             "label": e.get("label") or ""}
+            for e in model["edges"]
+        ])
+        setup = "\n".join([
+            "function edgeKey(d) { return d.kind + '|' + d.from + '|' + d.to + '|' + (d.label || ''); }",
+            "function isTraceView(v) {",
+            "  if (!v || v.kind === 'activity') return false;",
+            "  return ((v.name || '') + ' ' + (v.id || '')).toLowerCase().includes('trace');",
+            "}",
+            "function makeEl() { const d = document.createElement('div'); document.body.appendChild(d); return d; }",
+            f"const ids = {json.dumps(ids)};",
+            "let nodes = {};",
+            "for (const id of ids) nodes[id] = { el: makeEl() };",
+            f"const rawEdges = {edge_json};",
+            "let edges = rawEdges.map(data => ({ data, el: makeEl() }));",
+            "let selection = null;",
+            "let activeView = { id: 'traceability', name: 'Traceability', kind: 'bdd' };",
+            "let mode = 'bdd';",
+            "function syncActivityBar() {}",
+            js,
+            "selection = { type: 'node', id: 'Ctx::Heat' };",
+            "applySelection();",
+        ])
+        got = run_js(setup, """({
+          focus: document.body.classList.contains('trace-focus'),
+          heat: nodes['Ctx::Heat'].el.classList.contains('sel'),
+          warm: nodes['Ctx::Warm'].el.classList.contains('hl'),
+          surgeon: nodes['Ctx::Surgeon'].el.classList.contains('hl'),
+          cool: nodes['Ctx::Cool'].el.classList.contains('hl'),
+          check: nodes['Ctx::Check'].el.classList.contains('hl'),
+          nurse: nodes['Ctx::Nurse'].el.className,
+          derive: edges.find(e => e.data.kind === 'derive').el.classList.contains('hl'),
+          satisfy: edges.find(e => e.data.kind === 'satisfy').el.classList.contains('hl')
+        })""")
+        self.assertTrue(got["focus"])
+        self.assertTrue(got["heat"])
+        self.assertTrue(got["warm"])
+        self.assertTrue(got["surgeon"])
+        self.assertTrue(got["cool"])
+        self.assertTrue(got["check"])
+        self.assertNotIn("hl", got["nurse"])
+        self.assertNotIn("sel", got["nurse"])
+        self.assertTrue(got["derive"])
+        self.assertTrue(got["satisfy"])
+
+    def test_click_on_a_trace_view_does_not_open_the_sheet(self):
+        page = VIEWER_HTML.read_text(encoding="utf-8")
+        self.assertIn("if (isTraceView(activeView)) hideSheet();", page)
+        self.assertIn("else showSheet(nodeEl.dataset.id);", page)
+
+    def test_context_view_shows_quick_add_and_trace_view_does_not(self):
+        elements = [n["id"] for n in parse_sysml(self.TRACE)["nodes"]]
+        views = {
+            "context": {
+                "name": "Context", "elements": elements, "nodes": {},
+                "hiddenEdges": [], "view": None, "options": {},
+            },
+        }
+        srv = ServerFixture(text=self.TRACE, views=views)
+        try:
+            srv.layout_path.write_text(
+                json.dumps({"activeView": "context", "home": False}),
+                encoding="utf-8")
+            dom = dump_dom(srv.url)
+            self.assertIn('id="quickAdd"', dom)
+            self.assertNotRegex(dom, r'<div id="quickAdd"[^>]*class="hidden"')
+            self.assertIn("Stakeholder", dom)
+            self.assertIn("Use case", dom)
+            self.assertNotIn("trace-view", dom.split("<body", 1)[-1][:80])
+        finally:
+            srv.close()
+
+        views = {
+            "traceability": {
+                "name": "Traceability", "elements": elements, "nodes": {},
+                "hiddenEdges": [], "view": None, "options": {},
+            },
+        }
+        srv = ServerFixture(text=self.TRACE, views=views)
+        try:
+            srv.layout_path.write_text(
+                json.dumps({"activeView": "traceability", "home": False}),
+                encoding="utf-8")
+            dom = dump_dom(srv.url)
+            self.assertIn('id="quickAdd" class="hidden"', dom)
+            self.assertRegex(dom, r"<body[^>]*trace-view")
+            self.assertNotIn('class="sheet"', dom.split("<body", 1)[0] + "BODY")
+            self.assertNotRegex(dom, r"<body[^>]*\bsheet\b")
+        finally:
+            srv.close()
+
+    def test_activity_view_hides_quick_add(self):
+        views = {
+            "activity-context": {
+                "name": "Context activity", "kind": "activity",
+                "activityOwner": "Ctx::Cool",
+                "elements": [], "nodes": {}, "hiddenEdges": [],
+                "view": None, "options": {},
+            },
+        }
+        srv = ServerFixture(text=self.TRACE, views=views)
+        try:
+            srv.layout_path.write_text(
+                json.dumps({"activeView": "activity-context"}),
+                encoding="utf-8")
+            dom = dump_dom(srv.url)
+            self.assertIn('id="quickAdd" class="hidden"', dom)
+            self.assertNotRegex(dom, r"<body[^>]*trace-view")
+        finally:
+            srv.close()
+
+    def test_save_status_and_undo_buttons_are_on_the_toolbar(self):
+        srv = ServerFixture(text=self.TRACE, views={
+            "v": {"name": "Plain", "elements": [], "nodes": {},
+                  "hiddenEdges": [], "view": None, "options": {}},
+        })
+        try:
+            dom = dump_dom(srv.url)
+            self.assertIn('id="undoBtn"', dom)
+            self.assertIn('id="redoBtn"', dom)
+            self.assertIn(">Saved<", dom)
+            self.assertIn("Saving", (SRC / "system_explorer" / "viewer.html").read_text(encoding="utf-8"))
+        finally:
+            srv.close()
 
 
 if __name__ == "__main__":

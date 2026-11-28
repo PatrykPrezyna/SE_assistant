@@ -24,14 +24,38 @@ _QUOTE_WORDS = frozenset("""
 """.split())
 
 
+def _texts(folder):
+    """Bare filename to current text, for the undo snapshot."""
+    folder = Path(folder)
+    if not folder.is_dir():
+        return {}
+    return {
+        p.name: p.read_text(encoding="utf-8")
+        for p in folder.glob("*.sysml") if p.is_file()
+    }
+
+
+def _snapshots(folder, before):
+    after = _texts(folder)
+    names = sorted(set(before) | set(after))
+    return [
+        {"name": name, "before": before.get(name, ""), "after": after.get(name, "")}
+        for name in names
+        if before.get(name, "") != after.get(name, "")
+    ]
+
+
 def apply_edit(folder, command):
     """Apply one activity command to the model folder. Returns a result dict."""
     folder = Path(folder)
+    before = _texts(folder)
     if not isinstance(command, dict):
         raise ActivityEditError("The edit was not understood.")
     op = (command.get("op") or "").strip()
     if op == "add-activity":
-        return _add_activity(folder, command)
+        result = _add_activity(folder, command)
+        result["snapshots"] = _snapshots(folder, before)
+        return result
     owner = _resolve_owner(folder, command.get("owner"))
     text, path = _read_owner_file(folder, owner)
     behavior = _behavior_for(folder, owner)
@@ -48,6 +72,7 @@ def apply_edit(folder, command):
         "owner": owner["id"],
         "file": path.name,
         "files": [p.name for p in written],
+        "snapshots": _snapshots(folder, before),
         "message": _message(op, command, owner),
     }
 

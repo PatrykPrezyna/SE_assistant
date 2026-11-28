@@ -161,6 +161,19 @@ RE_SATISFY = re.compile(
 RE_VERIFY = re.compile(
     r"^verify\s+(?:requirement\s+)?(?:'([^']+)'|([\w:.\-]+))(?:\s+by\s+.+)?$"
 )
+# stakeholder feature on a requirement (standard SysML v2): who stated it.
+# One edge per (owner, type); a second role of the same type is the same link.
+RE_STAKEHOLDER = re.compile(
+    r"^stakeholder\s+(\w+)\s*:\s*([\w][\w:]*)\s*$"
+)
+# derivation dependency (standard SysML v2), one statement:
+#   #derivation dependency deriveHeat from 'REQ-1' to 'NEED-1';
+# `from` is the derived element, `to` is the source it is derived from.
+RE_DERIVE = re.compile(
+    r"^#derivation\s+dependency\s+(?:\w+\s+)?"
+    r"from\s+(?:'([^']+)'|([\w:.\-]+))\s+"
+    r"to\s+(?:'([^']+)'|([\w:.\-]+))$"
+)
 # connection statement forms (endpoints may be dotted part paths):
 #   connect a.b to c.d                              (standard SysML v2)
 #   connection name : a.b to c.d                    (shorthand, see examples)
@@ -318,6 +331,19 @@ def _attr_line(m):
     if value:
         line += f" = {value.strip()}"
     return line
+
+
+def _add_stakeholder_edge(model, owner_id, role, type_name):
+    for edge in model.edges:
+        if (edge.get("kind") == "stakeholder" and edge.get("from") == owner_id
+                and edge.get("to_name") == type_name):
+            return
+    model.edges.append({
+        "kind": "stakeholder",
+        "from": owner_id,
+        "to_name": type_name,
+        "label": role,
+    })
 
 
 def _collect_doc(children, model):
@@ -648,6 +674,10 @@ def _interpret_def(block, model, pkg_path, warn):
                 }
             )
             continue
+        sh = RE_STAKEHOLDER.match(header)
+        if sh:
+            _add_stakeholder_edge(model, node["id"], sh.group(1), sh.group(2))
+            continue
         if header == "objective" or header.startswith("objective "):
             for sub in child["children"] or []:
                 nested = RE_VERIFY.match(sub["header"])
@@ -798,6 +828,10 @@ def _interpret_usage(header, children, model, pkg_path, warn):
         model.edges.append(
             {"kind": "typing", "from": node["id"], "to_name": typ, "label": ""}
         )
+    for child in children or []:
+        sh = RE_STAKEHOLDER.match(child["header"])
+        if sh:
+            _add_stakeholder_edge(model, node["id"], sh.group(1), sh.group(2))
     return node
 
 
@@ -821,6 +855,16 @@ def _walk(children, model, pkg_path, deferred_supers, warn):
             continue
         if RE_USAGE.match(header):
             _interpret_usage(header, block["children"], model, pkg_path, warn)
+            continue
+        flat = re.sub(r"\s+", " ", header).strip()
+        derived = RE_DERIVE.match(flat)
+        if derived:
+            model.edges.append({
+                "kind": "derive",
+                "from_name": derived.group(1) or derived.group(2),
+                "to_name": derived.group(3) or derived.group(4),
+                "label": "«derive»",
+            })
             continue
         _warn_if_unknown(header, warn)
 
@@ -867,6 +911,16 @@ def parse_models(texts, names=None):
                 f"(from {child_id})"
             )
     for e in model.edges:
+        if "from_name" in e:
+            from_name = e.pop("from_name")
+            from_id = model.resolve(from_name)
+            if not from_id:
+                model.warnings.append(
+                    f"unresolved {e['kind']} source '{from_name}'"
+                )
+                e.pop("to_name", None)
+                continue
+            e["from"] = from_id
         to_name = e.pop("to_name", "") or ""
         to_id = model.resolve(to_name)
         if to_id:
@@ -1059,9 +1113,9 @@ def make_handler(folder: Path, layout_path: Path, cloud=None, assistant_settings
                 if i + chunk < len(view):
                     time.sleep(0.01)
 
-        def _send(self, body, ctype="application/json"):
+        def _send(self, body, ctype="application/json", status=200):
             data = body.encode("utf-8")
-            self.send_response(200)
+            self.send_response(status)
             self.send_header("Content-Type", f"{ctype}; charset=utf-8")
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
@@ -1300,6 +1354,29 @@ def make_handler(folder: Path, layout_path: Path, cloud=None, assistant_settings
                 self.end_headers()
                 self.wfile.write(data)
                 return
+            if path == "/api/model/edit":
+                try:
+                    body = self._read_json_body()
+                except (ValueError, json.JSONDecodeError):
+                    self._send('{"ok": false, "error": "Request body must be JSON."}',
+                               status=400)
+                    return
+                from .model_edit import apply_edit
+                try:
+                    result = apply_edit(folder, body)
+                except Exception as exc:
+                    print(f"model edit failed: {exc}", file=sys.stderr)
+                    self._send('{"ok": false, "error": "Could not update the model."}',
+                               status=500)
+                    return
+                if result.get("ok") and result.get("changed"):
+                    self._saved(
+                        [folder / name for name in result["changed"]],
+                        result.get("message") or "Update model",
+                    )
+                self._send(json.dumps(result),
+                           status=200 if result.get("ok") else 400)
+                return
             if path == "/api/layout":
                 data = self._read_json_body()  # validate before writing
                 layout_path.write_text(
@@ -1360,6 +1437,7 @@ def make_handler(folder: Path, layout_path: Path, cloud=None, assistant_settings
                     "owner": result.get("owner"),
                     "file": result.get("file"),
                     "message": result.get("message"),
+                    "snapshots": result.get("snapshots") or [],
                 }))
             else:
                 self.send_error(404)
