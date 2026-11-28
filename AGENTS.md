@@ -119,7 +119,7 @@ From `FEATURES.md` (always check the latest version):
 - Part definitions (abstract, with attributes, parts, connections)
 - Usages (typed, nested, singleton)
 - Requirements (with short names, `satisfy` edges)
-- Actions (with `first`, `then`, `fork`, `join`, `flow of`)
+- Action definitions (`action def`) with nested actions, `first`, `then` succession
 - Attributes (typed, with defaults, redefinitions)
 - Specialization (`:>`) and typing (`:`)
 - Enumerations
@@ -130,11 +130,12 @@ From `FEATURES.md` (always check the latest version):
 - No `import` resolution (all files merged before resolving)
 - Name resolution by simple name only (no qualified paths)
 - String literals inside blocks can corrupt brace nesting (don't use `{` in strings)
+- Item flows (`flow <source> to <target>;`) not yet parsed
 - Many edge cases in the full SysML v2 grammar
 
 **Custom dialect** (deprecated, being migrated):
 - `actor def` (use `part def` + `actor` usages instead)
-- `perform action` syntax (use standard `perform <action> by <part>;` allocations)
+- `perform action` syntax (use standard `action def` with nested parts containing `perform <action>;` statements)
 
 ## Common Pitfalls
 

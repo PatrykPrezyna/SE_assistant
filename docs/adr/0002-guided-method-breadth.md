@@ -13,7 +13,7 @@ The SE assistant could take two strategic directions:
 
 ## Decision
 
-Pursue **breadth over depth**: implement guided method support across multiple SE activities with pragmatic AI assistance at each step, rather than copilot-level depth on one activity.
+Pursue **breadth over depth**: implement guided method support across several SE activities with pragmatic AI assistance at each step, rather than copilot-level depth on one activity.
 
 ## Rationale
 
@@ -70,16 +70,7 @@ Replicating this pattern 5–6 more times proves the methodology scales. Buildin
 
 ### Implementation Path
 
-Following activities to implement (in order):
-
-1. ✅ Stakeholder analysis (complete)
-2. **System context and use cases** (next, see ADR 0003)
-3. Use case activity flows (see ADR 0004)
-4. Requirements quality linting
-5. Design tradespace (Pugh matrix)
-6. Verification status tracking
-
-Each follows the pattern: register file → `check` command → `apply` writes SysML.
+Starting with stakeholder analysis (✅ complete), then system context and use cases (see ADRs 0003, 0004). Additional activities will be determined as the methodology evolves, following the pattern: register file → `check` command → `apply` writes SysML.
 
 ### Future Evolution
 

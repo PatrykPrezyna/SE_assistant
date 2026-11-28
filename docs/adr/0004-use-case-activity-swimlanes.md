@@ -51,11 +51,11 @@ action PrepareSurgery {
 
 This is not in the SysML v2 spec and fails official parser validation.
 
-**Standard SysML v2 uses `perform` as an allocation**:
+**Standard SysML v2 uses `perform` inside part definitions**:
 
 ```sysml
 // STANDARD SysML v2
-activity PerformSurgeryActivity {
+action def PerformSurgeryActivity {
     // Actions
     action preparePatient;
     first preparePatient;
@@ -66,12 +66,8 @@ activity PerformSurgeryActivity {
     action makeSurgicalIncision;
     then makeSurgicalIncision;
     
-    action monitorVitalSigns;
-    action performSurgery;
-    fork makeSurgicalIncision;
-    then monitorVitalSigns;
-    then performSurgery;
-    join;
+    action performSurgicalProcedure;
+    then performSurgicalProcedure;
     
     action closeIncision;
     then closeIncision;
@@ -79,31 +75,35 @@ activity PerformSurgeryActivity {
     action recoverPatient;
     then recoverPatient;
     
-    // Actor part definitions
-    part nurse : Nurse;
-    part surgeon : Surgeon;
-    part anesthesiologist : Anesthesiologist;
+    // Actor part definitions with perform statements (allocations)
+    part nurse : Nurse {
+        perform preparePatient;
+        perform recoverPatient;
+    }
     
-    // Allocations (which actor performs which action)
-    perform preparePatient by nurse;
-    perform monitorVitalSigns by nurse;
-    perform administerAnesthesia by anesthesiologist;
-    perform makeSurgicalIncision by surgeon;
-    perform performSurgery by surgeon;
-    perform closeIncision by surgeon;
-    perform recoverPatient by nurse;
+    part surgeon : Surgeon {
+        perform makeSurgicalIncision;
+        perform performSurgicalProcedure;
+        perform closeIncision;
+    }
     
-    // Item flow
-    flow of patient : Patient from preparePatient to administerAnesthesia;
+    part anesthesiologist : Anesthesiologist {
+        perform administerAnesthesia;
+    }
+    
+    // Item flows
+    flow preparePatient.prepared to administerAnesthesia.patient;
 }
 ```
 
-The viewer **derives swimlanes from `perform` relationships**:
+The viewer **derives swimlanes from `perform` statements in nested parts**:
 
-- Find all `perform <action> by <part>;` statements
-- Group actions by the `<part>` they're allocated to
+- Find all `part <name> : <Type> { perform <action>; }` patterns
+- Group actions by the `<part>` that performs them
 - Render each part's actions in a vertical lane
 - Actions with no `perform` go in "unassigned"
+
+**Note**: `fork`/`join` keywords shown in the original example do not exist in standard SysML v2 (confirmed via official parser validation). Concurrency is implicit when multiple parts perform actions.
 
 ### Migration from Custom Dialect
 
@@ -113,7 +113,7 @@ Existing models using `perform action by` need migration:
 2. Add `perform <action> by <part>;` allocations at the activity level
 3. Update the parser to **stop accepting** the custom `perform action` syntax
 
-The migration is documented in a separate guide (similar to the `actor def` migration plan in the architecture review).
+The migration will be documented in a separate guide: `docs/migrations/perform-action-to-action-def.md`
 
 ### Rendering Approach
 
@@ -124,14 +124,11 @@ Swimlane layout is a **viewer concern**, not a model structure:
 - The user arranges action positions within lanes (manual layout, like block diagrams)
 - Positions are saved to `views/<id>.json` with lane metadata
 
-### Fork/Join Semantics
+### Concurrency Semantics
 
-Concurrent actions use standard SysML v2 `fork` and `join`:
+**Important**: Standard SysML v2 does not have `fork`/`join` keywords (confirmed via official parser validation).
 
-- `fork <action>;` indicates "this point splits into parallel branches"
-- Successor `then` statements after a fork define parallel actions
-- `join;` indicates "wait for all parallel branches to complete"
-- Example: after incision, fork into surgery + monitoring, then join before closing
+Concurrency is implicit when multiple parts perform actions in parallel. The viewer may choose to visually represent this through layout (e.g., actions at the same vertical level across different lanes) or leave it implicit.
 
 ### Item Flows
 

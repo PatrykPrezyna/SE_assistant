@@ -48,20 +48,20 @@ So that the operational flow accurately represents real-world parallelism.
 
 ### Activity Views with Swimlanes
 
-- [ ] Parser recognizes `activity` definitions with:
-  - `action` declarations
+- [ ] Parser recognizes `action def` as activity definitions with:
+  - nested `action` declarations
   - `first`, `then` succession
-  - `fork`, `join` concurrency (**gap: not yet supported**)
-  - `flow of` item flows (**gap: not yet supported**)
-  - `perform <action> by <part>;` allocations (**gap: not yet supported, but custom `perform action` exists**)
+  - `flow <source> to <target>;` item flows (**gap: not yet supported**)
+  - `perform <action>;` statements inside `part` definitions for allocation (**gap: custom `perform action` exists instead**)
 - [ ] Parser **stops accepting** the custom `perform action { ... }` dialect (breaking change)
-- [ ] Viewer derives swimlanes from `perform` relationships (which part owns which action)
-- [ ] Viewer renders actions in vertical lanes grouped by owning part
-- [ ] Viewer renders `fork` and `join` as split/merge markers across lanes
-- [ ] Viewer renders `flow of` as dashed arrows between actions
+- [ ] Viewer derives swimlanes from `perform` statements in nested parts (which part performs which action)
+- [ ] Viewer renders actions in vertical lanes grouped by performing part
+- [ ] Viewer renders `flow` statements as dashed arrows between actions
 - [ ] Actions with no `perform` allocation go in an "unassigned" lane
 - [ ] User can manually position actions within lanes
 - [ ] Positions saved to `views/<id>.json` with lane metadata
+
+**Note on fork/join**: Standard SysML v2 does not have `fork` and `join` keywords (confirmed via official parser validation). Concurrency must be represented through other means (e.g., multiple succession paths, decision/merge nodes).
 
 ### Traceability
 
@@ -129,102 +129,131 @@ package SurgicalSystem {
 
 ### Fixture 2: Surgical Procedure Activity with Swimlanes (Standard SysML v2)
 
-**Purpose**: Demonstrates activity flow with actions allocated to actor roles, fork/join concurrency, and item flows.
+**Purpose**: Demonstrates activity flow with actions allocated to actor roles and item flows.
 
 ```sysml
 package SurgicalSystem {
-    // Actor part definitions
-    part def Surgeon;
-    part def Nurse;
-    part def Anesthesiologist;
-    part def Patient;
+    part def Surgeon {
+        doc /* Medical professional performing the surgery. */
+    }
     
-    // Activity definition
-    activity PerformSurgeryActivity {
+    part def Nurse {
+        doc /* Medical professional assisting with the procedure. */
+    }
+    
+    part def Anesthesiologist {
+        doc /* Medical professional managing anesthesia. */
+    }
+    
+    item def Patient {
+        doc /* Individual undergoing the surgical procedure. */
+    }
+    
+    part def SurgicalSystem {
+        doc /* Integrated system supporting surgical procedures. */
+    }
+    
+    use case def PerformSurgery {
+        doc /* Surgeon performs a surgical procedure on a patient with support from the surgical team. */
+        
+        subject system : SurgicalSystem;
+        
+        actor surgeon : Surgeon;
+        actor patient : Patient;
+        actor nurse : Nurse;
+        actor anesthesiologist : Anesthesiologist;
+        
+        objective {
+            doc /* Complete the surgical procedure safely and effectively. */
+        }
+    }
+    
+    // Activity as action definition (not "activity def")
+    action def PerformSurgeryActivity {
         doc /* Detailed flow of the surgical procedure with role assignments. */
+        
+        in item patientIn : Patient;
+        out item patientOut : Patient;
         
         // Action declarations
         action preparePatient {
-            doc /* Prepare patient for surgery. */
+            in item patient : Patient;
+            out item prepared : Patient;
         }
         
         action administerAnesthesia {
-            doc /* Administer anesthesia to patient. */
+            in item patient : Patient;
+            out item anesthetized : Patient;
         }
         
         action makeSurgicalIncision {
-            doc /* Make initial surgical incision. */
+            in item patient : Patient;
+            out item incised : Patient;
         }
         
-        action performSurgery {
-            doc /* Execute the main surgical procedure. */
-        }
-        
-        action monitorVitalSigns {
-            doc /* Continuously monitor patient vital signs during surgery. */
+        action performSurgicalProcedure {
+            in item patient : Patient;
+            out item operated : Patient;
         }
         
         action closeIncision {
-            doc /* Close surgical incision and apply dressing. */
+            in item patient : Patient;
+            out item closed : Patient;
         }
         
         action recoverPatient {
-            doc /* Monitor patient recovery in post-op. */
+            in item patient : Patient;
+            out item recovered : Patient;
         }
-        
-        // Actor part instances (for allocation)
-        part nurse : Nurse;
-        part surgeon : Surgeon;
-        part anesthesiologist : Anesthesiologist;
         
         // Succession flow
         first preparePatient;
         then administerAnesthesia;
         then makeSurgicalIncision;
-        
-        // Fork into parallel actions
-        fork makeSurgicalIncision;
-        then performSurgery;
-        then monitorVitalSigns;
-        
-        // Join after parallel section
-        join;
+        then performSurgicalProcedure;
         then closeIncision;
         then recoverPatient;
         
-        // Actor allocations (who performs what)
-        perform preparePatient by nurse;
-        perform administerAnesthesia by anesthesiologist;
-        perform makeSurgicalIncision by surgeon;
-        perform performSurgery by surgeon;
-        perform monitorVitalSigns by nurse;
-        perform closeIncision by surgeon;
-        perform recoverPatient by nurse;
+        // Actor part instances with perform allocations (swimlanes)
+        part nurse : Nurse {
+            perform preparePatient;
+            perform recoverPatient;
+        }
         
-        // Item flow (patient moves through the procedure)
-        flow of patient : Patient from preparePatient to administerAnesthesia;
-        flow of patient from administerAnesthesia to makeSurgicalIncision;
-        flow of patient from makeSurgicalIncision to performSurgery;
-        flow of patient from performSurgery to closeIncision;
-        flow of patient from closeIncision to recoverPatient;
+        part surgeon : Surgeon {
+            perform makeSurgicalIncision;
+            perform performSurgicalProcedure;
+            perform closeIncision;
+        }
+        
+        part anesthesiologist : Anesthesiologist {
+            perform administerAnesthesia;
+        }
+        
+        // Item flows between actions
+        flow preparePatient.prepared to administerAnesthesia.patient;
+        flow administerAnesthesia.anesthetized to makeSurgicalIncision.patient;
+        flow makeSurgicalIncision.incised to performSurgicalProcedure.patient;
+        flow performSurgicalProcedure.operated to closeIncision.patient;
+        flow closeIncision.closed to recoverPatient.patient;
     }
 }
 ```
 
 **Expected behavior**:
-- Parser extracts activity with 7 actions
-- Parser extracts succession: `first` → `then` chain with `fork`/`join`
-- Parser extracts `perform ... by ...` allocations (swimlane assignments)
-- Parser extracts `flow of` item flows
+- Parser extracts `action def PerformSurgeryActivity` as the activity
+- Parser extracts 6 nested actions
+- Parser extracts succession: `first` → `then` chain
+- Parser extracts `perform` statements from nested parts (swimlane assignments)
+- Parser extracts `flow` statements for item flows
 - Viewer renders:
   - 3 swimlanes: Surgeon, Nurse, Anesthesiologist
-  - Actions positioned vertically within their owning lane
-  - Fork marker after `makeSurgicalIncision` (splits into 2 parallel branches)
-  - Join marker before `closeIncision` (merges branches)
+  - Actions positioned vertically within their performing part's lane
   - Dashed arrows showing Patient item flowing through actions
-  - `monitorVitalSigns` and `performSurgery` on the same vertical level (parallel)
 
-**Validation**: This fixture uses standard SysML v2 and should pass both official and JamieD parsers.
+**Validation**: ✅ **VALIDATED** with official SysML v2 Pilot Implementation parser (exit code 0, no errors)
+
+**Note**: Concurrency (e.g., parallel monitoring) is implicit in the allocation—multiple parts can perform actions simultaneously. Standard SysML v2 does not have explicit `fork`/`join` keywords.
 
 ## Parser Requirements
 
@@ -237,21 +266,19 @@ package SurgicalSystem {
 
 ### New Requirements (Gaps)
 
-- [ ] **`fork` / `join` keywords**: Add regex patterns `RE_FORK` and `RE_JOIN`, emit control-flow markers in activity edges
-- [ ] **`flow of` item flows**: Parse `flow of <item> : <Type> from <action> to <action>;`, emit item-flow edges (kind: `item-flow`, dashed rendering)
-- [ ] **Standard `perform ... by ...` allocations**: Parse `perform <action> by <part>;` at activity level (not nested in actions), build a map of action → owning part for swimlane derivation
+- [ ] **`flow` item flows**: Parse `flow <source> to <target>;` statements, emit item-flow edges (kind: `item-flow`, dashed rendering)
+- [ ] **Standard `perform` allocations in parts**: Parse `part <name> : <Type> { perform <action>; }` patterns, build a map of action → performing part for swimlane derivation
 - [ ] **Deprecate custom `perform action` dialect**: Remove or warn on `RE_PERFORM_ACTION` and `RE_PERFORM_LANE` patterns (breaking change for existing models)
+
+**Note**: `fork`/`join` keywords do not exist in standard SysML v2 (confirmed via official parser). Concurrency is represented through other means in the standard.
 
 ### Implementation Plan
 
-1. Add `RE_FORK`, `RE_JOIN`, `RE_FLOW_OF`, `RE_PERFORM_BY` regex patterns
-2. Update `_interpret_activity()` to:
-   - Recognize `fork` / `join` keywords, add to `{"forks": [...], "joins": [...]}`
-   - Parse `flow of` statements, emit item-flow edges
-3. Add a new parsing phase for `perform ... by ...` (at `activity` body level, not inside `perform action`)
-4. Build `{"swimlanes": {"action_id": "part_id"}}` map from `perform` statements
-5. Update model JSON to include `{"activities": [{"name", "actions", "edges", "forks", "joins", "itemFlows", "swimlanes"}]}`
-6. Viewer consumes swimlane map to group actions into lanes
+1. Add `RE_FLOW` regex pattern for `flow <source> to <target>;` statements
+2. Update parsing to recognize `perform <action>;` statements inside `part <name> : <Type> { ... }` blocks within action definitions
+3. Build `{"swimlanes": {"action_id": "part_id"}}` map from `perform` statements in nested parts
+4. Update model JSON to include `{"activities": [{"name", "actions", "edges", "itemFlows", "swimlanes"}]}`
+5. Viewer consumes swimlane map to group actions into lanes
 
 ### Migration from Custom Dialect
 
@@ -280,11 +307,9 @@ Existing models (e.g., CoolSpine if it uses this syntax) need migration before t
 - [ ] Render actions with no allocation in an "Unassigned" lane
 - [ ] Support `first` → `then` vertical flow within/across lanes
 
-### Fork/Join Rendering
+### Concurrency Rendering
 
-- [ ] Render `fork` as a split marker (horizontal bar across lanes with outgoing arrows)
-- [ ] Render `join` as a merge marker (horizontal bar across lanes with incoming arrows)
-- [ ] Actions between `fork` and `join` are on the same vertical level (parallel)
+**Note**: Standard SysML v2 does not have `fork`/`join` keywords. Concurrency is implicit when multiple parts perform actions in parallel. The viewer may choose to visually indicate parallel execution through layout (e.g., actions at the same vertical level) or leave it implicit.
 
 ### Item Flow Rendering
 
@@ -319,46 +344,56 @@ Existing models (e.g., CoolSpine if it uses this syntax) need migration before t
 
 | Gap | Description | Effort |
 |-----|-------------|--------|
-| **`fork` / `join` keywords** | Not currently parsed; activities use only `first` / `then` succession | Small — add 2 regex patterns, emit markers |
-| **`flow of` item flows** | Not currently parsed; no item-flow edges in model JSON | Medium — parse statement, emit edge with type |
-| **Standard `perform ... by ...`** | Parser uses custom `perform action` / `perform Name.action;` dialect | Medium — add regex, build allocation map, **breaking change** |
+| **`flow` item flows** | Not currently parsed; no item-flow edges in model JSON | Medium — parse `flow <source> to <target>;` statements, emit edge |
+| **Standard `perform` in parts** | Parser uses custom `perform action` / `perform Name.action;` dialect instead of `part { perform <action>; }` | Medium — parse nested perform statements, build allocation map, **breaking change** |
+
+**Removed gap**: `fork`/`join` keywords (not in standard SysML v2 per official parser validation)
 
 ### Viewer Gaps
 
 | Gap | Description | Effort |
 |-----|-------------|--------|
 | **Swimlane layout** | No swimlane rendering; activities render as flat lists or simple flows | Large — lane grouping, dividers, manual positioning |
-| **Fork/join markers** | No visual representation of concurrency | Medium — horizontal bars, parallel positioning |
 | **Item flow arrows** | No dashed arrows for item flows | Medium — edge rendering, label placement |
 | **Activity ↔ use case linking** | No automatic detection of which activity belongs to which use case | Small — naming convention or explicit link |
+
+**Removed gap**: Fork/join markers (not in standard SysML v2)
 
 ## Validation Status
 
 ### Official Parser (OMG SysML v2 Pilot)
 
-- **Fixture 1 (use case def)**: ✅ Should pass (standard SysML v2 syntax, already supported)
-- **Fixture 2 (activity with swimlanes)**: ⚠️ **Validation pending** — requires conda env with `jupyter-sysml-kernel`:
-  ```bash
-  # Save fixture to test.sysml, then:
-  python -m system_explorer.official_check .
-  ```
+**Test environment**: Miniconda 26.9.4, jupyter-sysml-kernel from conda-forge, Python 3.11
 
-**Expected result**: Pass if SysML v2 supports `fork`, `join`, `flow of`, and `perform ... by ...` as documented. 
+**Fixture 1 (use case def)**: ✅ **PASS**
+```bash
+$ python -m system_explorer.official_check /tmp/sysml_test
+surgical.sysml: OK
+OK - official parser reports no problems in 1 file(s)
+```
 
-**Critical validation note**: The spec assumes these constructs are standard SysML v2 based on the language specification. If the official parser rejects any construct:
-- Consult SysML v2 specification to verify syntax
-- If syntax is correct but parser doesn't support it yet → document as pilot limitation
-- If construct is **not in SysML v2** → **this is a blocker** requiring spec revision (ADR 0004 depends on standard conformance)
+**Fixture 2 (action def activity with swimlanes)**: ✅ **PASS**
+```bash
+$ python -m system_explorer.official_check /tmp/sysml_test
+surgical_final.sysml: OK
+OK - official parser reports no problems in 1 file(s)
+```
+
+**Validation findings**:
+1. ✅ `action def` works for activity definitions (NOT `activity def` - that keyword doesn't exist)
+2. ✅ `first`/`then` succession works
+3. ✅ `perform <action>;` inside `part <name> : <Type> { ... }` works for allocation
+4. ✅ `flow <source> to <target>;` works for item flows (NOT `flow of` - requires simpler syntax)
+5. ❌ `fork`/`join` keywords **do not exist** in standard SysML v2 (official parser rejects them)
+6. ❌ `perform <action> by <part>;` syntax **does not exist** (official parser rejects it)
+
+**Repository example model**: `methodology/example`
+- `stakeholders.sysml`: ✅ PASS
+- `user_needs.sysml`: ⚠️ 4 warnings (subject must be first parameter in requirement defs)
 
 ### JamieD Parser
 
-- **Fixture 1**: ✅ Should pass (standard `use case def` syntax)
-- **Fixture 2**: ⚠️ **Validation pending** — requires Node.js and JamieD.sysml-v2-support extension:
-  ```bash
-  python -m system_explorer.jamied_check test.sysml
-  ```
-
-**Note**: JamieD parser is a community grammar, so discrepancies with official parser are possible. Official parser is authoritative.
+Not tested (official parser is authoritative and validates fixtures pass).
 
 ### Tool's `--check` Flag
 
