@@ -1,7 +1,8 @@
-"""The only commands the model may run: stakeholder check and apply."""
+"""The only commands the model may run: stakeholder check and apply, plus model element creation."""
 
 import importlib.util
 from pathlib import Path
+import re
 
 from .config import repo_root
 
@@ -37,6 +38,8 @@ def run_tool(name, arguments, settings):
         return _report(stakeholder_module().execute(
             "apply", settings.model_folder, settings.methodology
         ))
+    if name == "add_model_element":
+        return _add_model_element(arguments, settings)
     return f"Rejected unknown tool '{name}'."
 
 
@@ -101,6 +104,75 @@ def _report(result):
     if len(text) > MAX_OUTPUT:
         text = text[:MAX_OUTPUT] + "\n…(truncated)"
     return text
+
+
+def _add_model_element(arguments, settings):
+    """Add a model element (actor, part def, requirement, etc.) to the appropriate SysML file."""
+    element_type = arguments.get("element_type", "").strip().lower()
+    name = arguments.get("name", "").strip()
+    description = arguments.get("description", "").strip()
+    package = arguments.get("package", "Context").strip()
+    
+    if not element_type or not name:
+        return "Error: Both element_type and name are required."
+    
+    # Validate element type
+    valid_types = {
+        "actor": "actor def",
+        "part": "part def",
+        "requirement": "requirement def",
+        "use_case": "use case def",
+        "action": "action def",
+    }
+    
+    if element_type not in valid_types:
+        return f"Error: Invalid element_type. Must be one of: {', '.join(valid_types.keys())}"
+    
+    # Sanitize name (must be valid SysML identifier)
+    if not re.match(r'^[A-Z][A-Za-z0-9]*$', name):
+        return f"Error: Name '{name}' must be UpperCamelCase (start with capital letter, no spaces or special chars)"
+    
+    sysml_keyword = valid_types[element_type]
+    
+    # Find or create the appropriate .sysml file
+    folder = Path(settings.model_folder)
+    target_file = folder / "model_elements.sysml"
+    
+    # Check if element already exists
+    existing_files = list(folder.glob("*.sysml"))
+    for file in existing_files:
+        content = file.read_text(encoding="utf-8")
+        if f"{sysml_keyword} {name}" in content:
+            return f"Element '{name}' already exists in {file.name}. Use a different name or modify the existing element manually."
+    
+    # Build the SysML element
+    doc_text = f" {{\n  doc /* {description} */\n}}" if description else " {}"
+    sysml_text = f"\n{sysml_keyword} {name}{doc_text}\n"
+    
+    # Append to file (or create if it doesn't exist)
+    if target_file.exists():
+        content = target_file.read_text(encoding="utf-8")
+        # Try to add within existing package or at the end
+        if f"package {package}" in content:
+            # Insert before closing brace of package
+            # Simple approach: append at end of file
+            if not content.endswith("\n"):
+                content += "\n"
+            content += sysml_text
+        else:
+            # Wrap in package
+            if not content.strip():
+                content = f"package {package} {{\n{sysml_text}}}\n"
+            else:
+                if not content.endswith("\n"):
+                    content += "\n"
+                content += sysml_text
+    else:
+        content = f"package {package} {{\n{sysml_text}}}\n"
+    
+    target_file.write_text(content, encoding="utf-8")
+    
+    return f"Added {sysml_keyword} '{name}' to {target_file.name}. The model will refresh automatically."
 
 
 def folder_context(folder, limit=12000):

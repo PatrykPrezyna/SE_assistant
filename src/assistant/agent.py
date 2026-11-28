@@ -74,11 +74,47 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "add_model_element",
+            "description": (
+                "Add a new model element (actor, part definition, requirement, use case, or action) "
+                "to the SysML model. Ask clarifying questions first if details are missing "
+                "(e.g., what role does this actor play? what requirements are relevant?). "
+                "Only call this after you have enough information to create a meaningful element."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "element_type": {
+                        "type": "string",
+                        "enum": ["actor", "part", "requirement", "use_case", "action"],
+                        "description": "The type of model element to create.",
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "UpperCamelCase name of the element (e.g., Nurse, FluidPump).",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "A brief description of the element's purpose or role.",
+                    },
+                    "package": {
+                        "type": "string",
+                        "description": "Package name to organize the element (default: Context).",
+                    },
+                },
+                "required": ["element_type", "name"],
+            },
+        },
+    },
 ]
 
 _NOTES = {
     "stakeholder_check": "Checked the stakeholder register.",
     "stakeholder_apply": "Updated the model from the stakeholder register.",
+    "add_model_element": "Added a new element to the model.",
 }
 
 
