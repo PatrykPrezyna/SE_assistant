@@ -1,7 +1,8 @@
-/* SE Assistant Chat Panel */
-#assistantToggle { 
-  min-width: 72px;
-  position: relative;
+/* Chat panel. Matches the explorer toolbar: white surfaces, 8px radii,
+   the same blue, and type that can be read at arm's length. */
+
+#assistantToggle {
+  min-width: 64px;
 }
 
 #assistantPanel {
@@ -9,35 +10,39 @@
   top: var(--bar);
   right: 0;
   bottom: 0;
-  width: min(420px, 100vw - 48px);
-  background: #fff;
-  border-left: 1px solid #d5d8de;
+  width: min(400px, 100vw);
+  background: #f6f7f9;
+  border-left: 1px solid #e2e5ea;
   display: flex;
   flex-direction: column;
-  z-index: 15;
+  z-index: 40;
   transform: translateX(100%);
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: -2px 0 12px rgba(0,0,0,0.1);
+  transition: transform 0.22s ease;
+  box-shadow: -12px 0 32px rgba(28, 32, 40, 0.06);
 }
 
 #assistantPanel.open {
   transform: translateX(0);
 }
 
-@media (max-width: 768px) {
-  #assistantPanel {
-    width: 100vw;
-    border-left: none;
-  }
+/* The zoom controls sit at the right edge. Slide them clear of the panel
+   so they are not drawn on top of the conversation. */
+body.assistant-open #zoombar {
+  right: calc(min(400px, 100vw) + 16px);
+}
+
+@media (max-width: 720px) {
+  #assistantPanel { width: 100vw; }
+  body.assistant-open #zoombar { display: none; }
 }
 
 #assistantHeader {
-  padding: 12px 16px;
+  padding: 14px 14px 12px 16px;
   border-bottom: 1px solid #e2e5ea;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  background: #f8f9fb;
+  gap: 12px;
+  background: #fff;
   flex-shrink: 0;
 }
 
@@ -45,21 +50,38 @@
   margin: 0;
   font-size: 15px;
   font-weight: 650;
+  letter-spacing: -0.01em;
   color: #1c1c1c;
 }
 
+#assistantHeader p {
+  margin: 2px 0 0;
+  font-size: 12px;
+  line-height: 1.3;
+  color: #66707a;
+}
+
+#assistantHeader .assistant-title {
+  flex: 1;
+  min-width: 0;
+}
+
 #assistantClose {
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: 20px;
-  color: #666;
-  padding: 4px 8px;
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+  border-radius: 8px;
+  border: 1px solid #d5d8de;
+  background: #fff;
+  color: #3c4450;
+  font-size: 18px;
   line-height: 1;
-  min-height: auto;
+  cursor: pointer;
 }
 
 #assistantClose:hover {
+  background: #f3f5f8;
   color: #1c1c1c;
 }
 
@@ -73,45 +95,32 @@
 }
 
 .assistant-message {
-  padding: 12px 14px;
-  border-radius: 12px;
-  font-size: 13.5px;
-  line-height: 1.6;
-  max-width: 85%;
+  max-width: 92%;
+  padding: 11px 13px;
+  border-radius: 14px;
+  font-size: 14px;
+  line-height: 1.55;
   word-wrap: break-word;
-  animation: slideIn 0.2s ease-out;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-}
-
-@keyframes slideIn {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  overflow-wrap: anywhere;
 }
 
 .assistant-message.user {
-  background: linear-gradient(135deg, #1a6bbf 0%, #1557a0 100%);
-  color: #fff;
   align-self: flex-end;
-  border: none;
-  box-shadow: 0 2px 4px rgba(26,107,191,0.2);
+  background: #1a6bbf;
+  color: #fff;
+  border-bottom-right-radius: 4px;
 }
 
 .assistant-message.assistant {
-  background: #f8f9fb;
-  color: #1c1c1c;
   align-self: flex-start;
+  background: #fff;
+  color: #1c1c1c;
   border: 1px solid #e2e5ea;
+  border-bottom-left-radius: 4px;
 }
 
-/* Markdown styling within assistant messages */
 .assistant-message.assistant p {
-  margin: 0 0 8px 0;
+  margin: 0 0 8px;
 }
 
 .assistant-message.assistant p:last-child {
@@ -119,189 +128,173 @@
 }
 
 .assistant-message.assistant code {
-  background: #fff;
-  padding: 2px 5px;
-  border-radius: 3px;
-  font-family: 'Consolas', 'Monaco', monospace;
-  font-size: 12px;
-  border: 1px solid #e2e5ea;
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 12.5px;
+  background: #f3f5f8;
+  padding: 1px 5px;
+  border-radius: 4px;
 }
 
 .assistant-message.assistant pre {
-  background: #fff;
-  padding: 8px 10px;
-  border-radius: 6px;
-  overflow-x: auto;
-  border: 1px solid #e2e5ea;
   margin: 8px 0;
+  padding: 10px 12px;
+  background: #f3f5f8;
+  border-radius: 8px;
+  overflow-x: auto;
 }
 
 .assistant-message.assistant pre code {
   background: none;
   padding: 0;
-  border: none;
 }
 
-.assistant-message.assistant ul,
-.assistant-message.assistant ol {
-  margin: 4px 0;
-  padding-left: 20px;
-}
-
-.assistant-message.assistant li {
-  margin: 2px 0;
+.assistant-message.assistant a {
+  color: #1a6bbf;
 }
 
 .assistant-message.assistant strong {
-  font-weight: 600;
-  color: #000;
-}
-
-.assistant-message.assistant em {
-  font-style: italic;
-  color: #555;
-}
-
-.assistant-message.assistant blockquote {
-  border-left: 3px solid #d5d8de;
-  padding-left: 10px;
-  margin: 8px 0;
-  color: #666;
+  font-weight: 650;
 }
 
 .assistant-message.error {
-  background: #fdd;
-  color: #900;
-  align-self: flex-start;
-  border: 1px solid #faa;
+  align-self: stretch;
+  max-width: none;
+  background: #fff5f5;
+  color: #8d1d1d;
+  border: 1px solid #f0c9c9;
+  border-radius: 12px;
 }
 
 .assistant-message.note {
-  background: #fff8e1;
-  color: #7a5c00;
-  align-self: flex-start;
-  border: 1px solid #e0c060;
-  font-size: 12px;
-  font-style: italic;
+  align-self: stretch;
+  max-width: none;
+  padding: 0 2px;
+  background: none;
+  border: none;
+  border-radius: 0;
+  color: #5c6570;
+  font-size: 12.5px;
+  line-height: 1.4;
 }
 
 .assistant-disabled {
-  padding: 24px 20px;
-  color: #666;
-  font-size: 13px;
+  margin: 8px 4px;
+  padding: 18px 16px;
+  background: #fff;
+  border: 1px solid #e2e5ea;
+  border-radius: 12px;
+  color: #3c4450;
+  font-size: 14px;
   line-height: 1.5;
-  text-align: center;
-  background: #fef9f0;
-  border-radius: 8px;
-  margin: 16px;
-  border: 1px solid #f0e5d0;
 }
 
 .assistant-disabled strong {
-  color: #333;
   display: block;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
+  color: #1c1c1c;
   font-size: 14px;
 }
 
+.assistant-disabled p {
+  margin: 0;
+}
+
 .assistant-empty-state {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
+  margin: auto 8px;
   text-align: center;
-  color: #666;
+  color: #5c6570;
 }
 
 .assistant-empty-state h4 {
-  margin: 0 0 12px 0;
+  margin: 0 0 6px;
   font-size: 15px;
-  font-weight: 600;
-  color: #333;
+  font-weight: 650;
+  color: #1c1c1c;
 }
 
 .assistant-empty-state p {
-  margin: 0 0 20px 0;
-  font-size: 13px;
+  margin: 0;
+  font-size: 14px;
   line-height: 1.5;
-  max-width: 300px;
 }
 
-.assistant-empty-state .examples {
+.assistant-suggestions {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: 8px;
-  width: 100%;
-  max-width: 320px;
 }
 
-.assistant-empty-state .example-prompt {
-  background: #f8f9fb;
-  border: 1px solid #e2e5ea;
-  border-radius: 8px;
-  padding: 10px 12px;
-  font-size: 12.5px;
+.assistant-suggestion {
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.35;
   text-align: left;
+  color: #1a4f86;
+  background: #fff;
+  border: 1px solid #d3e2f2;
+  border-radius: 999px;
+  padding: 7px 12px;
   cursor: pointer;
-  transition: all 0.15s ease;
-  color: #555;
 }
 
-.assistant-empty-state .example-prompt:hover {
-  background: #eef4fb;
+.assistant-suggestion:hover {
+  background: #eaf3fc;
   border-color: #1a6bbf;
-  color: #1a6bbf;
-  transform: translateX(4px);
 }
 
 #assistantInput {
   display: flex;
+  align-items: flex-end;
   gap: 8px;
-  padding: 12px 16px;
+  padding: 12px 14px 14px;
   border-top: 1px solid #e2e5ea;
-  background: #f8f9fb;
+  background: #fff;
   flex-shrink: 0;
 }
 
 #assistantInput textarea {
   flex: 1;
-  font-family: inherit;
-  font-size: 13px;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.45;
+  color: #1c1c1c;
   padding: 10px 12px;
   border: 1px solid #d5d8de;
-  border-radius: 8px;
+  border-radius: 10px;
   resize: none;
-  min-height: 40px;
-  max-height: 120px;
+  min-height: 44px;
+  max-height: 140px;
   background: #fff;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
-  line-height: 1.5;
 }
 
 #assistantInput textarea:focus {
   outline: none;
   border-color: #1a6bbf;
-  box-shadow: 0 0 0 3px rgba(26,107,191,0.08);
+  box-shadow: 0 0 0 3px rgba(26, 107, 191, 0.12);
 }
 
 #assistantInput textarea::placeholder {
-  color: #999;
+  color: #8b939c;
+}
+
+#assistantInput textarea:disabled {
+  background: #f6f7f9;
+  color: #8b939c;
 }
 
 #assistantInput button {
-  align-self: flex-end;
-  padding: 8px 16px;
-  font-size: 13px;
-  min-height: 36px;
-  border-radius: 6px;
+  height: 40px;
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 10px;
   border: 1px solid #1a6bbf;
   background: #1a6bbf;
   color: #fff;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 650;
   cursor: pointer;
-  font-weight: 600;
-  flex-shrink: 0;
 }
 
 #assistantInput button:hover:not(:disabled) {
@@ -310,39 +303,34 @@
 }
 
 #assistantInput button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+  opacity: 0.45;
+  cursor: default;
 }
 
 .assistant-loading {
-  display: flex;
+  align-self: flex-start;
+  display: inline-flex;
   align-items: center;
   gap: 8px;
-  color: #666;
-  font-size: 13px;
-  padding: 12px 14px;
-  background: #f8f9fb;
-  border-radius: 12px;
-  align-self: flex-start;
-  max-width: 85%;
+  padding: 10px 14px;
+  background: #fff;
   border: 1px solid #e2e5ea;
+  border-radius: 14px;
+  border-bottom-left-radius: 4px;
+  color: #5c6570;
+  font-size: 14px;
 }
 
 .assistant-loading::before {
   content: "";
-  width: 20px;
-  height: 20px;
-  border: 2px solid #e2e5ea;
+  width: 14px;
+  height: 14px;
+  border: 2px solid #d5d8de;
   border-top-color: #1a6bbf;
   border-radius: 50%;
-  animation: spin 0.8s linear infinite;
+  animation: assistant-spin 0.7s linear infinite;
 }
 
-@keyframes spin {
+@keyframes assistant-spin {
   to { transform: rotate(360deg); }
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
 }

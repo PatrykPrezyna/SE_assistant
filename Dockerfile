@@ -10,6 +10,9 @@ RUN apt-get update \
 WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY src ./src
+# The chat reads this file at runtime. It is not part of the model repo
+# the container clones, and it is not inside the installed package.
+COPY methodology ./methodology
 RUN pip install --no-cache-dir .
 
 RUN useradd --create-home explorer

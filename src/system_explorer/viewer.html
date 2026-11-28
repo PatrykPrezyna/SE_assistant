@@ -317,15 +317,18 @@
 </aside>
 
 <!-- SE Assistant Chat Panel -->
-<div id="assistantPanel">
+<div id="assistantPanel" aria-label="Assistant">
   <div id="assistantHeader">
-    <h3>SE Assistant</h3>
-    <button id="assistantClose" aria-label="Close">×</button>
+    <div class="assistant-title">
+      <h3>Assistant</h3>
+      <p>Asks, then edits the model</p>
+    </div>
+    <button id="assistantClose" type="button" aria-label="Close chat">×</button>
   </div>
-  <div id="assistantMessages"></div>
+  <div id="assistantMessages" aria-live="polite"></div>
   <div id="assistantInput">
-    <textarea id="assistantInputText" placeholder="Ask the assistant..." rows="2"></textarea>
-    <button id="assistantSend">Send</button>
+    <textarea id="assistantInputText" placeholder="Ask about the model" rows="2"></textarea>
+    <button id="assistantSend" type="button">Send</button>
   </div>
 </div>
 
@@ -2272,6 +2275,49 @@ async function loadModel() {
   if (mode === "activity") applyViewKind(activeView);
   updateTitle();
   rebuild();
+}
+
+// The assistant writes a new definition into a .sysml file. loadModel()
+// reparses, but a View only draws ids listed in activeView.elements, so a
+// new part def would stay hidden until someone checked it in the tree.
+// Put the new definitions on the diagram. A person added to the context
+// file is shown on the context view, next to the people already there.
+async function refreshAfterAssistantEdit() {
+  const before = new Set((model && model.nodes || []).map(n => n.id));
+  await loadModel();
+  if (!model) return;
+  const added = model.nodes.filter(n => !before.has(n.id) && !n.usageOwner);
+  if (!added.length) return;
+  const inContext = added.some(n => /Context::/i.test(n.id));
+  const contextView = (views || []).find(v => v.id === "context");
+  if (inContext && contextView && activeViewId !== "context"
+      && (contextView.kind || "bdd") !== "activity") {
+    await switchToView("context");
+  }
+  if (mode !== "bdd" || !activeView) return;
+  addToView(added.map(n => n.id));
+  for (const n of added) placeNewNode(n.id);
+  updateAllEdges();
+  fitView();
+  const last = added[added.length - 1];
+  if (nodes[last.id]) selectNode(last.id);
+  try { await save(); } catch (err) { /* the element is already on screen */ }
+}
+
+function placeNewNode(id) {
+  const n = nodes[id];
+  if (!n) return;
+  let minX = Infinity, minY = Infinity, maxY = -Infinity, any = false;
+  for (const other in nodes) {
+    if (other === id) continue;
+    any = true;
+    minX = Math.min(minX, nodes[other].x);
+    minY = Math.min(minY, nodes[other].y);
+    maxY = Math.max(maxY, nodes[other].y + nodes[other].h);
+  }
+  n.x = any ? minX - n.w - 56 : 80;
+  n.y = any ? (minY + maxY) / 2 - n.h / 2 : 40;
+  n.el.setAttribute("transform", `translate(${n.x},${n.y})`);
 }
 
 // ensures `views` is non-empty and activeView/activeViewId point at a real

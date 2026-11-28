@@ -10,13 +10,63 @@ DEFAULT_AUTH = "bearer"
 
 
 def repo_root():
-    """Directory that contains methodology/product-development.yaml."""
+    """Directory that contains methodology/product-development.yaml.
+
+    The file lives in this tool's repo, not in the model being explored.
+    An installed image keeps a copy at /app/methodology (see the Dockerfile).
+    """
     here = Path(__file__).resolve()
-    for parent in here.parents:
+    candidates = [*here.parents, Path("/app"), Path.cwd()]
+    seen = set()
+    for parent in candidates:
+        try:
+            parent = parent.resolve()
+        except OSError:
+            continue
+        if parent in seen:
+            continue
+        seen.add(parent)
         if (parent / "methodology" / "product-development.yaml").is_file():
             return parent
     raise RuntimeError(
         "cannot find methodology/product-development.yaml above the assistant package"
+    )
+
+
+def default_methodology():
+    """Path to the tool's methodology file. Never a path inside the model folder."""
+    try:
+        return repo_root() / "methodology" / "product-development.yaml"
+    except RuntimeError:
+        return Path("/app/methodology/product-development.yaml")
+
+
+def explorer_settings(model_folder, explorer_url, port, environ=None):
+    """Settings for the chat routes mounted on the explorer.
+
+    Returns None when ASSISTANT_BASE_URL or ASSISTANT_MODEL is unset.
+    The methodology file is the tool's own file unless ASSISTANT_METHODOLOGY
+    points somewhere else. It is not looked up inside `model_folder`.
+    """
+    environ = os.environ if environ is None else environ
+    base_url = environ.get("ASSISTANT_BASE_URL") or ""
+    model = environ.get("ASSISTANT_MODEL") or ""
+    if not base_url or not model:
+        return None
+    methodology = environ.get("ASSISTANT_METHODOLOGY") or str(default_methodology())
+    return Settings(
+        base_url=base_url,
+        api_key=environ.get("ASSISTANT_API_KEY") or "",
+        model=model,
+        model_folder=str(model_folder),
+        explorer_url=explorer_url or "",
+        methodology=methodology,
+        host=environ.get("ASSISTANT_HOST") or "127.0.0.1",
+        port=int(port),
+        chat_path=environ.get("ASSISTANT_CHAT_PATH") or DEFAULT_CHAT_PATH,
+        auth=environ.get("ASSISTANT_AUTH") or DEFAULT_AUTH,
+        auth_user=environ.get("ASSISTANT_AUTH_USER") or "",
+        auth_password=environ.get("ASSISTANT_AUTH_PASSWORD") or "",
     )
 
 
@@ -101,6 +151,12 @@ class Settings:
             return (
                 "Set " + ", ".join(missing) + " in .env or the environment. "
                 "Add ASSISTANT_API_KEY when the provider requires a key."
+            )
+        if not self.methodology.is_file():
+            return (
+                "Methodology file not found at "
+                + str(self.methodology)
+                + ". Set ASSISTANT_METHODOLOGY to methodology/product-development.yaml."
             )
         return None
 

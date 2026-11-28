@@ -1189,16 +1189,13 @@ class ServerTests(unittest.TestCase):
         self.assertIn(".edge.sel line.wire", page)
         self.assertIn(".edge.hl line.wire", page)
 
-    def test_root_serves_home_page(self):
-        # the landing screen: intro copy plus a card per View
+    def test_root_opens_on_a_view_not_a_home_page(self):
+        # The explorer opens on a view. The old landing screen is gone.
         page = self.srv.get("/")
-        self.assertIn('id="home"', page)
-        self.assertIn('id="homeBtn"', page)
-        self.assertIn('id="homeViews"', page)
-        self.assertIn("Systems Engineering Assistant", page)
-        self.assertIn("balancing competing stakeholder needs", page)
-        self.assertIn("function renderHome()", page)
-        self.assertIn("async function openViewFromHome(id)", page)
+        self.assertIn('id="viewDropdown"', page)
+        self.assertNotIn('id="home"', page)
+        self.assertNotIn('id="homeBtn"', page)
+        self.assertNotIn("function renderHome()", page)
 
     def test_reader_chrome_matches_the_published_viewer(self):
         # the explorer reads like the published Viewer; Edit is the extra
@@ -1209,7 +1206,7 @@ class ServerTests(unittest.TestCase):
         self.assertIn('id="zoomOut"', page)
         self.assertIn('id="sheet"', page)
         self.assertIn('id="sheetName"', page)
-        self.assertIn(">Views<", page)
+        self.assertIn('id="viewDropdown"', page)
         self.assertIn(">Edit<", page)
         self.assertIn("function showSheet(id)", page)
         self.assertIn("function zoomBy(factor)", page)
@@ -4499,6 +4496,312 @@ class EmbeddedAssistantTests(unittest.TestCase):
             finally:
                 server.shutdown()
                 server.server_close()
+
+
+    def test_chat_uses_the_tool_methodology_not_the_model_folder(self):
+        """A model repo has no methodology file. Chat must still answer.
+
+        Pointing the prompt at <model>/methodology/product-development.yaml
+        raised FileNotFoundError inside the request and the socket closed.
+        """
+        from assistant.config import explorer_settings
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            (folder / "CoolSpineSystemContext.sysml").write_text(
+                "package CoolSpineSystemContext {\n    part def Patient {}\n}\n",
+                encoding="utf-8",
+            )
+            self.assertFalse((folder / "methodology").exists())
+            settings = explorer_settings(
+                folder, "http://127.0.0.1:8199/", 8199,
+                environ={
+                    "ASSISTANT_BASE_URL": "https://example.test/v1",
+                    "ASSISTANT_MODEL": "test-model",
+                    "ASSISTANT_API_KEY": "sk-test",
+                },
+            )
+            self.assertTrue(settings.methodology.is_file())
+            self.assertFalse(str(settings.methodology).startswith(str(folder)))
+            self.assertIsNone(settings.configuration_error())
+
+            def fake(messages, bound, tools=None, timeout=90, urlopen=None):
+                self.assertIn("add_model_element", json.dumps(tools))
+                return {"content": "What does the nurse do?", "tool_calls": []}
+
+            handler = make_handler(folder, folder / "layout.json", assistant_settings=settings)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                port = server.server_address[1]
+                body = json.dumps({"messages": [
+                    {"role": "user", "content": "Add a nurse to the context"},
+                ]}).encode()
+                request = urllib.request.Request(
+                    f"http://127.0.0.1:{port}/api/chat",
+                    data=body,
+                    headers={"Content-Type": "application/json"},
+                )
+                with patch("assistant.provider.complete", fake):
+                    payload = json.load(urllib.request.urlopen(request, timeout=10))
+                self.assertEqual(payload.get("error"), "")
+                self.assertEqual(
+                    payload["messages"][-1]["content"], "What does the nurse do?"
+                )
+            finally:
+                server.shutdown()
+                server.server_close()
+
+    def test_chat_round_trip_adds_nurse_part_def(self):
+        """A mocked provider calls add_model_element; the file and the reply update."""
+        from assistant.config import explorer_settings
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            (folder / "CoolSpineSystemContext.sysml").write_text(
+                "package CoolSpineSystemContext {\n    part def Patient {}\n}\n",
+                encoding="utf-8",
+            )
+            settings = explorer_settings(
+                folder, "http://127.0.0.1:8199/", 8199,
+                environ={
+                    "ASSISTANT_BASE_URL": "https://example.test/v1",
+                    "ASSISTANT_MODEL": "test-model",
+                    "ASSISTANT_API_KEY": "sk-test",
+                },
+            )
+
+            def fake(messages, bound, tools=None, timeout=90, urlopen=None):
+                if messages and messages[-1].get("role") == "tool":
+                    return {"content": "Added Nurse to the context.", "tool_calls": []}
+                return {
+                    "content": "",
+                    "tool_calls": [{
+                        "id": "call-1",
+                        "name": "add_model_element",
+                        "arguments": {
+                            "element_type": "stakeholder",
+                            "name": "Nurse",
+                            "description": (
+                                "Monitors the patient during cooling. "
+                                "Works beside the anesthesiologist."
+                            ),
+                        },
+                    }],
+                }
+
+            handler = make_handler(folder, folder / "layout.json", assistant_settings=settings)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                port = server.server_address[1]
+                body = json.dumps({"messages": [
+                    {"role": "user", "content": "She monitors the patient during cooling."},
+                ]}).encode()
+                request = urllib.request.Request(
+                    f"http://127.0.0.1:{port}/api/chat",
+                    data=body,
+                    headers={"Content-Type": "application/json"},
+                )
+                with patch("assistant.provider.complete", fake):
+                    payload = json.load(urllib.request.urlopen(request, timeout=10))
+                self.assertEqual(payload.get("error"), "")
+                self.assertEqual(payload["messages"][-1]["content"], "Added Nurse to the context.")
+                self.assertTrue(any("model" in note.lower() for note in payload["notes"]))
+                text = (folder / "CoolSpineSystemContext.sysml").read_text(encoding="utf-8")
+                self.assertIn("part def Nurse", text)
+                self.assertNotIn("actor def", text)
+                self.assertNotIn("..", text)
+                self.assertIn("Works beside the anesthesiologist.", text)
+            finally:
+                server.shutdown()
+                server.server_close()
+
+    def test_chat_failure_is_json_not_a_dropped_connection(self):
+        from assistant.config import explorer_settings
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            (folder / "m.sysml").write_text("package M { part def A {} }\n", encoding="utf-8")
+            settings = explorer_settings(
+                folder, "http://127.0.0.1/", 1,
+                environ={
+                    "ASSISTANT_BASE_URL": "https://example.test/v1",
+                    "ASSISTANT_MODEL": "test-model",
+                },
+            )
+            handler = make_handler(folder, folder / "layout.json", assistant_settings=settings)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                port = server.server_address[1]
+
+                def explode(messages, bound, tools=None, timeout=90, urlopen=None):
+                    raise RuntimeError("provider boom")
+
+                body = json.dumps({"messages": [
+                    {"role": "user", "content": "Hello"},
+                ]}).encode()
+                request = urllib.request.Request(
+                    f"http://127.0.0.1:{port}/api/chat",
+                    data=body,
+                    headers={"Content-Type": "application/json"},
+                )
+                with patch("assistant.provider.complete", explode):
+                    try:
+                        urllib.request.urlopen(request, timeout=10)
+                        self.fail("expected an HTTP error with a JSON body")
+                    except urllib.error.HTTPError as exc:
+                        payload = json.loads(exc.read().decode())
+                self.assertIn("provider boom", payload["error"])
+                self.assertNotIn("sk-", json.dumps(payload))
+            finally:
+                server.shutdown()
+                server.server_close()
+
+    def test_hosted_session_cookie_can_call_chat(self):
+        """Hosted mode accepts the signed session cookie. The cookie is not why chat failed."""
+        from assistant.config import explorer_settings
+        from system_explorer.cloud import SESSION_COOKIE, CloudContext, GitHubAuth
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            (folder / "m.sysml").write_text("package M { part def A {} }\n", encoding="utf-8")
+            settings = explorer_settings(
+                folder, "", 8080,
+                environ={
+                    "ASSISTANT_BASE_URL": "https://example.test/v1",
+                    "ASSISTANT_MODEL": "test-model",
+                },
+            )
+
+            class Sync:
+                def pull(self):
+                    return None
+
+                def commit_and_push(self, paths, message, user=None):
+                    return None
+
+            auth = GitHubAuth(
+                "cid", "csec", "session-secret", "https://explorer.example",
+                "PatrykPrezyna/spine-cooling-model", allowed_users=["ada"],
+            )
+            cloud = CloudContext(Sync(), auth, folder)
+            handler = make_handler(
+                folder, folder / "layout.json", cloud, assistant_settings=settings
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                port = server.server_address[1]
+                base = f"http://127.0.0.1:{port}"
+                try:
+                    urllib.request.urlopen(base + "/api/session", timeout=10)
+                    self.fail("expected 401 without a session")
+                except urllib.error.HTTPError as exc:
+                    self.assertEqual(exc.code, 401)
+
+                cookie = SESSION_COOKIE + "=" + auth.make_session(
+                    {"login": "ada", "name": "Ada", "id": 7}
+                )
+
+                def fake(messages, bound, tools=None, timeout=90, urlopen=None):
+                    return {"content": "What does the nurse do?", "tool_calls": []}
+
+                body = json.dumps({"messages": [
+                    {"role": "user", "content": "Add a nurse to the context"},
+                ]}).encode()
+                request = urllib.request.Request(
+                    base + "/api/chat",
+                    data=body,
+                    headers={
+                        "Content-Type": "application/json",
+                        "Cookie": cookie,
+                    },
+                )
+                with patch("assistant.provider.complete", fake):
+                    payload = json.load(urllib.request.urlopen(request, timeout=10))
+                self.assertEqual(payload["messages"][-1]["content"], "What does the nurse do?")
+            finally:
+                server.shutdown()
+                server.server_close()
+
+    def test_hosted_anonymous_access_can_call_chat(self):
+        """ALLOW_ANONYMOUS lets the page through, so the assistant must too."""
+        from assistant.config import explorer_settings
+        from system_explorer.cloud import CloudContext
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            (folder / "m.sysml").write_text("package M { part def A {} }\n", encoding="utf-8")
+            settings = explorer_settings(
+                folder, "", 8080,
+                environ={
+                    "ASSISTANT_BASE_URL": "https://example.test/v1",
+                    "ASSISTANT_MODEL": "test-model",
+                },
+            )
+
+            class Sync:
+                def pull(self):
+                    return None
+
+                def commit_and_push(self, paths, message, user=None):
+                    return None
+
+            cloud = CloudContext(Sync(), None, folder)
+            handler = make_handler(
+                folder, folder / "layout.json", cloud, assistant_settings=settings
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                port = server.server_address[1]
+
+                def fake(messages, bound, tools=None, timeout=90, urlopen=None):
+                    return {"content": "pong", "tool_calls": []}
+
+                body = json.dumps({"messages": [
+                    {"role": "user", "content": "Say pong"},
+                ]}).encode()
+                request = urllib.request.Request(
+                    f"http://127.0.0.1:{port}/api/chat",
+                    data=body,
+                    headers={"Content-Type": "application/json"},
+                )
+                with patch("assistant.provider.complete", fake):
+                    payload = json.load(urllib.request.urlopen(request, timeout=10))
+                self.assertEqual(payload["messages"][-1]["content"], "pong")
+            finally:
+                server.shutdown()
+                server.server_close()
+
+    def test_panel_assets_are_in_the_wheel(self):
+        """pip install (the Docker image) must ship the chat panel files."""
+        import zipfile
+        root = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory() as tmp:
+            subprocess.check_call(
+                [sys.executable, "-m", "pip", "wheel", "--no-deps", "-w", tmp, str(root)],
+                stdout=subprocess.DEVNULL,
+            )
+            wheels = list(Path(tmp).glob("*.whl"))
+            self.assertEqual(len(wheels), 1)
+            names = zipfile.ZipFile(wheels[0]).namelist()
+        self.assertIn("system_explorer/assistant_panel.js", names)
+        self.assertIn("system_explorer/assistant_panel.css", names)
+        page = (root / "src" / "system_explorer" / "viewer.html").read_text(encoding="utf-8")
+        self.assertIn("function refreshAfterAssistantEdit", page)
 
 
 if __name__ == "__main__":

@@ -178,10 +178,23 @@ Rules:
 - Categories are only customer, internal, or regulatory.
 - System, stakeholder, and need names are UpperCamelCase. Need ids look like NEED-1.
 - Every stakeholder needs at least one user need before the activity is done.
-- Do not write SysML yourself. stakeholder_apply writes the model.
-- Call stakeholder_apply only after the team has confirmed the list.
+- Do not write SysML yourself.
+- When the folder already has .sysml files and the team asks to add a person or
+  another element, use add_model_element. Do not call stakeholder_apply for that,
+  and do not start a new stakeholder register.
+- For a person, element_type is "stakeholder". That writes a part def (not an
+  actor def) into the existing Context file, in the same shape as the people
+  already there.
+- Ask one or two short clarifying questions before the first add_model_element
+  if the team has not yet said what the person does. Do not call the tool in
+  that same turn. After they answer, call the tool. The description must use
+  only their words.
+- Call stakeholder_apply only after the team has confirmed the list, and only
+  when they are building that register rather than editing a model that
+  already has .sysml files.
 - Use stakeholder_check to see which exit rules are still open.
-- After a successful apply, tell the team the diagram is at {settings.explorer_url}
+- After a successful apply or add_model_element, tell the team the diagram
+  updates on its own. The explorer is at {settings.explorer_url}
 """
     return {"role": "system", "content": content}
 

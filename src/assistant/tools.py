@@ -106,6 +106,27 @@ def _report(result):
     return text
 
 
+def _doc_body(description):
+    """A SysML doc comment, or ` {}` when there is nothing to say.
+
+    Sentences keep a single trailing period. Splitting on '. ' and then
+    appending another period used to write 'anesthesiologist..'.
+    """
+    text = (description or "").strip()
+    if not text:
+        return " {}"
+    sentences = []
+    for raw in text.replace("\r\n", "\n").split("\n"):
+        for piece in raw.split(". "):
+            piece = piece.strip().strip(".").strip()
+            if piece:
+                sentences.append(piece)
+    if not sentences:
+        return " {}"
+    lines = "\n".join(f"        {sentence}." for sentence in sentences)
+    return " {\n        doc /*\n" + lines + "\n        */\n    }"
+
+
 def _add_model_element(arguments, settings):
     """Add a model element following existing model conventions.
     
@@ -162,16 +183,7 @@ def _add_model_element(arguments, settings):
             continue
     
     # Build the SysML element with proper doc comment formatting
-    if description:
-        # Multi-line doc comment like in spine-cooling-model
-        doc_lines = description.split(". ")
-        doc_text = " {\n        doc /*\n"
-        for line in doc_lines:
-            if line:
-                doc_text += f"        {line.strip()}.\n"
-        doc_text += "        */\n    }"
-    else:
-        doc_text = " {}"
+    doc_text = _doc_body(description)
     
     sysml_text = f"\n    {sysml_keyword} {name}{doc_text}\n"
     
