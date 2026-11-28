@@ -1,6 +1,6 @@
 """Projects inside one workspace folder.
 
-Hosted mode has no durable disk (see docs/adr/0001-git-backed-projects.md).
+Hosted mode has no durable disk (see docs/adr/0007-git-backed-projects.md).
 Each project is a directory under ``<workspace>/projects/<id>/`` and is
 committed with the git sync the server already uses. Files that already
 live in the workspace root — the spine-cooling model, in the deployment —

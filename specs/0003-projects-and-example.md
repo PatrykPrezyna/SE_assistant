@@ -1,4 +1,9 @@
-# Spec 0002: A new project on login, and an insulin-pump example
+# Spec 0003: A new project on login, and an insulin-pump example
+
+Spec 0001 on this branch is the embedded assistant. Spec 0002 is the
+activity diagram on PR #8 (`specs/0002-activity-diagram.md`). This spec
+is 0003 so those numbers stay unique. PR #2 uses a different
+`specs/0001-system-context-use-cases.md` and does not take 0002 or 0003.
 
 **Status:** Implemented
 **Author:** System
@@ -46,8 +51,9 @@ never deletes or rewrites them.
       (FDA), and Manufacturer; a few user needs; requirements traced with
       the relationships the explorer already draws (`satisfy`, `verify`);
       use cases Deliver Basal Insulin, Deliver Bolus, and Handle Occlusion
-      Alarm; and one swimlane activity with `perform` on the actor parts,
-      `first`/`then` successions, and one decision.
+      Alarm; and one swimlane activity in standard SysML v2: actions owned
+      by the use case, `perform 'Step';` inside each `actor`, `first`/`then`
+      successions, a `decide` with `if`/`else`, and a `merge`.
 - [x] `system-explorer --check` reports no warnings for the skeleton and
       for the example.
 - [x] The example files are package data and are present after
@@ -67,7 +73,7 @@ never deletes or rewrites them.
 
 ### Persistence
 
-See `docs/adr/0001-git-backed-projects.md`. Short version: one folder per
+See `docs/adr/0007-git-backed-projects.md`. Short version: one folder per
 project at `<workspace>/projects/<id>/`, committed with the existing
 `GitSync`. The workspace is `MODEL_PATH` (`.` in the Render deployment).
 
@@ -111,10 +117,14 @@ The explorer draws `satisfy` and `verify`. It does not draw a separate
 from". This spec does not add a new relationship type; another change is
 working on traceability views.
 
-`perform action` is the explorer's swimlane syntax. The official SysML v2
-parser rejects it (FEATURES.md, dialect notes). The example keeps it,
-because the activity diagram is the point of the example. `--check` must
-pass. The official kernel is run when it is installed.
+The occlusion activity is standard SysML v2, in the spelling the
+swimlane view reads (PR #8, spec 0002 there): the use case owns the
+`action` steps, each `actor` body says `perform 'Step';`, order is
+`first`/`then`, and the choice is `decide` with `if`/`else` joining
+again at `merge`. This change does not include that viewer. The text
+is accepted by `system-explorer --check` on this branch, and the
+swimlane view draws it once that parser is present. The example does
+not use the `perform action { … }` dialect.
 
 ### Toolbar
 

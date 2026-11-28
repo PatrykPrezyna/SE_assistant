@@ -694,7 +694,7 @@ already has `.sysml` files still opens that folder as the one model.
   **Projects → New project** creates another at any time.
 - **Where they live.** `<workspace>/projects/<id>/`. `<id>` is a lowercase
   token. The decision to keep them in the git repo, and not on the
-  container disk, is [docs/adr/0001-git-backed-projects.md](docs/adr/0001-git-backed-projects.md).
+  container disk, is [docs/adr/0007-git-backed-projects.md](docs/adr/0007-git-backed-projects.md).
 - **Open recent.** The **Projects** toolbar menu lists saved projects,
   newest first. Choosing one sets the `sx_project` cookie and reloads.
 - **Repository model.** `.sysml` files that already sit in the workspace
@@ -717,11 +717,14 @@ in the context file (Patient, Caregiver, Endocrinologist, Regulator for
 the FDA, Manufacturer); user needs and the requirements derived from them
 use `satisfy`; one verification uses `verify`; three use cases (Deliver
 Basal Insulin, Deliver Bolus, Handle Occlusion Alarm) name actors with
-`actor` / `subject`; Handle Occlusion Alarm is the one activity, with
-`perform` on those actors, `first` / `then` successions, and one `decide`.
-The explorer does not draw a separate derive edge, so a requirement that
-comes from a need satisfies that need. `perform action` is this tool's
-swimlane syntax (see dialect notes); `system-explorer --check` accepts it.
+`actor` / `subject`. Handle Occlusion Alarm is written as standard SysML v2,
+the same spelling as the swimlane view: the use case owns the `action`
+steps, each actor says `perform 'Step';`, `first` / `then` gives the order,
+and one `decide` with `if` / `else` joins again at a `merge`. This branch's
+checker accepts that text. Drawing the swimlanes is the activity view; the
+example does not use the `perform action { … }` dialect. The explorer does
+not draw a separate derive edge, so a requirement that comes from a need
+satisfies that need.
 
 ## Hosted mode (`src/system_explorer/cloud.py`)
 

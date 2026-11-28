@@ -415,7 +415,7 @@ def cloud_main():
     # The folder is a workspace. Projects live under projects/ and are
     # committed with GitSync. .sysml files already in the folder (the
     # spine-cooling model, in the deployment) are not the landing project
-    # and are never rewritten. See docs/adr/0001-git-backed-projects.md.
+    # and are never rewritten. See docs/adr/0007-git-backed-projects.md.
     library = ProjectLibrary(folder)
 
     if _env("ALLOW_ANONYMOUS") == "1":

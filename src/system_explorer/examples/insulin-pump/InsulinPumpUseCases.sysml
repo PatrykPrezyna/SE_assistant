@@ -1,5 +1,9 @@
 // What people do with the pump. Actors are usages of the part definitions
-// in the context file. Only Handle Occlusion Alarm has an activity.
+// in the context file. Only Handle Occlusion Alarm has a process.
+// The steps are standard SysML v2: the use case owns the actions,
+// each actor's body says which steps that person performs, and
+// first/then, decide/if/else, and merge give the order. This is the
+// spelling the swimlane view reads (see the activity-diagram work).
 package InsulinPumpUseCases {
     private import InsulinPumpContext::*;
     private import InsulinPumpRequirements::*;
@@ -32,55 +36,57 @@ package InsulinPumpUseCases {
         notices. The caregiver checks the line and either clears it or
         calls for help with delivery still stopped.
         */
-        subject pump : InsulinPump {
-            perform handleOcclusion.raiseAlarm;
-            perform handleOcclusion.resumeBasal;
-            perform handleOcclusion.holdDelivery;
+        actor pump : InsulinPump {
+            perform 'Raise Alarm';
+            perform 'Resume Basal';
+            perform 'Hold Delivery';
         }
         actor patient : Patient {
-            perform handleOcclusion.noticeAlarm;
+            perform 'Notice Alarm';
         }
         actor caregiver : Caregiver {
-            perform handleOcclusion.checkLine;
-            perform handleOcclusion.clearLine;
-            perform handleOcclusion.callForHelp;
+            perform 'Check Line';
+            perform 'Clear Line';
+            perform 'Call For Help';
         }
         satisfy 'REQ-3';
 
-        perform action handleOcclusion {
-            action raiseAlarm {
-                doc /* The pump sounds the occlusion alarm and stops the motor. */
-            }
-            action noticeAlarm {
-                doc /* The patient hears the alarm. */
-            }
-            action checkLine {
-                doc /* The caregiver looks at the tubing and the infusion set. */
-            }
-            action clearLine {
-                doc /* The caregiver straightens the tubing or replaces the set. */
-            }
-            then resumeBasal;
-            action resumeBasal {
-                doc /* The pump starts the programmed basal rate again. */
-            }
-            then done;
-            action holdDelivery {
-                doc /* The pump keeps delivery stopped. */
-            }
-            then callForHelp;
-            action callForHelp {
-                doc /* The caregiver calls the clinic or the endocrinologist. */
-            }
-            then done;
-
-            first start;
-            then raiseAlarm;
-            then noticeAlarm;
-            then checkLine;
-            then decide;
-              if clear then clearLine;
-              else holdDelivery;
+        action 'Raise Alarm' {
+            doc /* The pump sounds the occlusion alarm and stops the motor. */
         }
+        action 'Notice Alarm' {
+            doc /* The patient hears the alarm. */
+        }
+        action 'Check Line' {
+            doc /* The caregiver looks at the tubing and the infusion set. */
+        }
+        action 'Clear Line' {
+            doc /* The caregiver straightens the tubing or replaces the set. */
+        }
+        action 'Resume Basal' {
+            doc /* The pump starts the programmed basal rate again. */
+        }
+        action 'Hold Delivery' {
+            doc /* The pump keeps delivery stopped. */
+        }
+        action 'Call For Help' {
+            doc /* The caregiver calls the clinic or the endocrinologist. */
+        }
+
+        attribute clear : Boolean;
+        decide decide1;
+        merge merge1;
+
+        first start then 'Raise Alarm';
+        first 'Raise Alarm' then 'Notice Alarm';
+        first 'Notice Alarm' then 'Check Line';
+        first 'Check Line' then decide1;
+        if clear then 'Clear Line';
+        else 'Hold Delivery';
+        first 'Clear Line' then 'Resume Basal';
+        first 'Resume Basal' then merge1;
+        first 'Hold Delivery' then 'Call For Help';
+        first 'Call For Help' then merge1;
+        first merge1 then done;
     }
 }

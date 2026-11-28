@@ -1,7 +1,7 @@
 {
   "version": 1,
   "name": "Occlusion alarm",
-  "description": "Swimlanes for the pump, the patient, and the caregiver, with one decision.",
+  "description": "Swimlanes for the pump, the patient, and the caregiver. One decision, then the two paths join.",
   "kind": "activity",
   "activityOwner": "InsulinPumpUseCases::HandleOcclusionAlarm",
   "elements": [],

@@ -1,4 +1,9 @@
-# ADR 0001: Keep projects in the git repo, one folder each
+# ADR 0007: Keep projects in the git repo, one folder each
+
+ADRs 0001–0006 are the spec-driven setup on PR #2
+(`docs/adr/0001-spec-driven-process.md` through
+`docs/adr/0006-spec-driven-workflow.md`). This decision is the next free
+number so the two branches can merge without renaming each other.
 
 **Status:** Accepted
 **Date:** 2026-11-28

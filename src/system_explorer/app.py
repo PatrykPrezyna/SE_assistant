@@ -1143,7 +1143,7 @@ def make_handler(folder: Path, layout_path: Path, cloud=None, assistant_settings
             return None
 
         def _bind_model(self):
-            """Choose the folder this request reads. See spec 0002."""
+            """Choose the folder this request reads. See spec 0003."""
             self._set_cookies = []
             self._switched_project = False
             wanted = read_project_cookie(self.headers.get("Cookie"))
