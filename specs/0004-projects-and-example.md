@@ -1,9 +1,12 @@
-# Spec 0003: A new project on login, and an insulin-pump example
+# Spec 0004: A new project on login, and an insulin-pump example
 
 Spec 0001 on this branch is the embedded assistant. Spec 0002 is the
-activity diagram on PR #8 (`specs/0002-activity-diagram.md`). This spec
-is 0003 so those numbers stay unique. PR #2 uses a different
-`specs/0001-system-context-use-cases.md` and does not take 0002 or 0003.
+activity diagram on PR #8 (`specs/0002-activity-diagram.md`). Spec 0003
+is trace highlighting, interview quick-add, and undo on PR #9
+(`specs/0003-trace-quickadd-undo.md`). This spec is 0004 so those
+numbers stay unique. PR #2 uses a different
+`specs/0001-system-context-use-cases.md` and does not take 0002, 0003,
+or 0004.
 
 **Status:** Implemented
 **Author:** System
@@ -118,25 +121,30 @@ from". This spec does not add a new relationship type; another change is
 working on traceability views.
 
 The occlusion activity is standard SysML v2, in the spelling the
-swimlane view reads (PR #8, spec 0002 there): the use case owns the
+swimlane view reads (PR #8, spec 0002): the use case owns the
 `action` steps, each `actor` body says `perform 'Step';`, order is
 `first`/`then`, and the choice is `decide` with `if`/`else` joining
-again at `merge`. This change does not include that viewer. The text
-is accepted by `system-explorer --check` on this branch, and the
-swimlane view draws it once that parser is present. The example does
-not use the `perform action { … }` dialect.
+again at `merge`. The Occlusion alarm view is an activity view of
+`InsulinPumpUseCases::HandleOcclusionAlarm`, so that view draws the
+lanes. The example does not use the `perform action { … }` dialect.
 
 ### Toolbar
 
-Two controls, placed after the flexible space and before Chat, so they do
-not sit in the view switcher:
+One toolbar. After the flexible space, and before Chat: the project
+name, **Projects**, **Example**, **Undo**, **Redo**, and the save-status
+word. **Save** stays with the edit controls, before the flexible space.
+The view dropdown stays at the left.
 
 - **Projects** opens a menu: New project, then the saved projects, then
   the read-only repository model when the workspace root has `.sysml` files.
 - **Example** opens the insulin pump.
 
-The current project name is a label next to those buttons. Switching
-reloads the page, so the diagram code does not grow a second model loader.
+The current project name is a label next to those buttons. Opening
+another project, creating one, or copying the example reloads the page
+and clears the undo history first. Undo steps name files in the project
+that was open, so they are not replayed after the switch. A write that
+copies the example includes `switchedProject` (the new project id) in
+the JSON response.
 
 ## Non-goals
 

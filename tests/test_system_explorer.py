@@ -1324,6 +1324,16 @@ class ServerTests(unittest.TestCase):
         self.assertIn('id="exampleBtn"', page)
         self.assertIn(">Example<", page)
         self.assertIn(">Projects<", page)
+        # One toolbar: view, Save, then Projects, Example, Undo, Redo, status.
+        order = [
+            'id="viewDropdown"', 'id="saveBtn"', 'id="projectsBtn"',
+            'id="exampleBtn"', 'id="undoBtn"', 'id="redoBtn"', 'id="status"',
+        ]
+        positions = [page.index(token) for token in order]
+        self.assertEqual(positions, sorted(positions))
+        src = (SRC / "system_explorer" / "viewer.html").read_text(encoding="utf-8")
+        self.assertIn("function leaveProject()", src)
+        self.assertIn("resetHistory();", src)
 
     def test_version_has_a_single_source(self):
         # pyproject.toml reads the version from version.py, so there is no
@@ -5254,7 +5264,7 @@ class TraceAndInterviewDomTests(unittest.TestCase):
         finally:
             srv.close()
 # ----------------------------------------------------------------------
-# Projects (spec 0003) and the bundled insulin pump
+# Projects (spec 0004) and the bundled insulin pump
 # ----------------------------------------------------------------------
 
 from system_explorer import projects as projects_mod  # noqa: E402
@@ -5349,11 +5359,8 @@ class ProjectLibraryTests(unittest.TestCase):
             "DeliverBasalInsulin", "DeliverBolus", "HandleOcclusionAlarm",
         ):
             self.assertIn(use_case, names)
-        # The occlusion steps are standard SysML v2 (actions on the use
-        # case, perform inside each actor, first/then, decide/if/else,
-        # merge). This branch's parser accepts that text and does not
-        # require the swimlane parser to be present. The source is what
-        # that view reads once it lands.
+        # The occlusion steps are standard SysML v2. The swimlane parser
+        # (spec 0002) reads them into one activity.
         text = (folder / "InsulinPumpUseCases.sysml").read_text(encoding="utf-8")
         self.assertNotIn("perform action", text)
         for snippet in (
@@ -5373,6 +5380,28 @@ class ProjectLibraryTests(unittest.TestCase):
         kinds = {e["kind"] for e in model["edges"]}
         self.assertIn("satisfy", kinds)
         self.assertIn("verify", kinds)
+        acts = [
+            a for a in model["activities"]
+            if a["owner"].endswith("HandleOcclusionAlarm")
+        ]
+        self.assertEqual(len(acts), 1)
+        act = acts[0]
+        self.assertEqual(act["decisions"], ["decide1"])
+        self.assertEqual(act["merges"], ["merge1"])
+        lanes = {(l["role"], l["type"], l["action"]) for l in act["lanes"]}
+        self.assertIn(("pump", "InsulinPump", "Raise Alarm"), lanes)
+        self.assertIn(("patient", "Patient", "Notice Alarm"), lanes)
+        self.assertIn(("caregiver", "Caregiver", "Check Line"), lanes)
+        self.assertIn(("caregiver", "Caregiver", "Clear Line"), lanes)
+        self.assertIn(("pump", "InsulinPump", "Hold Delivery"), lanes)
+        edges = {(e["from"], e["to"], e["label"]) for e in act["edges"]}
+        self.assertIn(("start", "Raise Alarm", ""), edges)
+        self.assertIn(("decide1", "Clear Line", "clear"), edges)
+        self.assertIn(("decide1", "Hold Delivery", "no"), edges)
+        self.assertIn(("merge1", "done", ""), edges)
+        view = json.loads((folder / "views" / "occlusion.json").read_text())
+        self.assertEqual(view["kind"], "activity")
+        self.assertEqual(view["activityOwner"], act["owner"])
         proc = subprocess.run(
             [sys.executable, "-m", "system_explorer", str(folder), "--check"],
             cwd=SRC, capture_output=True, text=True,
@@ -5489,13 +5518,18 @@ class ProjectServerTests(unittest.TestCase):
         view_ids = {v["id"] for v in json.loads(views)}
         self.assertIn("context", view_ids)
         self.assertIn("occlusion", view_ids)
-        status, headers, _ = self.request(
+        status, headers, written = self.request(
             "PUT", "/api/views/context",
             {"version": 1, "name": "Context", "elements": [], "nodes": {}},
             cookie,
         )
         self.assertEqual(status, 200)
+        saved = json.loads(written)
+        self.assertTrue(saved["ok"])
+        self.assertTrue(saved["switchedProject"])
+        self.assertNotEqual(saved["switchedProject"], "example")
         copied = _cookie_pair(headers["Set-Cookie"])
+        self.assertIn(saved["switchedProject"], copied)
         self.assertNotIn("example", copied)
         status, _, body = self.request("GET", "/api/model", cookie=copied)
         self.assertIn("Patient", {n["name"] for n in json.loads(body)["nodes"]})
@@ -5503,6 +5537,24 @@ class ProjectServerTests(unittest.TestCase):
             (projects_mod.example_dir() / "InsulinPumpContext.sysml").read_bytes(),
             self.example_before,
         )
+        self.assertEqual(self.sentinel.read_bytes(), self.before)
+
+    def test_model_edit_writes_the_open_project(self):
+        _, headers, _ = self.request("GET", "/api/projects")
+        cookie = _cookie_pair(headers["Set-Cookie"])
+        status, _, body = self.request("POST", "/api/model/edit", {
+            "action": "add_stakeholder",
+            "name": "Nurse",
+            "description": "On the ward",
+        }, cookie)
+        self.assertEqual(status, 200)
+        result = json.loads(body)
+        self.assertTrue(result["ok"])
+        self.assertNotIn("switchedProject", result)
+        status, _, model = self.request("GET", "/api/model", cookie=cookie)
+        self.assertEqual(status, 200)
+        self.assertIn("Nurse", {n["name"] for n in json.loads(model)["nodes"]})
+        self.assertEqual(list(self.root.glob("*.sysml")), [self.sentinel])
         self.assertEqual(self.sentinel.read_bytes(), self.before)
 
     def test_repository_model_is_readable_and_not_writable(self):

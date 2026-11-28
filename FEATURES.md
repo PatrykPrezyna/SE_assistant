@@ -370,10 +370,10 @@ page otherwise matches the published Viewer.
   **«part def» keywords** and **docs on node**) and **More ▾** stay
   on the header while reading.
 - **What stays available while reading**: the **view** dropdown, **Display
-  ▾**, **More ▾**, **+** / **−** / **Fit**, **Undo** / **Redo**, the
-  save-status word, pan, the detail sheet (except on a traceability view),
-  the interview quick-add bar on a context or use-case view,
-  click-to-highlight, and activity Views.
+  ▾**, **More ▾**, **+** / **−** / **Fit**, **Projects**, **Example**,
+  **Undo** / **Redo**, the save-status word, pan, the detail sheet
+  (except on a traceability view), the interview quick-add bar on a
+  context or use-case view, click-to-highlight, and activity Views.
 - The element tree is on screen only when Edit is on *and* the tree is
   open. `treeOpen` stays the user's own preference while Edit is off, so
   turning Edit on restores the panel as it was (`treeVisible()` in
@@ -696,7 +696,9 @@ already has `.sysml` files still opens that folder as the one model.
   token. The decision to keep them in the git repo, and not on the
   container disk, is [docs/adr/0007-git-backed-projects.md](docs/adr/0007-git-backed-projects.md).
 - **Open recent.** The **Projects** toolbar menu lists saved projects,
-  newest first. Choosing one sets the `sx_project` cookie and reloads.
+  newest first. Choosing one sets the `sx_project` cookie, clears the
+  undo history, and reloads. Creating a project does the same. Undo
+  steps belong to the project that was open.
 - **Repository model.** `.sysml` files that already sit in the workspace
   root (the spine-cooling model, in the Render deployment) are listed as
   **Repository model (read-only)**. The server never writes, deletes, or
@@ -704,8 +706,13 @@ already has `.sysml` files still opens that folder as the one model.
 - **Example.** The **Example** button opens the insulin pump shipped in
   the package (`system_explorer/examples/insulin-pump/`). The package copy
   is never modified. In a workspace the first save or other write copies
-  it to a new project (`Insulin pump copy`) and continues there. Without
-  a workspace the example is read-only.
+  it to a new project (`Insulin pump copy`) and continues there. The
+  response includes `switchedProject` with the new id, and the page
+  reloads with an empty undo history so example steps are not replayed
+  in the copy. Without a workspace the example is read-only.
+- **One toolbar.** After the flexible space: the project name,
+  **Projects**, **Example**, **Undo**, **Redo**, and the save-status
+  word, then Chat and Edit. **Save** stays with the edit controls.
 - **Routes.** `GET /api/projects` returns `{current, projects, canCreate}`.
   `POST /api/projects` creates an empty project. `POST /api/projects/open`
   with `{"id"}` switches. `POST /api/projects/example` opens the example.
@@ -720,8 +727,9 @@ Basal Insulin, Deliver Bolus, Handle Occlusion Alarm) name actors with
 `actor` / `subject`. Handle Occlusion Alarm is written as standard SysML v2,
 the same spelling as the swimlane view: the use case owns the `action`
 steps, each actor says `perform 'Step';`, `first` / `then` gives the order,
-and one `decide` with `if` / `else` joins again at a `merge`. This branch's
-checker accepts that text. Drawing the swimlanes is the activity view; the
+and one `decide` with `if` / `else` joins again at a `merge`. The
+**Occlusion alarm** view is an activity view of that use case, so the
+swimlane view draws the pump, the patient, and the caregiver. The
 example does not use the `perform action { … }` dialect. The explorer does
 not draw a separate derive edge, so a requirement that comes from a need
 satisfies that need.
