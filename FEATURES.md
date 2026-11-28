@@ -797,3 +797,27 @@ messages, the model folder, and the diagram link (`EXPLORER_URL`, only
 returns the transcript plus short notes for tools that ran. The
 transcript is kept in the browser for the session.
 
+**Deployment.** The assistant can be deployed to Render or any platform
+that runs Python web services. Environment variables:
+
+- `PORT` — overrides `ASSISTANT_PORT`. Render sets this automatically.
+- `SE_DATA_DIR` — overrides `MODEL_FOLDER`. Where model files are stored.
+- `SE_AUTH_USER` / `SE_AUTH_PASSWORD` — optional HTTP Basic Auth credentials.
+  When both are set, all endpoints except `/healthz` require authentication.
+  Returns 401 with `WWW-Authenticate: Basic` when credentials are missing or
+  invalid.
+
+**Health check.** `GET /healthz` returns `{"status": "ok"}` (200) without
+requiring authentication. Use as a liveness probe in containerized deployments.
+
+**Model seeding.** On first start, if the data directory (from `SE_DATA_DIR`
+or `MODEL_FOLDER`) exists but is empty, the assistant copies the example
+model from `methodology/example/` into it. This provides a working model on
+platforms with ephemeral filesystems (e.g. Render free plan). Existing files
+are never overwritten.
+
+**Disabled AI mode.** If `ASSISTANT_BASE_URL` or `ASSISTANT_MODEL` is not set,
+the assistant starts without AI features. The page loads but chat calls return
+an error message. This allows the server to run and serve the UI even when no
+API key is configured.
+
