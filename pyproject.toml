@@ -22,5 +22,5 @@ version = {attr = "system_explorer.version.__version__"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-system_explorer = ["viewer.html", "publish_viewer.html"]
+system_explorer = ["viewer.html", "publish_viewer.html", "assistant_panel.js", "assistant_panel.css"]
 assistant = ["chat.html"]

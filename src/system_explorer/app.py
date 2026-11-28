@@ -895,8 +895,12 @@ def make_handler(folder: Path, layout_path: Path, cloud=None, assistant_settings
 
         def _check_assistant_auth(self):
             """Check Basic Auth for assistant in local mode. Returns True if authorized."""
-            # Cloud mode: use GitHub session
+            # Cloud mode uses the GitHub session, unless the server is
+            # running with anonymous access (cloud.auth is None). The front
+            # door already decided the request may proceed.
             if cloud is not None:
+                if cloud.auth is None:
+                    return True
                 return self.user is not None
             # Local mode: check Basic Auth if configured
             if not assistant_settings:
@@ -1054,7 +1058,15 @@ def make_handler(folder: Path, layout_path: Path, cloud=None, assistant_settings
                 except (ImportError, ModuleNotFoundError):
                     self.send_error(503, "Assistant not available")
                     return
-                payload = chat_payload(body, assistant_settings, self._assistant_complete)
+                try:
+                    payload = chat_payload(body, assistant_settings, self._assistant_complete)
+                except Exception as exc:
+                    print(f"assistant chat failed: {exc}", file=sys.stderr)
+                    payload = {
+                        "messages": [],
+                        "notes": [],
+                        "error": f"The assistant failed: {exc}",
+                    }
                 # If assistant wrote model files, commit them in hosted mode
                 if cloud is not None and payload.get("notes"):
                     sysml_files = list(folder.glob("*.sysml"))
@@ -1213,34 +1225,21 @@ def main():
     layout_path = folder / "layout.json"
     url = f"http://127.0.0.1:{args.port}/"
 
-    # Assistant configuration (optional, same as cloud.py)
+    # Assistant configuration (optional, same as cloud.py).
+    # The methodology file belongs to this tool, not to the model folder.
     assistant_settings = None
-    base_url = os.environ.get("ASSISTANT_BASE_URL", "")
-    api_key = os.environ.get("ASSISTANT_API_KEY", "")
-    model_name = os.environ.get("ASSISTANT_MODEL", "")
-    if base_url and model_name:
-        try:
-            from assistant.config import Settings as AssistantSettings
-            assistant_settings = AssistantSettings(
-                base_url=base_url,
-                api_key=api_key,
-                model=model_name,
-                model_folder=str(folder),
-                explorer_url=url,
-                methodology=os.environ.get("ASSISTANT_METHODOLOGY",
-                                          str(folder / "methodology" / "product-development.yaml")),
-                host="127.0.0.1",
-                port=os.environ.get("ASSISTANT_PORT", 8201),
-                chat_path=os.environ.get("ASSISTANT_CHAT_PATH", "/chat/completions"),
-                auth=os.environ.get("ASSISTANT_AUTH", "bearer"),
-                auth_user=os.environ.get("ASSISTANT_AUTH_USER", ""),
-                auth_password=os.environ.get("ASSISTANT_AUTH_PASSWORD", ""),
+    try:
+        from assistant.config import explorer_settings
+        assistant_settings = explorer_settings(folder, url, args.port)
+        if assistant_settings:
+            print(
+                f"SE assistant enabled: {assistant_settings.base_url} "
+                f"model {assistant_settings.model}"
             )
-            print(f"SE assistant enabled: {base_url} model {model_name}")
-        except (ImportError, ModuleNotFoundError):
-            print("SE assistant module not available; chat panel will be disabled")
-    elif base_url or model_name:
-        print("SE assistant partially configured (need both ASSISTANT_BASE_URL and ASSISTANT_MODEL)")
+        elif os.environ.get("ASSISTANT_BASE_URL") or os.environ.get("ASSISTANT_MODEL"):
+            print("SE assistant partially configured (need both ASSISTANT_BASE_URL and ASSISTANT_MODEL)")
+    except (ImportError, ModuleNotFoundError):
+        print("SE assistant module not available; chat panel will be disabled")
 
     class _ExplorerServer(ThreadingHTTPServer):
         # HTTPServer defaults this True so a restart can bind during

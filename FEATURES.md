@@ -782,19 +782,36 @@ the fixed greeting (what the project is, and whether documents already
 exist). An open activity continues that activity and names the unmet exit
 rules. A finished activity says so and waits for a review or a change.
 
-**Tools.** The assistant may call only `stakeholder_check` and
-`stakeholder_apply`. `check` does not write. `apply` with a register
+**Tools.** The assistant may call `stakeholder_check`, `stakeholder_apply`,
+and `add_model_element`. `check` does not write. `apply` with a register
 argument validates it, writes `process/stakeholders.yaml`, then generates
 the SysML files. A register that fails validation is not written. `apply`
 without arguments regenerates from the register already in the folder. The
 prompt tells the model to call `apply` only after the team confirms the
-list. After four tool rounds without a final answer, the turn stops.
+list, and not when the folder already has a SysML model to edit.
+`add_model_element` with `element_type: stakeholder` writes a `part def`
+into the existing `*Context.sysml` file (the same shape as Patient and
+Surgeon), after the assistant has asked what the person does. After four
+tool rounds without a final answer, the turn stops.
 
-**Model writes.** When the assistant generates or updates `.sysml` files
-(via `stakeholder_apply`), they go into the explorer's model folder. In
-hosted mode, these files are automatically committed and pushed to the git
-repo (authored as the signed-in GitHub user), just like manual View saves.
-The viewer refreshes to show the new elements.
+**Methodology file.** The prompt reads `methodology/product-development.yaml`
+from this tool, not from the model folder. Hosted mode clones only the
+model repo, which does not contain that file. The Docker image copies
+`methodology/` to `/app/methodology`, and both local and hosted mode
+resolve the file from the tool. A missing file is reported in the chat
+instead of dropping the HTTP connection.
+
+**Model writes.** When the assistant generates or updates `.sysml` files,
+they go into the explorer's model folder. In hosted mode, these files are
+automatically committed and pushed to the git repo (authored as the
+signed-in GitHub user), just like manual View saves. The viewer reloads
+the model and adds the new definitions to the diagram (a new context
+element is shown on the context view) without a page reload.
+
+**Panel assets.** `assistant_panel.js` and `assistant_panel.css` are
+package data. A `pip install` of this tool (including the hosted image)
+serves them at `/assistant_panel.js` and `/assistant_panel.css`. Same-origin
+`fetch` sends the GitHub session cookie on its own.
 
 **Documents.** Text files (`.txt`, `.md`, `.csv`) in the model folder are
 included in the prompt, up to a size cap. PDFs are named and not parsed.

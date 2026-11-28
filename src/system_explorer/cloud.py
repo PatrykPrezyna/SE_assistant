@@ -410,34 +410,26 @@ def cloud_main():
             allowed_users=(_env("ALLOWED_USERS", "") or "").split(","),
         )
 
-    # Assistant configuration (optional)
+    # Assistant configuration (optional). The methodology file ships with
+    # this tool. The cloned model repo does not contain it.
     assistant_settings = None
-    base_url = _env("ASSISTANT_BASE_URL", "")
-    api_key = _env("ASSISTANT_API_KEY", "")
-    model = _env("ASSISTANT_MODEL", "")
-    if base_url and model:
-        try:
-            from assistant.config import Settings as AssistantSettings
-            assistant_settings = AssistantSettings(
-                base_url=base_url,
-                api_key=api_key,
-                model=model,
-                model_folder=str(folder),
-                explorer_url="",  # not needed in hosted mode
-                methodology=_env("ASSISTANT_METHODOLOGY", 
-                               str(work_dir / "methodology" / "product-development.yaml")),
-                host="0.0.0.0",
-                port=port,
-                chat_path=_env("ASSISTANT_CHAT_PATH", "/chat/completions"),
-                auth=_env("ASSISTANT_AUTH", "bearer"),
-                auth_user="",  # not used in hosted mode (GitHub auth instead)
-                auth_password="",
+    try:
+        from assistant.config import explorer_settings
+        assistant_settings = explorer_settings(folder, "", port)
+        if assistant_settings:
+            print(
+                f"SE assistant enabled: {assistant_settings.base_url} "
+                f"model {assistant_settings.model}",
+                flush=True,
             )
-            print(f"SE assistant enabled: {base_url} model {model}", flush=True)
-        except ImportError:
-            print("SE assistant module not available", flush=True)
-    else:
-        print("SE assistant disabled (set ASSISTANT_BASE_URL and ASSISTANT_MODEL to enable)", flush=True)
+        else:
+            print(
+                "SE assistant disabled (set ASSISTANT_BASE_URL and "
+                "ASSISTANT_MODEL to enable)",
+                flush=True,
+            )
+    except ImportError:
+        print("SE assistant module not available", flush=True)
     
     handler = make_handler(folder, folder / "layout.json",
                            CloudContext(sync, auth, work_dir),

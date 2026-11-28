@@ -3,7 +3,7 @@
 **Status:** Implemented  
 **Author:** System  
 **Date:** 2026-11-28  
-**Updated:** 2026-11-28 (Session cookie fix, model conventions, error display)
+**Updated:** 2026-11-28 (Chat actually reaches the provider; panel ships in the package)
 
 ## Summary
 
@@ -35,7 +35,10 @@ Integrate the SE assistant chat into the System Explorer web application with co
 - [x] `/api/session` and `/api/chat` mounted in explorer server
 - [x] Routes work in local mode with optional Basic Auth
 - [x] Routes work in hosted mode with GitHub session auth
-- [x] **Session cookies sent with fetch() via `credentials: 'same-origin'`**
+- [x] Same-origin `fetch` sends the session cookie (that is the default; no extra option)
+- [x] Panel JavaScript and CSS are package data, so a `pip install` serves them
+- [x] Chat reads the tool's methodology file, not a file inside the model repo
+- [x] A failure in the chat handler is a JSON error in the panel, not a dropped connection
 - [x] Stdlib-only core preserved (no new dependencies)
 
 ### Error Handling
@@ -50,7 +53,7 @@ Integrate the SE assistant chat into the System Explorer web application with co
 - [x] **Structured edits:** `add_model_element` tool for creating SysML
 - [x] **Follows conventions:** Stakeholders are `part def` (not `actor def`), placed in Context file
 - [x] **Valid SysML:** UpperCamelCase names, proper doc comments
-- [x] **Real-time refresh:** Diagram updates automatically after edits via `loadModel()`
+- [x] **Real-time refresh:** New definitions are added to the open view (context elements on the context view) and fitted, without a reload
 - [x] Assistant-written .sysml files land in the explorer's model folder
 - [x] In hosted mode: files committed and pushed (authored as signed-in user)
 
@@ -65,22 +68,17 @@ Integrate the SE assistant chat into the System Explorer web application with co
 - [x] Tests for assistant routes, auth, error handling
 - [x] Tests for `add_model_element` tool with model conventions
 - [x] Tests for hosted commit path with proper authorship
-- [x] All 277 tests pass
+- [x] Tests pass (`python tests/test_system_explorer.py`)
 
 ## Design
 
-### UI - Modern Chat Panel
-A collapsible side panel (right side, 420px max width):
-- **Toggle button** in toolbar: "Chat" button
-- **Slides in/out** with smooth animation (cubic-bezier easing)
-- **Message bubbles:**
-  - User: blue gradient background, right-aligned
-  - Assistant: light gray, left-aligned, **markdown rendered**
-  - Errors: red background with clear text
-  - Notes: yellow background for confirmations
-- **Empty state:** Welcome message + 4 clickable example prompts
-- **Input area:** Auto-resize textarea, Enter sends, Shift+Enter newlines
-- **Loading state:** Spinner animation, disabled input
+### UI
+A collapsible side panel (right side, 400px) in the same type and colors as the explorer toolbar. The zoom controls move out from under it while it is open.
+- User messages: solid blue, right aligned
+- Assistant messages: white cards, markdown
+- Errors: a full-width message in the transcript. The thinking row is removed when the request ends
+- Suggestion chips under the greeting, including "Add a nurse to the context"
+- Enter sends, Shift+Enter adds a newline
 
 ### API Routes
 Mount via `make_handler(folder, layout_path, cloud, assistant_settings)`:
@@ -89,8 +87,15 @@ Mount via `make_handler(folder, layout_path, cloud, assistant_settings)`:
 
 **Auth in hosted mode (GitHub session):**
 - `_check_assistant_auth()` checks `self.user is not None`
-- `self.user` set by `_gate()` from GitHub session cookie
-- **Critical:** JS must send cookies with `credentials: 'same-origin'`
+- `self.user` is set by `_gate()` from the GitHub session cookie
+- A same-origin `fetch` sends that cookie. Adding `credentials: 'same-origin'` changes nothing; it is already the default
+- If the server is running with anonymous access, the assistant is open too. The page gate already allowed the request
+
+**Why hosted chat did nothing (verified against Parley and the running server):**
+1. `assistant_panel.js` / `assistant_panel.css` were not in the wheel. The Docker image runs `pip install .`, so the deployed page referenced assets that 404. The Chat control had no script.
+2. Local and hosted mode pointed `ASSISTANT_METHODOLOGY` at `<model folder>/methodology/product-development.yaml`. The model repo does not contain that file. `system_message` raised `FileNotFoundError` before any provider call. The handler did not catch it, so the socket closed. The panel showed "Network error: Failed to fetch" and left "Thinking…" on screen.
+3. Parley accepts the tool schema. A plain completion and a completion that includes the tools both return a normal message. The provider was not the failure.
+4. `loadModel()` reparses the files but a View only draws ids already in `elements`. A new `part def` stayed off the diagram until it was added to the view.
 
 **Auth in local mode:**
 - Optional Basic Auth if `ASSISTANT_AUTH_USER` / `ASSISTANT_AUTH_PASSWORD` set
@@ -124,10 +129,10 @@ Mount via `make_handler(folder, layout_path, cloud, assistant_settings)`:
 - Returns confirmation message
 
 **5. Real-time update:**
-- JS detects tool note mentioning "model" or "sysml"
-- Calls `loadModel()` after 500ms
-- Diagram refreshes showing new element
-- Assistant shows confirmation in chat
+- JS detects a tool note mentioning "model" or "sysml"
+- Calls `refreshAfterAssistantEdit()`, which reparses and adds the new definitions to the view
+- A new context element is shown on the context view, fitted into the camera, and saved
+- Assistant shows confirmation in the chat. The thinking indicator is cleared before that paint
 
 ### Model Conventions
 

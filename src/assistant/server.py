@@ -120,6 +120,15 @@ def chat_payload(body, settings, complete_fn=None):
         updated, notes = run_turn(messages, settings, complete_fn)
     except ProviderError as exc:
         return {"messages": messages, "notes": [], "error": str(exc)}
+    except Exception as exc:
+        # A missing methodology file or a bug must come back as JSON.
+        # An uncaught exception drops the socket, and the panel shows
+        # "Failed to fetch" with the thinking indicator left on screen.
+        return {
+            "messages": messages,
+            "notes": [],
+            "error": f"The assistant failed: {exc}",
+        }
     return {"messages": updated, "notes": notes, "error": ""}
 
 
