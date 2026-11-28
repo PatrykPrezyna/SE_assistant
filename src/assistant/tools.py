@@ -1,7 +1,8 @@
-"""The only commands the model may run: stakeholder check and apply."""
+"""The only commands the model may run: stakeholder check and apply, plus model element creation."""
 
 import importlib.util
 from pathlib import Path
+import re
 
 from .config import repo_root
 
@@ -37,6 +38,8 @@ def run_tool(name, arguments, settings):
         return _report(stakeholder_module().execute(
             "apply", settings.model_folder, settings.methodology
         ))
+    if name == "add_model_element":
+        return _add_model_element(arguments, settings)
     return f"Rejected unknown tool '{name}'."
 
 
@@ -101,6 +104,102 @@ def _report(result):
     if len(text) > MAX_OUTPUT:
         text = text[:MAX_OUTPUT] + "\n…(truncated)"
     return text
+
+
+def _add_model_element(arguments, settings):
+    """Add a model element following existing model conventions.
+    
+    Stakeholders (people) should be part def in Context, not actor def.
+    Use cases can reference them as actor/subject roles.
+    """
+    element_type = arguments.get("element_type", "").strip().lower()
+    name = arguments.get("name", "").strip()
+    description = arguments.get("description", "").strip()
+    
+    if not element_type or not name:
+        return "Error: Both element_type and name are required."
+    
+    # Validate element type - note: "stakeholder" creates a part def for a person
+    valid_types = {
+        "stakeholder": "part def",  # People: Nurse, Patient, Surgeon, etc.
+        "part": "part def",         # Equipment/components
+        "requirement": "requirement def",
+        "use_case": "use case def",
+    }
+    
+    if element_type not in valid_types:
+        return f"Error: Invalid element_type. Must be one of: {', '.join(valid_types.keys())}"
+    
+    # Sanitize name (must be valid SysML identifier)
+    if not re.match(r'^[A-Z][A-Za-z0-9]*$', name):
+        return f"Error: Name '{name}' must be UpperCamelCase (start with capital letter, no spaces or special chars)"
+    
+    sysml_keyword = valid_types[element_type]
+    
+    # Find appropriate file based on conventions
+    folder = Path(settings.model_folder)
+    
+    # For stakeholders, use or create a Context file
+    if element_type == "stakeholder":
+        # Look for existing Context file
+        context_files = [f for f in folder.glob("*Context.sysml")]
+        if context_files:
+            target_file = context_files[0]
+        else:
+            target_file = folder / "SystemContext.sysml"
+    else:
+        # For other elements, use a general file
+        target_file = folder / "ModelElements.sysml"
+    
+    # Check if element already exists in any file
+    for file in folder.glob("*.sysml"):
+        try:
+            content = file.read_text(encoding="utf-8")
+            # Look for the definition
+            if re.search(rf'\b{sysml_keyword}\s+{name}\s*[{{;]', content):
+                return f"Element '{name}' already exists in {file.name}. Use a different name or modify the existing element manually."
+        except (OSError, UnicodeError):
+            continue
+    
+    # Build the SysML element with proper doc comment formatting
+    if description:
+        # Multi-line doc comment like in spine-cooling-model
+        doc_lines = description.split(". ")
+        doc_text = " {\n        doc /*\n"
+        for line in doc_lines:
+            if line:
+                doc_text += f"        {line.strip()}.\n"
+        doc_text += "        */\n    }"
+    else:
+        doc_text = " {}"
+    
+    sysml_text = f"\n    {sysml_keyword} {name}{doc_text}\n"
+    
+    # Insert into file following conventions
+    if target_file.exists():
+        content = target_file.read_text(encoding="utf-8")
+        # Find the package and insert before closing brace
+        # Simple: insert before last } of the file
+        lines = content.split("\n")
+        insert_pos = len(lines) - 1
+        while insert_pos > 0 and not lines[insert_pos].strip():
+            insert_pos -= 1
+        if lines[insert_pos].strip() == "}":
+            lines.insert(insert_pos, sysml_text)
+            content = "\n".join(lines)
+        else:
+            # Just append
+            if not content.endswith("\n"):
+                content += "\n"
+            content += sysml_text
+    else:
+        # Create new file with proper package
+        package_name = target_file.stem
+        content = f"package {package_name} {{\n{sysml_text}}}\n"
+    
+    target_file.write_text(content, encoding="utf-8")
+    
+    return f"Added {sysml_keyword} '{name}' to {target_file.name}. The model will refresh automatically."
 
 
 def folder_context(folder, limit=12000):

@@ -1213,6 +1213,35 @@ def main():
     layout_path = folder / "layout.json"
     url = f"http://127.0.0.1:{args.port}/"
 
+    # Assistant configuration (optional, same as cloud.py)
+    assistant_settings = None
+    base_url = os.environ.get("ASSISTANT_BASE_URL", "")
+    api_key = os.environ.get("ASSISTANT_API_KEY", "")
+    model_name = os.environ.get("ASSISTANT_MODEL", "")
+    if base_url and model_name:
+        try:
+            from assistant.config import Settings as AssistantSettings
+            assistant_settings = AssistantSettings(
+                base_url=base_url,
+                api_key=api_key,
+                model=model_name,
+                model_folder=str(folder),
+                explorer_url=url,
+                methodology=os.environ.get("ASSISTANT_METHODOLOGY",
+                                          str(folder / "methodology" / "product-development.yaml")),
+                host="127.0.0.1",
+                port=os.environ.get("ASSISTANT_PORT", 8201),
+                chat_path=os.environ.get("ASSISTANT_CHAT_PATH", "/chat/completions"),
+                auth=os.environ.get("ASSISTANT_AUTH", "bearer"),
+                auth_user=os.environ.get("ASSISTANT_AUTH_USER", ""),
+                auth_password=os.environ.get("ASSISTANT_AUTH_PASSWORD", ""),
+            )
+            print(f"SE assistant enabled: {base_url} model {model_name}")
+        except (ImportError, ModuleNotFoundError):
+            print("SE assistant module not available; chat panel will be disabled")
+    elif base_url or model_name:
+        print("SE assistant partially configured (need both ASSISTANT_BASE_URL and ASSISTANT_MODEL)")
+
     class _ExplorerServer(ThreadingHTTPServer):
         # HTTPServer defaults this True so a restart can bind during
         # TIME_WAIT. On Windows that also lets a *second* explorer bind
@@ -1222,7 +1251,7 @@ def main():
 
     try:
         server = _ExplorerServer(
-            ("127.0.0.1", args.port), make_handler(folder, layout_path)
+            ("127.0.0.1", args.port), make_handler(folder, layout_path, assistant_settings=assistant_settings)
         )
     except OSError as exc:
         print(f"Port {args.port} is already in use — another explorer is "

@@ -63,34 +63,10 @@
     padding: 16px 20px; background: rgba(255,255,255,.92);
     border: 1px solid #e0e0e0; border-radius: 6px; }
   #emptyHint.hidden { display: none; }
-  /* home page: the landing screen — what this is, and which View to open */
-  #home { position: fixed; top: var(--bar); left: 0; right: 0; bottom: 0; z-index: 12;
-    background: #f3f5f8; overflow-y: auto; padding: 16px 16px 32px; }
-  #home.hidden { display: none; }
-  #homeInner { max-width: 640px; margin: 0 auto; width: 100%;
-    box-sizing: border-box; }
-  #home h1 { font-size: 22px; margin: 0 0 2px; }
-  #home .sub { color: #888; font-size: 12px; margin-bottom: 18px; }
-  #home .intro { font-size: 14px; line-height: 1.45; color: #555;
-    max-width: 640px; }
-  #home .intro p { margin: 0 0 10px; }
-  #home .intro code { background: #fff; border-radius: 3px;
-    padding: 0 3px; font-size: 13px; }
-  #home .viewsHint { font-size: 13px; color: #666; margin: 0 0 12px;
-    max-width: 640px; line-height: 1.5; }
-  #home h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em;
-    color: #888; margin: 22px 0 10px; font-weight: 600; }
-  #homeViews { display: flex; flex-direction: column; gap: 12px; }
-  #homeViews .card { text-align: left; font: inherit; cursor: pointer;
-    background: #fff; border: 1px solid #e0e3e8; border-radius: 12px;
-    padding: 14px 16px; display: flex; flex-direction: column; gap: 4px;
-    min-height: 48px; width: 100%; box-sizing: border-box; }
-  #homeViews .card:hover { border-color: #1a6bbf; background: #f7fbff; }
-  #homeViews .card .name { font-weight: 650; font-size: 16px; color: #1c1c1c; }
-  #homeViews .card .desc { font-size: 13px; color: #666; line-height: 1.4; }
-  #homeViews .card .desc.none { color: #aaa; font-style: italic; }
-  #homeViews .card .count { font-size: 13px; color: #666; margin-top: 2px; }
-  #homeViews .empty { color: #666; font-size: 15px; }
+  /* View dropdown in top-left */
+  #viewDropdown { font: inherit; font-size: 14px; min-width: 200px;
+    min-height: 36px; border-radius: 8px; border: 1px solid #d5d8de;
+    background: #fff; padding: 4px 8px; }
   #canvas { width: 100%; height: 100%; display: block; cursor: grab;
     touch-action: none; user-select: none; -webkit-user-select: none;
     background:
@@ -256,10 +232,10 @@
 </head>
 <body>
 <div id="toolbar">
-  <button id="homeBtn" title="Back to the list of views">Views</button>
+  <label>view <select id="viewDropdown"></select></label>
   <h1 id="viewTitle">Explorer</h1>
   <button id="treeBtn" class="expert-only" title="Show/hide the element tree">Tree</button>
-  <label class="edit-only">view <select id="viewSel"></select></label>
+  <select id="viewSel" class="edit-only"></select>
   <button id="newViewBtn" class="expert-only" title="Create a new view">+</button>
   <span class="sep edit-only"></span>
   <button id="saveBtn" class="edit-only" title="Ctrl+S">Save</button>
@@ -297,35 +273,6 @@
 <div id="error"></div>
 <div id="warnings"></div>
 <div id="emptyHint" class="hidden">This view is empty. Check elements in the tree to add them.</div>
-<div id="home" class="hidden">
-  <div id="homeInner">
-    <h1 id="homeTitle">Systems Engineering Assistant</h1>
-    <div class="sub" id="homeSub"></div>
-    <div class="intro">
-      <p>Systems Engineering helps teams develop successful products by
-      balancing competing stakeholder needs, business objectives and project
-      risks.</p>
-      <p>This assistant provides a practical set of Systems Engineering
-      artifacts and models that can be tailored to your organization's needs.
-      For each category, which may be viewed as a stage in the Product
-      Development Process, users can select an implementation approach that
-      best matches their desired level of formality and organizational
-      maturity.</p>
-      <p>Artifacts may be created, refined, and revisited multiple times
-      throughout the development lifecycle, often in parallel. The framework
-      is designed to be flexible and scalable for small and mid-sized
-      organizations.</p>
-      <p>A key objective is to engage the entire development team in Systems
-      Engineering activities, fostering collaboration across disciplines and
-      reducing organizational silos.</p>
-    </div>
-    <h2>Views</h2>
-    <p class="viewsHint">Each view is a curated slice of the model. Pick one
-    to open it. <b>Views</b> comes back here. <b>Edit</b> is how you move
-    elements and change what a view contains.</p>
-    <div id="homeViews"></div>
-  </div>
-</div>
 <div id="ctxmenu"></div>
 <div id="modalOverlay" class="hidden">
   <div id="modalBox">
@@ -502,7 +449,6 @@ let hiddenEdges = new Set();      // the active View's hidden connections (worki
 let mode = "bdd";                 // "bdd" | "activity" (from the active View's kind)
 let activityOwner = null;          // id of the part def whose activity diagram is shown
 let selection = null;              // {type:"node", id} | {type:"edge", key}
-let homeOpen = false;             // home page (landing screen) on top of the canvas
 let treeOpen = true;               // element tree panel shown/hidden (preference)
 let expertMode = false;            // custom-diagram building unlocked (⚙ toggle)
 let treeQuery = "";                // filter text for the element tree
@@ -2066,10 +2012,10 @@ async function save() {
   layout.version = LAYOUT_VERSION;
   layout.docs = layout.docs || {};
   layout.treeOpen = treeOpen;
-  layout.home = homeOpen;
   layout.expertMode = expertMode;
   layout.activeView = activeViewId;
   for (const key of STALE_LAYOUT_KEYS) delete layout[key];
+  delete layout.home;  // No longer used
 
   const requests = [
     fetch("/api/layout", {
@@ -2131,84 +2077,25 @@ async function switchToView(id) {
   fillViewSel();
 }
 
-// ------------------------------------------------------------- home page
+// ------------------------------------------------------------- view dropdown
 
-// The landing screen: what the explorer is, plus a card per View. It sits
-// on top of the canvas rather than replacing it, so switching Home on and
-// off never disturbs the diagram underneath (or its pan/zoom).
-function renderHome() {
-  const bits = [];
-  if (model) {
-    if (model.package) bits.push(model.package);
-    bits.push(`${model.nodes.length} element${model.nodes.length === 1 ? "" : "s"}`);
-    bits.push(`${model.edges.length} relationship${model.edges.length === 1 ? "" : "s"}`);
-  }
-  bits.push(`${views.length} view${views.length === 1 ? "" : "s"}`);
-  document.getElementById("homeSub").textContent = bits.join(" · ");
-
-  const box = document.getElementById("homeViews");
-  box.innerHTML = "";
-  if (!views.length) {
-    const p = document.createElement("div");
-    p.className = "empty";
-    p.textContent = "No views yet. Turn Edit on and use + to create one.";
-    box.appendChild(p);
-    return;
-  }
+// Populate the main view dropdown (top-left)
+function fillViewDropdown() {
+  const dropdown = document.getElementById("viewDropdown");
+  if (!dropdown) return;
+  dropdown.innerHTML = "";
   for (const v of views) {
-    const card = document.createElement("button");
-    card.type = "button";
-    card.className = "card";
-    card.dataset.viewId = v.id;
-
-    const name = document.createElement("div");
-    name.className = "name";
-    name.textContent = v.name;
-    card.appendChild(name);
-
-    const desc = document.createElement("div");
-    const text = (v.description || "").trim();
-    desc.className = text ? "desc" : "desc none";
-    // a View file may carry an optional "description"; without one the card
-    // says so rather than pretending the View has no purpose
-    desc.textContent = text || "No description.";
-    card.appendChild(desc);
-
-    const count = document.createElement("div");
-    count.className = "count";
-    if (v.kind === "activity") {
-      count.textContent = "Activity diagram";
-      card.appendChild(count);
-    } else if (typeof v.elementCount === "number") {
-      count.textContent =
-        `${v.elementCount} element${v.elementCount === 1 ? "" : "s"}`;
-      card.appendChild(count);
-    }
-
-    card.addEventListener("click", () => openViewFromHome(v.id));
-    box.appendChild(card);
+    const opt = document.createElement("option");
+    opt.value = v.id;
+    opt.textContent = v.name;
+    if (v.id === activeViewId) opt.selected = true;
+    dropdown.appendChild(opt);
   }
 }
 
-function applyHome() {
-  document.getElementById("home").classList.toggle("hidden", !homeOpen);
-  document.body.classList.toggle("home-open", homeOpen);
-  const back = document.getElementById("homeBtn");
-  if (back) back.hidden = homeOpen;
-  if (homeOpen && typeof hideSheet === "function") hideSheet();
-  if (typeof updateTitle === "function") updateTitle();
-  if (homeOpen) renderHome();
-}
-
-function setHomeOpen(open) {
-  homeOpen = open;
-  applyHome();
-}
-
-async function openViewFromHome(id) {
-  if (id !== activeViewId) await switchToView(id);
-  setHomeOpen(false);
-}
+document.getElementById("viewDropdown")?.addEventListener("change", evt => {
+  switchToView(evt.target.value);
+});
 
 async function createView() {
   const name = prompt("New view name:", "");
@@ -2224,7 +2111,6 @@ async function createView() {
   views.push(created);
   views.sort((a, b) => a.name.localeCompare(b.name));
   await switchToView(created.id);
-  setHomeOpen(false);
 }
 
 async function renameActiveView() {
@@ -2267,7 +2153,7 @@ function updateTitle() {
   const name = activeView ? activeView.name : (model && model.package);
   document.title = name || "System Explorer";
   const h = document.getElementById("viewTitle");
-  if (h) h.textContent = homeOpen ? "Explorer" : (name || "Explorer");
+  if (h) h.textContent = name || "Explorer";
 }
 
 // ------------------------------------------------------- detail sheet
@@ -2437,9 +2323,6 @@ async function init() {
   if (!layout.docs) layout.docs = {};  // nodeId -> documentation path/URL
   if (!layout.version) layout.version = LAYOUT_VERSION;
   setExpertMode("expertMode" in layout ? layout.expertMode : false);
-  // first launch (or a saved session that ended on Home) lands on the home
-  // page; once someone saves from inside a View they go straight back to it
-  homeOpen = "home" in layout ? !!layout.home : true;  // applyHome() below
   setTreeOpen("treeOpen" in layout ? layout.treeOpen : true);
 
   const m = await (await fetch("/api/model")).json();
@@ -2456,10 +2339,10 @@ async function init() {
   await bootstrapViews();
 
   fillViewSel();
+  fillViewDropdown();
   updateTitle();
   rebuild();
   restoreViewTransform();
-  applyHome();
 }
 
 document.getElementById("expertBtn").addEventListener("click", () => {
@@ -2470,10 +2353,6 @@ document.getElementById("expertBtn").addEventListener("click", () => {
 document.getElementById("treeBtn").addEventListener("click", () => {
   setTreeOpen(!treeOpen);
   setDirty(true);
-});
-document.getElementById("homeBtn").addEventListener("click", () => {
-  closeMenus();
-  setHomeOpen(!homeOpen);
 });
 document.getElementById("saveBtn").addEventListener("click", save);
 document.getElementById("revertBtn").addEventListener("click", revert);

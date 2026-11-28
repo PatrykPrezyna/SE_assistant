@@ -74,11 +74,49 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "add_model_element",
+            "description": (
+                "Add a new model element to the SysML model following existing conventions. "
+                "IMPORTANT: For people (Nurse, Patient, Doctor, etc.), use element_type='stakeholder' "
+                "which creates a 'part def' (not 'actor def') - this follows the model's pattern where "
+                "stakeholders are part definitions that get used as actors/subjects in use cases. "
+                "Ask clarifying questions first if details are missing (e.g., what role does this person play? "
+                "which use cases involve them?). Only call this after you have enough information."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "element_type": {
+                        "type": "string",
+                        "enum": ["stakeholder", "part", "requirement", "use_case"],
+                        "description": (
+                            "Type of element: 'stakeholder' for people (Nurse, Patient, etc.), "
+                            "'part' for equipment/components, 'requirement' for requirements, "
+                            "'use_case' for use cases."
+                        ),
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "UpperCamelCase name of the element (e.g., Nurse, FluidPump, REQ-123).",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Description of the element's purpose, role, or requirement text.",
+                    },
+                },
+                "required": ["element_type", "name"],
+            },
+        },
+    },
 ]
 
 _NOTES = {
     "stakeholder_check": "Checked the stakeholder register.",
     "stakeholder_apply": "Updated the model from the stakeholder register.",
+    "add_model_element": "Added a new element to the model.",
 }
 
 

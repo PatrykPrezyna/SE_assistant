@@ -4209,6 +4209,158 @@ class AssistantTests(unittest.TestCase):
 class EmbeddedAssistantTests(unittest.TestCase):
     """Tests for the embedded assistant in the explorer."""
     
+    def test_assistant_error_handling(self):
+        """Chat API returns proper errors when things go wrong."""
+        from assistant.config import Settings as AssistantSettings
+        
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            (folder / "test.sysml").write_text("part def TestPart {}")
+            
+            # Test with settings that could fail
+            settings = AssistantSettings(
+                base_url="http://invalid.example.com/v1",
+                api_key="test_key",
+                model="test-model",
+                model_folder=str(folder),
+                explorer_url="http://localhost:8199/",
+                methodology=str(folder / "methodology.yaml"),
+                host="127.0.0.1",
+                port=8201,
+                chat_path="/chat/completions",
+                auth="bearer",
+                auth_user="",
+                auth_password="",
+            )
+            
+            handler = make_handler(folder, folder / "layout.json", assistant_settings=settings)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            
+            try:
+                port = server.server_address[1]
+                base = f"http://127.0.0.1:{port}"
+                
+                # /api/session should work even with invalid backend
+                session = json.load(urllib.request.urlopen(base + "/api/session"))
+                self.assertIn("messages", session)
+                
+            finally:
+                server.shutdown()
+                server.server_close()
+    
+    def test_add_model_element_tool(self):
+        """The add_model_element tool creates valid SysML following model conventions."""
+        from assistant.tools import run_tool
+        from assistant.config import Settings as AssistantSettings
+        
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            settings = AssistantSettings(
+                base_url="http://localhost:8080/v1",
+                api_key="test",
+                model="test",
+                model_folder=str(folder),
+                explorer_url="http://localhost:8199/",
+                methodology=str(folder / "methodology.yaml"),
+                host="127.0.0.1",
+                port=8201,
+                chat_path="/chat/completions",
+                auth="bearer",
+                auth_user="",
+                auth_password="",
+            )
+            
+            # Add a stakeholder (person) - creates part def, not actor def
+            result = run_tool("add_model_element", {
+                "element_type": "stakeholder",
+                "name": "Nurse",
+                "description": "Healthcare professional administering treatment",
+            }, settings)
+            
+            self.assertIn("Added part def", result)
+            self.assertIn("Nurse", result)
+            
+            # Check the file was created with Context naming
+            context_file = folder / "SystemContext.sysml"
+            self.assertTrue(context_file.exists())
+            content = context_file.read_text()
+            self.assertIn("part def Nurse", content)
+            self.assertIn("Healthcare professional", content)
+            self.assertNotIn("actor def", content)  # Should be part def, not actor def
+            
+            # Try to add duplicate - should fail
+            result = run_tool("add_model_element", {
+                "element_type": "stakeholder",
+                "name": "Nurse",
+                "description": "Duplicate",
+            }, settings)
+            self.assertIn("already exists", result)
+            
+            # Add another stakeholder
+            result = run_tool("add_model_element", {
+                "element_type": "stakeholder",
+                "name": "Patient",
+                "description": "Person receiving care",
+            }, settings)
+            self.assertIn("Added part def", result)
+            
+            # Verify both are in the same file
+            content = context_file.read_text()
+            self.assertIn("part def Nurse", content)
+            self.assertIn("part def Patient", content)
+    
+    def test_hosted_commit_path(self):
+        """In hosted mode, assistant edits are committed and pushed."""
+        if not shutil.which("git"):
+            self.skipTest("git not available")
+        
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_dir = Path(tmp) / "repo"
+            repo_dir.mkdir()
+            
+            # Initialize a bare git repo to simulate the remote
+            bare = Path(tmp) / "bare.git"
+            subprocess.run(["git", "init", "--bare", str(bare)], check=True, capture_output=True)
+            
+            # Initialize the working repo
+            subprocess.run(["git", "init", "-b", "main"], cwd=repo_dir, check=True, capture_output=True)
+            subprocess.run(["git", "config", "user.name", "Test"], cwd=repo_dir, check=True)
+            subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo_dir, check=True)
+            subprocess.run(["git", "remote", "add", "origin", str(bare)], cwd=repo_dir, check=True)
+            
+            # Create initial model
+            (repo_dir / "test.sysml").write_text("part def Initial {}")
+            subprocess.run(["git", "add", "."], cwd=repo_dir, check=True)
+            subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=repo_dir, check=True)
+            subprocess.run(["git", "push", "-u", "origin", "main"], cwd=repo_dir, check=True)
+            
+            # Set up sync
+            from system_explorer.cloud import GitSync
+            sync = GitSync(str(bare), repo_dir, "main", token=None, async_push=False)
+            
+            # Create a mock user
+            user = {"login": "testuser", "name": "Test User", "id": 12345}
+            
+            # Simulate assistant writing a file
+            (repo_dir / "model_elements.sysml").write_text("actor def TestActor {}")
+            
+            # Commit and push
+            sync.commit_and_push([repo_dir / "model_elements.sysml"], "Assistant: add TestActor", user)
+            
+            # Verify the commit was made with proper authorship
+            result = subprocess.run(
+                ["git", "log", "-1", "--format=%an|%ae"],
+                cwd=repo_dir,
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            author_line = result.stdout.strip()
+            self.assertIn("Test User", author_line)
+            self.assertIn("12345+testuser@users.noreply.github.com", author_line)
+    
     def test_assistant_routes_in_local_mode(self):
         """Assistant routes work in local mode without auth."""
         from assistant.config import Settings as AssistantSettings
