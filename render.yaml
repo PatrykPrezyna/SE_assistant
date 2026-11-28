@@ -36,3 +36,10 @@ services:
         generateValue: true
       - key: ALLOWED_USERS
         sync: false
+      # SE Assistant (AI chat) configuration
+      - key: ASSISTANT_BASE_URL
+        sync: false
+      - key: ASSISTANT_API_KEY
+        sync: false
+      - key: ASSISTANT_MODEL
+        sync: false

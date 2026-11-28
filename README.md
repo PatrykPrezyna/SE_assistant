@@ -304,85 +304,50 @@ pump. Open that folder with `system-explorer` to see the stakeholders, the
 three categories, and the needs. Details are in
 [FEATURES.md](FEATURES.md) under *Stakeholder analysis*.
 
-## SE assistant (local chat)
+## SE assistant (AI chat)
 
-The chat is a separate program from the explorer. It asks the team what
-they are building, calls the stakeholder tool, and links to the diagram.
-The model provider is an OpenAI-compatible chat endpoint, so a cloud
-subscription and a later local model are the same client with different
-settings.
+The SE assistant is integrated into the System Explorer viewer as a chat panel. It guides teams through the product-development methodology, captures stakeholder needs, and generates SysML models.
+
+**How it works:**
+- Click the "Chat" button in the toolbar to open the assistant panel
+- The panel slides in from the right, showing your conversation history
+- When the assistant generates `.sysml` files, they appear in the viewer automatically
+- In hosted mode, assistant-created files are committed and pushed to git (just like manual edits)
+
+**Local use:**
 
 Copy [`.env.example`](.env.example) to `.env` (gitignored) and set
-`ASSISTANT_BASE_URL`, `ASSISTANT_API_KEY`, `ASSISTANT_MODEL`, and
-`MODEL_FOLDER`. Then, from this repo:
+`ASSISTANT_BASE_URL`, `ASSISTANT_API_KEY`, and `ASSISTANT_MODEL`. Then run System Explorer normally:
+
+```
+system-explorer <folder>
+```
+
+The chat button appears in the toolbar. If the assistant env vars are not set, clicking it shows "Assistant not configured" and the explorer continues to work normally.
+
+**Hosted mode (Render):**
+
+Add these environment variables to your `system-explorer` service (the main explorer, not a separate service):
+
+```
+ASSISTANT_BASE_URL=https://api.openai.com/v1   # or your provider
+ASSISTANT_API_KEY=sk-...                        # sync: false in render.yaml
+ASSISTANT_MODEL=gpt-4                           # or another model
+```
+
+The assistant is then available to everyone who signs in. Files it writes are committed as the signed-in user and pushed to the repo.
+
+**Standalone assistant (optional):**
+
+The standalone `python -m assistant` server is still available for local testing:
 
 ```
 python -m assistant
 ```
 
-Open http://127.0.0.1:8201/ and keep System Explorer open on the same
-`MODEL_FOLDER`. `EXPLORER_URL` is the "Open the diagram" link. Put the
-API key only in `.env` or the environment, never in the model files.
-How to run it, and a picture of the repository, are in
-[src/assistant/README.md](src/assistant/README.md). Behavior details are in
-[FEATURES.md](FEATURES.md) under *SE assistant*.
+It runs at http://127.0.0.1:8201/ and uses the same env vars. Standalone deployment to Render is documented in `render-assistant.yaml`, but the integrated assistant (above) is recommended for most users.
 
-## Deploy on Render
-
-The SE assistant can be deployed as a web service on [Render](https://render.com)
-so the chat interface is accessible from any browser.
-
-**Quick deploy:**
-
-1. Push this repo to GitHub (or fork it).
-2. Sign in to Render → **New → Web Service** → connect your GitHub account
-   and select this repository.
-3. Configure the service:
-   - **Build Command:** `pip install .`
-   - **Start Command:** `python -m assistant`
-   - Set environment variables (see below).
-4. Deploy. The service will be available at `https://<your-service>.onrender.com`.
-
-**Environment variables** (set in the Render dashboard):
-
-Required:
-- `ASSISTANT_HOST=0.0.0.0` (must bind to 0.0.0.0 for Render)
-- `SE_DATA_DIR=/var/data/se-models` (where model files are stored)
-
-Optional AI features (leave empty to run without AI):
-- `ASSISTANT_BASE_URL` (e.g., `https://api.openai.com/v1`)
-- `ASSISTANT_API_KEY` (your API key)
-- `ASSISTANT_MODEL` (e.g., `gpt-4`)
-
-Optional security (HTTP Basic Auth):
-- `SE_AUTH_USER` (username for Basic Auth)
-- `SE_AUTH_PASSWORD` (password for Basic Auth)
-
-**Using the Blueprint:**
-
-Alternatively, use `render-assistant.yaml`:
-
-```bash
-# In Render dashboard: New → Blueprint
-# Select this repository
-# Render reads render-assistant.yaml and prompts for secret values
-```
-
-**Health check:** `/healthz` returns `{"status": "ok"}`
-
-**Important notes:**
-
-- **Free plan:** The filesystem is ephemeral. Model edits are lost on restart
-  or redeploy. The service seeds the example model on first start.
-- **Persistent storage:** Attach a persistent disk (requires a paid plan) to
-  keep edits across restarts. Uncomment the `disks` section in
-  `render-assistant.yaml` or add a disk in the Render dashboard at
-  `/var/data/se-models`.
-- **Security:** Enable HTTP Basic Auth (`SE_AUTH_USER` / `SE_AUTH_PASSWORD`)
-  to protect the public endpoint. Without it, anyone with the URL can access
-  the assistant.
-- **Service sleep:** Free services sleep after 15 minutes of inactivity. The
-  next visitor waits ~50 seconds for wake-up. Paid plans keep services awake.
+Behavior details are in [FEATURES.md](FEATURES.md) under *SE assistant*.
 
 ## Troubleshooting
 

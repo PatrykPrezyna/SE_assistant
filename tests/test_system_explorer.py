@@ -4206,5 +4206,148 @@ class AssistantTests(unittest.TestCase):
             self.assertFalse((target / "stakeholders.sysml").exists())
 
 
+class EmbeddedAssistantTests(unittest.TestCase):
+    """Tests for the embedded assistant in the explorer."""
+    
+    def test_assistant_routes_in_local_mode(self):
+        """Assistant routes work in local mode without auth."""
+        from assistant.config import Settings as AssistantSettings
+        
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            (folder / "test.sysml").write_text(
+                'package Test { part def Motor; }', encoding="utf-8"
+            )
+            layout_path = folder / "layout.json"
+            
+            assistant_settings = AssistantSettings(
+                base_url="http://test.com",
+                api_key="test-key",
+                model="test-model",
+                model_folder=str(folder),
+                explorer_url="http://localhost:8199",
+                methodology=str(folder / "method.yaml"),
+                host="127.0.0.1",
+                port=8201,
+                chat_path="/chat/completions",
+                auth="bearer",
+                auth_user="",
+                auth_password="",
+            )
+            
+            handler = make_handler(folder, layout_path, assistant_settings=assistant_settings)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            
+            try:
+                port = server.server_address[1]
+                base = f"http://127.0.0.1:{port}"
+                
+                # Check /api/session
+                session = json.load(urllib.request.urlopen(base + "/api/session"))
+                self.assertIn("messages", session)
+                self.assertIn("configured", session)
+                
+                # Check assistant panel CSS
+                css = urllib.request.urlopen(base + "/assistant_panel.css").read().decode()
+                self.assertIn("#assistantPanel", css)
+                
+                # Check assistant panel JS
+                js = urllib.request.urlopen(base + "/assistant_panel.js").read().decode()
+                self.assertIn("assistantPanel", js)
+            finally:
+                server.shutdown()
+                server.server_close()
+    
+    def test_assistant_disabled_when_not_configured(self):
+        """Explorer works when assistant is not configured."""
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            (folder / "test.sysml").write_text(
+                'package Test { part def Motor; }', encoding="utf-8"
+            )
+            layout_path = folder / "layout.json"
+            
+            # No assistant_settings = assistant disabled
+            handler = make_handler(folder, layout_path, assistant_settings=None)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            
+            try:
+                port = server.server_address[1]
+                base = f"http://127.0.0.1:{port}"
+                
+                # Explorer should still work
+                model = json.load(urllib.request.urlopen(base + "/api/model"))
+                self.assertIn("nodes", model)
+                
+                # Assistant routes return 404
+                try:
+                    urllib.request.urlopen(base + "/api/session")
+                    self.fail("Expected no /api/session route")
+                except urllib.error.HTTPError as exc:
+                    self.assertEqual(exc.code, 404)
+            finally:
+                server.shutdown()
+                server.server_close()
+    
+    def test_assistant_basic_auth_in_local_mode(self):
+        """Assistant respects Basic Auth in local mode."""
+        import base64
+        from assistant.config import Settings as AssistantSettings
+        
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            (folder / "test.sysml").write_text(
+                'package Test { part def Motor; }', encoding="utf-8"
+            )
+            layout_path = folder / "layout.json"
+            
+            assistant_settings = AssistantSettings(
+                base_url="http://test.com",
+                api_key="test-key",
+                model="test-model",
+                model_folder=str(folder),
+                explorer_url="http://localhost:8199",
+                methodology=str(folder / "method.yaml"),
+                host="127.0.0.1",
+                port=8201,
+                chat_path="/chat/completions",
+                auth="bearer",
+                auth_user="admin",
+                auth_password="secret",
+            )
+            
+            handler = make_handler(folder, layout_path, assistant_settings=assistant_settings)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            
+            try:
+                port = server.server_address[1]
+                base = f"http://127.0.0.1:{port}"
+                
+                # Without auth, should fail
+                try:
+                    urllib.request.urlopen(base + "/api/session")
+                    self.fail("Expected 401 without auth")
+                except urllib.error.HTTPError as exc:
+                    self.assertEqual(exc.code, 401)
+                
+                # With correct auth, should work
+                auth_string = base64.b64encode(b"admin:secret").decode()
+                request = urllib.request.Request(
+                    base + "/api/session",
+                    headers={"Authorization": f"Basic {auth_string}"},
+                )
+                session = json.load(urllib.request.urlopen(request))
+                self.assertIn("messages", session)
+            finally:
+                server.shutdown()
+                server.server_close()
+
+
 if __name__ == "__main__":
     unittest.main()
